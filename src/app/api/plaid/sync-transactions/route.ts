@@ -97,7 +97,7 @@ export async function POST(request: Request) {
           .in('plaid_transaction_id', insertedPlaidIds)
 
         for (const transaction of insertedTransactions || []) {
-          void syncSingleTransactionIfEnabled(user.id, transaction.id)
+          await syncSingleTransactionIfEnabled(user.id, transaction.id)
         }
       }
     }
@@ -139,7 +139,7 @@ export async function POST(request: Request) {
           .in('plaid_transaction_id', updatedPlaidIds)
 
         for (const transaction of updatedTransactions || []) {
-          void syncSingleTransactionIfEnabled(user.id, transaction.id)
+          await syncSingleTransactionIfEnabled(user.id, transaction.id)
         }
       }
     }

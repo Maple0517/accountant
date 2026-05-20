@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
           .eq('id', receipt.id)
       }
 
-      void syncSingleTransactionIfEnabled(auth.userId, transaction.id)
+      await syncSingleTransactionIfEnabled(auth.userId, transaction.id)
     }
 
     return Response.json({
