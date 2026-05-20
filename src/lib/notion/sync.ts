@@ -27,75 +27,90 @@ export async function createTransactionDatabase(
   parentPageId: string,
   notionToken?: string
 ): Promise<string> {
-  const notion = getNotionClient(notionToken)
+  const token = notionToken || process.env.NOTION_TOKEN;
+  if (!token) throw new Error('No Notion token');
 
-  const response = await notion.databases.create({
-    parent: { type: 'page_id', page_id: parentPageId },
-    title: [{ type: 'text', text: { content: '💰 Transactions' } }],
-    properties: {
-      Name: { title: {} },
-      Amount: { number: { format: 'dollar' } },
-      Currency: {
-        select: {
-          options: [
-            { name: 'USD', color: 'green' },
-            { name: 'CNY', color: 'red' },
-          ],
-        },
-      },
-      Date: { date: {} },
-      Category: {
-        select: {
-          options: [
-            { name: '🍔 Food & Drink', color: 'orange' },
-            { name: '🚗 Transportation', color: 'blue' },
-            { name: '🛍️ Shopping', color: 'pink' },
-            { name: '🎬 Entertainment', color: 'purple' },
-            { name: '💡 Bills & Utilities', color: 'yellow' },
-            { name: '💰 Income', color: 'green' },
-            { name: '🔄 Transfer', color: 'gray' },
-            { name: '🏥 Health', color: 'red' },
-            { name: '📚 Education', color: 'blue' },
-            { name: '✈️ Travel', color: 'purple' },
-            { name: '📦 Other', color: 'default' },
-          ],
-        },
-      },
-      Account: { select: {} },
-      Type: {
-        select: {
-          options: [
-            { name: 'expense', color: 'red' },
-            { name: 'income', color: 'green' },
-            { name: 'transfer', color: 'gray' },
-          ],
-        },
-      },
-      'Payment Channel': {
-        select: {
-          options: [
-            { name: 'online', color: 'blue' },
-            { name: 'in store', color: 'green' },
-            { name: 'other', color: 'gray' },
-          ],
-        },
-      },
-      Notes: { rich_text: {} },
-      Source: {
-        select: {
-          options: [
-            { name: 'plaid', color: 'blue' },
-            { name: 'manual', color: 'green' },
-            { name: 'receipt', color: 'orange' },
-          ],
-        },
-      },
-      Tags: { multi_select: {} },
-      'Transaction ID': { rich_text: {} },
+  const response = await fetch('https://api.notion.com/v1/databases', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
     },
-  })
+    body: JSON.stringify({
+      parent: { type: 'page_id', page_id: parentPageId },
+      title: [{ type: 'text', text: { content: '💰 Transactions' } }],
+      properties: {
+        Name: { title: {} },
+        Amount: { number: { format: 'dollar' } },
+        Currency: {
+          select: {
+            options: [
+              { name: 'USD', color: 'green' },
+              { name: 'CNY', color: 'red' },
+            ],
+          },
+        },
+        Date: { date: {} },
+        Category: {
+          select: {
+            options: [
+              { name: '🍔 Food & Drink', color: 'orange' },
+              { name: '🚗 Transportation', color: 'blue' },
+              { name: '🛍️ Shopping', color: 'pink' },
+              { name: '🎬 Entertainment', color: 'purple' },
+              { name: '💡 Bills & Utilities', color: 'yellow' },
+              { name: '💰 Income', color: 'green' },
+              { name: '🔄 Transfer', color: 'gray' },
+              { name: '🏥 Health', color: 'red' },
+              { name: '📚 Education', color: 'blue' },
+              { name: '✈️ Travel', color: 'purple' },
+              { name: '📦 Other', color: 'default' },
+            ],
+          },
+        },
+        Account: { select: {} },
+        Type: {
+          select: {
+            options: [
+              { name: 'expense', color: 'red' },
+              { name: 'income', color: 'green' },
+              { name: 'transfer', color: 'gray' },
+            ],
+          },
+        },
+        'Payment Channel': {
+          select: {
+            options: [
+              { name: 'online', color: 'blue' },
+              { name: 'in store', color: 'green' },
+              { name: 'other', color: 'gray' },
+            ],
+          },
+        },
+        Notes: { rich_text: {} },
+        Source: {
+          select: {
+            options: [
+              { name: 'plaid', color: 'blue' },
+              { name: 'manual', color: 'green' },
+              { name: 'receipt', color: 'orange' },
+            ],
+          },
+        },
+        Tags: { multi_select: {} },
+        'Transaction ID': { rich_text: {} },
+      },
+    }),
+  });
 
-  return response.id
+  const data = await response.json();
+  if (!response.ok) {
+    console.error('Notion API Error:', data);
+    throw new Error(`Failed to create Notion database: ${data.message || 'Unknown error'}`);
+  }
+
+  return data.id;
 }
 
 /**
