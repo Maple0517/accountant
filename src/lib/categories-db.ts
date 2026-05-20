@@ -11,6 +11,10 @@ export type CategoryRow = {
   type: 'income' | 'expense' | 'transfer'
 }
 
+function normalizeCategoryName(value: string) {
+  return value.trim().toLocaleLowerCase('en-US')
+}
+
 /**
  * Fetch a user's categories. If they have none, seeds the defaults.
  */
@@ -74,7 +78,7 @@ export async function getOrCreateCategory(
   const categories = existingCategories || (await getUserCategories(supabase, userId))
   
   const existing = categories.find(
-    (c) => c.name.toLowerCase() === categoryInfo.name.toLowerCase() || 
+    (c) => normalizeCategoryName(c.name) === normalizeCategoryName(categoryInfo.name) || 
            (c.name_zh && categoryInfo.name_zh && c.name_zh === categoryInfo.name_zh)
   )
 
@@ -82,13 +86,34 @@ export async function getOrCreateCategory(
     return existing
   }
 
+  const { data: concurrentMatch, error: concurrentMatchError } = await supabase
+    .from('categories')
+    .select('*')
+    .eq('user_id', userId)
+    .ilike('name', categoryInfo.name.trim())
+
+  if (concurrentMatchError) {
+    console.error('Error checking for concurrent category creation:', concurrentMatchError)
+  }
+
+  const exactConcurrentMatch = (concurrentMatch || []).find(
+    (c) => normalizeCategoryName(c.name) === normalizeCategoryName(categoryInfo.name)
+  ) as CategoryRow | undefined
+
+  if (exactConcurrentMatch) {
+    if (existingCategories) {
+      existingCategories.push(exactConcurrentMatch)
+    }
+    return exactConcurrentMatch
+  }
+
   // Create new
   const { data: newCategory, error } = await supabase
     .from('categories')
     .insert({
       user_id: userId,
-      name: categoryInfo.name,
-      name_zh: categoryInfo.name_zh || null,
+      name: categoryInfo.name.trim(),
+      name_zh: categoryInfo.name_zh?.trim() || null,
       icon: categoryInfo.icon || '📦',
       color: '#607d8b', // default color
       type: categoryInfo.type || 'expense',
@@ -98,6 +123,24 @@ export async function getOrCreateCategory(
 
   if (error) {
     console.error('Error creating new category:', error)
+
+    const { data: retryMatch } = await supabase
+      .from('categories')
+      .select('*')
+      .eq('user_id', userId)
+      .ilike('name', categoryInfo.name.trim())
+
+    const recoveredMatch = (retryMatch || []).find(
+      (c) => normalizeCategoryName(c.name) === normalizeCategoryName(categoryInfo.name)
+    ) as CategoryRow | undefined
+
+    if (recoveredMatch) {
+      if (existingCategories) {
+        existingCategories.push(recoveredMatch)
+      }
+      return recoveredMatch
+    }
+
     return null
   }
 

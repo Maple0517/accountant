@@ -6,6 +6,34 @@ import { classifyTransactionsBatch, RawTransactionToClassify } from '@/lib/gemin
 
 export const dynamic = 'force-dynamic'
 
+type ExistingTransactionSnapshot = {
+  category_id: string | null
+  merchant_name: string | null
+}
+
+export function mergeTransactionClassification(
+  existingTransaction: ExistingTransactionSnapshot | undefined,
+  plaidTransaction: {
+    merchant_name: string | null
+    name: string
+  },
+  classification?: {
+    clean_merchant_name: string
+    category?: {
+      id: string
+    }
+  }
+) {
+  return {
+    categoryId: classification?.category?.id ?? existingTransaction?.category_id ?? null,
+    cleanName:
+      classification?.clean_merchant_name ||
+      existingTransaction?.merchant_name ||
+      plaidTransaction.merchant_name ||
+      plaidTransaction.name,
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -82,16 +110,35 @@ export async function POST(request: Request) {
         console.error('Classification failed, continuing with raw names', err)
       }
 
+      const existingPlaidIds = upsertList.map((tx) => tx.transaction_id)
+      const { data: existingTransactions, error: existingTransactionsError } = await supabase
+        .from('transactions')
+        .select('plaid_transaction_id, category_id, merchant_name')
+        .eq('user_id', user.id)
+        .in('plaid_transaction_id', existingPlaidIds)
+
+      if (existingTransactionsError) {
+        console.error('Error loading existing transactions:', existingTransactionsError)
+      }
+
+      const existingTransactionMap = new Map(
+        (existingTransactions || []).map((tx) => [tx.plaid_transaction_id, tx])
+      )
+
       const classMap = new Map(classified.map((c) => [c.id, c]))
       const transactionsToUpsert = []
 
       for (const tx of upsertList) {
-        let categoryId = null
-        let cleanName = tx.merchant_name || tx.name
+        const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+        let classificationForMerge:
+          | {
+              clean_merchant_name: string
+              category?: { id: string }
+            }
+          | undefined
 
         const cInfo = classMap.get(tx.transaction_id)
         if (cInfo) {
-          cleanName = cInfo.clean_merchant_name
           if (cInfo.category) {
             const catRow = await getOrCreateCategory(
               supabase,
@@ -99,9 +146,26 @@ export async function POST(request: Request) {
               cInfo.category,
               userCategories
             )
-            if (catRow) categoryId = catRow.id
+            if (catRow) {
+              classificationForMerge = {
+                clean_merchant_name: cInfo.clean_merchant_name,
+                category: { id: catRow.id },
+              }
+            }
+          }
+
+          if (!classificationForMerge) {
+            classificationForMerge = {
+              clean_merchant_name: cInfo.clean_merchant_name,
+            }
           }
         }
+
+        const { categoryId, cleanName } = mergeTransactionClassification(
+          existingTransaction,
+          tx,
+          classificationForMerge
+        )
 
         transactionsToUpsert.push({
           user_id: user.id,

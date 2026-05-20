@@ -21,6 +21,81 @@ export interface ClassifiedTransaction {
   }
 }
 
+function isValidCategoryType(
+  value: unknown
+): value is 'expense' | 'income' | 'transfer' {
+  return value === 'expense' || value === 'income' || value === 'transfer'
+}
+
+export function validateClassificationResponse(
+  parsed: unknown,
+  transactions: RawTransactionToClassify[]
+): ClassifiedTransaction[] {
+  if (!Array.isArray(parsed)) {
+    throw new Error('Classifier response is not an array')
+  }
+
+  if (parsed.length !== transactions.length) {
+    throw new Error(
+      `Classifier returned ${parsed.length} items for ${transactions.length} transactions`
+    )
+  }
+
+  const expectedIds = new Set(transactions.map((tx) => tx.id))
+  const seenIds = new Set<string>()
+
+  return parsed.map((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw new Error(`Classifier item ${index} is not an object`)
+    }
+
+    const candidate = item as Record<string, unknown>
+    const id = candidate.id
+    const cleanMerchantName = candidate.clean_merchant_name
+    const category = candidate.category
+
+    if (typeof id !== 'string' || !expectedIds.has(id) || seenIds.has(id)) {
+      throw new Error(`Classifier item ${index} has invalid id`)
+    }
+    seenIds.add(id)
+
+    if (typeof cleanMerchantName !== 'string' || cleanMerchantName.trim() === '') {
+      throw new Error(`Classifier item ${index} has invalid clean_merchant_name`)
+    }
+
+    if (!category || typeof category !== 'object') {
+      throw new Error(`Classifier item ${index} is missing category`)
+    }
+
+    const categoryRecord = category as Record<string, unknown>
+    if (
+      typeof categoryRecord.name !== 'string' ||
+      categoryRecord.name.trim() === '' ||
+      !isValidCategoryType(categoryRecord.type)
+    ) {
+      throw new Error(`Classifier item ${index} has invalid category data`)
+    }
+
+    return {
+      id,
+      clean_merchant_name: cleanMerchantName.trim(),
+      category: {
+        name: categoryRecord.name.trim(),
+        name_zh:
+          typeof categoryRecord.name_zh === 'string' &&
+          categoryRecord.name_zh.trim() !== ''
+            ? categoryRecord.name_zh.trim()
+            : undefined,
+        icon:
+          typeof categoryRecord.icon === 'string' && categoryRecord.icon.trim() !== ''
+            ? categoryRecord.icon.trim()
+            : undefined,
+        type: categoryRecord.type,
+      },
+    }
+  })
+}
+
 export async function classifyTransactionsBatch(
   transactions: RawTransactionToClassify[],
   existingCategories: CategoryRow[]
@@ -105,10 +180,9 @@ Format of the output JSON array:
       .replace(/```\s*/g, '')
       .trim()
 
-    const parsed: ClassifiedTransaction[] = JSON.parse(cleanedText)
-    
-    // Ensure all requested IDs are in the response
-    return parsed
+    const parsed: unknown = JSON.parse(cleanedText)
+
+    return validateClassificationResponse(parsed, transactions)
   } catch (parseError) {
     console.error('Failed to parse Gemini classification response:', text)
     throw new Error(`Failed to parse classification data: ${parseError}`)
