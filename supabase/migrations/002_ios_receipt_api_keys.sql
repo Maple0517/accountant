@@ -8,9 +8,12 @@ CREATE TABLE IF NOT EXISTS receipts (
   image_url TEXT NOT NULL,
   parsed_data JSONB,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'parsed', 'confirmed', 'error')),
+  error_message TEXT,
   transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS error_message TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_receipts_user ON receipts(user_id);
 CREATE INDEX IF NOT EXISTS idx_receipts_transaction ON receipts(transaction_id);

@@ -3,6 +3,16 @@ import { plaidClient } from '@/lib/plaid/client'
 
 export const dynamic = 'force-dynamic'
 
+export function mapPlaidType(type: string, subtype: string | null) {
+  if (type === 'depository') {
+    if (subtype === 'savings') return 'savings'
+    return 'checking'
+  }
+  if (type === 'credit') return 'credit'
+  if (type === 'investment') return 'investment'
+  return 'other'
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
@@ -42,13 +52,16 @@ export async function POST(request: Request) {
     // Save plaid item to Supabase
     const { data: plaidItem, error: itemError } = await supabase
       .from('plaid_items')
-      .insert({
+      .upsert({
         user_id: user.id,
         access_token,
         item_id,
         institution_name: institutionName,
         institution_id: institutionId,
         status: 'active',
+      }, {
+        onConflict: 'item_id',
+        ignoreDuplicates: false,
       })
       .select()
       .single()
@@ -60,19 +73,19 @@ export async function POST(request: Request) {
     // Fetch accounts
     const accountsResponse = await plaidClient.accountsGet({ access_token })
     
-    // Map Plaid account types to our DB ENUM
-    const mapPlaidType = (type: string, subtype: string | null) => {
-      if (type === 'depository') {
-        if (subtype === 'savings') return 'savings'
-        return 'checking'
-      }
-      if (type === 'credit') return 'credit'
-      if (type === 'investment') return 'investment'
-      return 'other'
-    }
+    const existingAccountsByPlaidId = new Map(
+      (
+        (
+          await supabase
+            .from('accounts')
+            .select('id, plaid_account_id')
+            .eq('user_id', user.id)
+            .eq('plaid_item_id', plaidItem.id)
+        ).data || []
+      ).map((account) => [account.plaid_account_id, account.id])
+    )
 
-    // Save accounts to Supabase
-    const accountsData = accountsResponse.data.accounts.map(acc => ({
+    const accountsData = accountsResponse.data.accounts.map((acc) => ({
       user_id: user.id,
       plaid_item_id: plaidItem.id,
       plaid_account_id: acc.account_id,
@@ -87,9 +100,13 @@ export async function POST(request: Request) {
       is_manual: false,
     }))
 
-    const { error: accountsError } = await supabase
-      .from('accounts')
-      .insert(accountsData)
+    const accountsToInsert = accountsData.filter(
+      (acc) => !existingAccountsByPlaidId.has(acc.plaid_account_id)
+    )
+
+    const { error: accountsError } = accountsToInsert.length
+      ? await supabase.from('accounts').insert(accountsToInsert)
+      : { error: null }
 
     if (accountsError) {
       console.error('Error saving accounts:', accountsError)
