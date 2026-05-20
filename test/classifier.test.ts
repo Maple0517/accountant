@@ -2,9 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  chunkTransactionsForGemini,
   validateClassificationResponse,
   type RawTransactionToClassify,
 } from '@/lib/gemini/classifier'
+import { DEFAULT_GEMINI_MODEL } from '@/lib/gemini/config'
 
 const sampleTransactions: RawTransactionToClassify[] = [
   {
@@ -101,5 +103,28 @@ test('validateClassificationResponse rejects unknown or duplicate ids', () => {
       ],
       sampleTransactions
     )
+  )
+})
+
+test('default Gemini model uses Flash Lite requested for quota-sensitive work', () => {
+  assert.equal(DEFAULT_GEMINI_MODEL, 'gemini-3.1-flash-lite')
+})
+
+test('chunkTransactionsForGemini respects batch size limit', () => {
+  const transactions = Array.from({ length: 5 }, (_, index) => ({
+    id: `tx_${index}`,
+    merchant_name: `Merchant ${index}`,
+    description: `Merchant ${index}`,
+    amount: index + 1,
+  }))
+
+  const chunks = chunkTransactionsForGemini(transactions, [], {
+    batchSize: 2,
+    maxInputTokens: 250_000,
+  })
+
+  assert.deepEqual(
+    chunks.map((chunk) => chunk.map((tx) => tx.id)),
+    [['tx_0', 'tx_1'], ['tx_2', 'tx_3'], ['tx_4']]
   )
 })

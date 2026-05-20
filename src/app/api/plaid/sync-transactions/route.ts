@@ -2,36 +2,35 @@ import { createClient } from '@/lib/supabase/server'
 import { plaidClient } from '@/lib/plaid/client'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
-import { classifyTransactionsBatch, RawTransactionToClassify } from '@/lib/gemini/classifier'
+import { getCategoryFromPlaid } from '@/lib/categories'
+import {
+  getPlaidPrimaryCategory,
+  mergeTransactionClassification,
+  PlaidCategorySource,
+} from '@/lib/plaid/classification'
+import {
+  classifyTransactionsBatch,
+  ClassifiedTransaction,
+  RawTransactionToClassify,
+} from '@/lib/gemini/classifier'
 
 export const dynamic = 'force-dynamic'
 
-type ExistingTransactionSnapshot = {
-  category_id: string | null
-  merchant_name: string | null
+type PlaidSyncTransaction = PlaidCategorySource & {
+  account_id: string
+  amount: number
+  authorized_date?: string | null
+  date: string
+  iso_currency_code?: string | null
+  merchant_name?: string | null
+  name: string
+  payment_channel?: string
+  pending: boolean
+  transaction_id: string
 }
 
-export function mergeTransactionClassification(
-  existingTransaction: ExistingTransactionSnapshot | undefined,
-  plaidTransaction: {
-    merchant_name: string | null
-    name: string
-  },
-  classification?: {
-    clean_merchant_name: string
-    category?: {
-      id: string
-    }
-  }
-) {
-  return {
-    categoryId: classification?.category?.id ?? existingTransaction?.category_id ?? null,
-    cleanName:
-      classification?.clean_merchant_name ||
-      existingTransaction?.merchant_name ||
-      plaidTransaction.merchant_name ||
-      plaidTransaction.name,
-  }
+type PlaidRemovedTransaction = {
+  transaction_id: string
 }
 
 export async function POST(request: Request) {
@@ -43,7 +42,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { plaid_item_id } = await request.json()
+    const { plaid_item_id, backfill_uncategorized } = await request.json()
 
     if (!plaid_item_id) {
       return Response.json({ error: 'Missing plaid_item_id' }, { status: 400 })
@@ -68,12 +67,35 @@ export async function POST(request: Request) {
       .eq('plaid_item_id', plaid_item_id)
 
     const accountMap = new Map(accounts?.map(a => [a.plaid_account_id, a.id]) || [])
+    const accountIds = Array.from(accountMap.values())
+
+    let uncategorizedCount = 0
+    if (accountIds.length > 0) {
+      const { count, error: uncategorizedCountError } = await supabase
+        .from('transactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('source', 'plaid')
+        .is('category_id', null)
+        .in('account_id', accountIds)
+
+      if (uncategorizedCountError) {
+        console.error(
+          'Error checking uncategorized Plaid transactions:',
+          uncategorizedCountError
+        )
+      } else {
+        uncategorizedCount = count || 0
+      }
+    }
 
     // Fetch transactions from Plaid using sync
-    let cursor = item.cursor || undefined
-    let added: any[] = []
-    let modified: any[] = []
-    let removed: any[] = []
+    const shouldBackfillUncategorized =
+      Boolean(backfill_uncategorized) || uncategorizedCount > 0
+    let cursor = shouldBackfillUncategorized ? undefined : item.cursor || undefined
+    let added: PlaidSyncTransaction[] = []
+    let modified: PlaidSyncTransaction[] = []
+    let removed: PlaidRemovedTransaction[] = []
     let hasMore = true
 
     while (hasMore) {
@@ -103,7 +125,7 @@ export async function POST(request: Request) {
       }))
 
       // Classify in batches if needed, but usually incremental sync is small
-      let classified: any[] = []
+      let classified: ClassifiedTransaction[] = []
       try {
         classified = await classifyTransactionsBatch(rawTxs, userCategories)
       } catch (err) {
@@ -113,7 +135,7 @@ export async function POST(request: Request) {
       const existingPlaidIds = upsertList.map((tx) => tx.transaction_id)
       const { data: existingTransactions, error: existingTransactionsError } = await supabase
         .from('transactions')
-        .select('plaid_transaction_id, category_id, merchant_name')
+        .select('plaid_transaction_id, category_id, merchant_name, tags')
         .eq('user_id', user.id)
         .in('plaid_transaction_id', existingPlaidIds)
 
@@ -161,10 +183,31 @@ export async function POST(request: Request) {
           }
         }
 
-        const { categoryId, cleanName } = mergeTransactionClassification(
+        let plaidFallback:
+          | {
+              category: { id: string }
+            }
+          | undefined
+
+        if (!classificationForMerge?.category && !existingTransaction?.category_id) {
+          const plaidCategory = getCategoryFromPlaid(getPlaidPrimaryCategory(tx))
+          const catRow = await getOrCreateCategory(
+            supabase,
+            user.id,
+            plaidCategory,
+            userCategories
+          )
+
+          if (catRow) {
+            plaidFallback = { category: { id: catRow.id } }
+          }
+        }
+
+        const { categoryId, cleanName, tags } = mergeTransactionClassification(
           existingTransaction,
           tx,
-          classificationForMerge
+          classificationForMerge,
+          plaidFallback
         )
 
         transactionsToUpsert.push({
@@ -181,6 +224,7 @@ export async function POST(request: Request) {
           payment_channel: tx.payment_channel,
           pending: tx.pending,
           source: 'plaid',
+          tags,
         })
       }
 
@@ -230,11 +274,16 @@ export async function POST(request: Request) {
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      backfilled_uncategorized: shouldBackfillUncategorized,
+      uncategorized_before_sync: uncategorizedCount,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error syncing transactions:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to sync transactions'
+
     return Response.json(
-      { error: error.message || 'Failed to sync transactions' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

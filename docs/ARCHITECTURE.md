@@ -18,12 +18,13 @@ graph TB
         C2["/api/notion/sync"]
         C3["/api/receipt"]
         C4["/api/settings/api-keys"]
+        C5["/api/transactions/*"]
     end
 
     subgraph "外部服务"
         E["🏦 Plaid API<br/>(银行/信用卡数据)"]
         F["📝 Notion API<br/>(数据同步展示)"]
-        G["🤖 Gemini 2.0 Flash<br/>(Vision OCR)"]
+        G["🤖 Gemini 3.1 Flash Lite<br/>(分类 + Vision OCR)"]
     end
 
     subgraph "Supabase"
@@ -31,12 +32,12 @@ graph TB
         I["Auth"]
     end
 
-    A --> C1 & C2 & C4
+    A --> C1 & C2 & C4 & C5
     B --> C3
-    C1 --> E & H
+    C1 --> E & G & H
     C2 --> F & H
     C3 --> G & H
-    C4 --> H
+    C4 & C5 --> H
     A --> I
 ```
 
@@ -104,6 +105,71 @@ graph TB
 | `tags` | text[] | |
 | `notes` | text | |
 
+分类相关系统标签：
+
+| Tag | 说明 |
+|---|---|
+| `classification:ai` | 分类由 Gemini AI 确认 |
+| `classification:plaid-fallback` | AI 未完成时使用 Plaid 分类兜底 |
+| `classification:ai-pending` | 需要进入 AI 分类队列刷新 |
+
+### `categories` — 分类
+
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK) | |
+| `name` | text | 英文分类名 |
+| `name_zh` | text | 中文显示名 |
+| `icon` | text | Emoji 图标 |
+| `color` | text | UI 色值 |
+| `plaid_primary` | text | Plaid primary 分类映射 |
+| `plaid_detailed` | text | Plaid detailed 分类映射 |
+| `type` | text | income/expense/transfer |
+| `sort_order` | integer | UI 排序 |
+
+### `budgets` — 预算
+
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK) | |
+| `category_id` | uuid (FK → categories) | |
+| `amount` | numeric | 预算金额 |
+| `period` | text | weekly/monthly/yearly |
+| `month` | integer | 月度预算月份 |
+| `year` | integer | 年份 |
+| `alert_threshold` | numeric | 预警阈值，默认 0.80 |
+
+### `ai_classification_jobs` — Plaid AI 分类任务
+
+> 依赖 `supabase/migrations/003_ai_classification_queue.sql`。
+
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK) | |
+| `status` | text | queued/running/completed/failed/canceled |
+| `total_count` | integer | 本次待处理总数 |
+| `pending_count` | integer | queued + processing 数量 |
+| `completed_count` | integer | 已完成数量 |
+| `failed_count` | integer | 失败数量 |
+| `error_message` | text | 任务级错误 |
+| `completed_at` | timestamptz | 完成时间 |
+
+### `ai_classification_job_items` — Plaid AI 分类队列项
+
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `job_id` | uuid (FK → ai_classification_jobs) | |
+| `user_id` | uuid (FK) | |
+| `transaction_id` | uuid (FK → transactions) | |
+| `status` | text | queued/processing/completed/failed/skipped |
+| `attempts` | integer | 尝试次数 |
+| `error_message` | text | 单项错误 |
+| `completed_at` | timestamptz | 完成时间 |
+
 ### `receipts` — iOS Shortcut 上传记录
 
 > ⚠️ 依赖 `supabase/migrations/002_ios_receipt_api_keys.sql`，远端 Supabase 需执行。
@@ -130,8 +196,6 @@ graph TB
 | `last_used_at` | timestamptz | 成功调用 `/api/receipt` 时更新 |
 | `revoked_at` | timestamptz | 撤销后不再可用 |
 
-> **仍需实现的表**：`categories`（分类）、`budgets`（预算）——迁移脚本在 `docs/IMPLEMENTATION_PLAN.md` 的 Phase 2 章节可参考。
-
 ---
 
 ## API 端点
@@ -141,9 +205,33 @@ graph TB
 | `/api/plaid/create-link-token` | POST | 生成 Plaid Link Token |
 | `/api/plaid/exchange-token` | POST | 交换 public_token → access_token，初始化账户 |
 | `/api/plaid/sync-transactions` | POST | 增量拉取 Plaid 交易（基于 cursor） |
+| `/api/plaid/ai-classification-jobs` | GET/POST | 查看最近 AI 分类任务 / 将待刷新 Plaid 交易一次性入队 |
+| `/api/plaid/ai-classification-jobs/process` | POST | 按队列批次处理 AI 分类 |
+| `/api/transactions/[id]/category` | PATCH | 手动修改分类，可选择同步同名交易 |
 | `/api/notion/sync` | POST | 触发 Supabase → Notion 增量同步 |
 | `/api/receipt` | POST | iOS Shortcut 上传截图，Gemini 解析后写入交易 |
 | `/api/settings/api-keys` | GET/POST/DELETE | iOS Shortcut API Key 管理 |
+
+### Plaid 交易分类流程
+
+1. `/api/plaid/sync-transactions` 使用 Plaid `/transactions/sync` 增量拉取交易。
+2. 如果交易已有稳定分类，则保留现有分类。
+3. 如果 AI 分类未完成，则用 Plaid primary/detailed 映射到本地分类作为兜底，并写入 `classification:plaid-fallback` + `classification:ai-pending`。
+4. Transactions 页面可触发 AI Refresh：`/api/plaid/ai-classification-jobs` 将所有待刷新交易入队。
+5. `/api/plaid/ai-classification-jobs/process` 每次最多处理 20 笔，调用 Gemini 3.1 Flash Lite，并受默认 `15 RPM / 250k TPM / 500 RPD` 限制保护。
+6. AI 成功后写入分类、清洗商户名，并将标签切换为 `classification:ai`。
+7. 用户手动点击交易行分类 pill 修改分类时，系统清除自动分类标签；若存在同名交易，页面会询问是否通过 `apply_mode = 'similar'` 批量同步。
+
+### `/api/transactions/[id]/category` 详细
+
+**请求格式**：`application/json`
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `category_id` | string | 目标分类 ID |
+| `apply_mode` | string | `single` 或 `similar`，默认 `single` |
+
+`similar` 模式按当前用户、同一 `source`、标准化后的 `merchant_name || description` 匹配同名交易。
 
 ### `/api/receipt` 详细
 
@@ -158,7 +246,7 @@ graph TB
 
 **处理流程**：
 1. 用 SHA-256 hash 验证 `api_key` → 获取 `user_id`
-2. 调用 Gemini 2.0 Flash Vision API 解析图片
+2. 调用 Gemini 3.1 Flash Lite Vision API 解析图片
 3. 自动创建/复用 `accounts.name = 'iOS Capture'` 手动账户
 4. 写入 `transactions`（`source = 'receipt'`）
 5. 返回解析结果 JSON

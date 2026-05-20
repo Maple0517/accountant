@@ -1,4 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
+import type { CategoryRow } from '../categories-db'
+import { DEFAULT_GEMINI_MODEL } from './config'
 
 export class ReceiptParsingQuotaError extends Error {
   retryAfterSeconds?: number
@@ -40,7 +42,6 @@ const CAPTURE_TYPES = new Set([
   'other',
 ])
 const TRANSACTION_TYPES = new Set(['expense', 'income', 'transfer', 'unknown'])
-const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
 
 const buildReceiptPrompt = (categoriesContext: string) => `You are a personal finance transaction parser. Analyze the image. It may be a paper receipt photo, a payment app screenshot, an online order confirmation, a credit card transaction screen, or a banking transaction screenshot.
 
@@ -91,7 +92,7 @@ export async function parseReceipt(
   imageBase64: string,
   mimeType: string = 'image/jpeg',
   currencyOverride?: string,
-  existingCategories: any[] = []
+  existingCategories: CategoryRow[] = []
 ): Promise<ParsedReceipt> {
   const apiKey = process.env.GEMINI_API_KEY
   const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL
