@@ -219,7 +219,7 @@ export async function syncSingleTransactionIfEnabled(
     .select(
       `
       *,
-      categories ( name ),
+      categories ( name, name_zh, icon ),
       accounts ( name )
     `
     )
@@ -231,10 +231,14 @@ export async function syncSingleTransactionIfEnabled(
     return null
   }
 
+  const category = transaction.categories as any
+  const categoryName = category
+    ? `${category.icon ? category.icon + ' ' : ''}${category.name_zh || category.name}`.trim()
+    : undefined
+
   const mappedTransaction = {
     ...transaction,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    category_name: (transaction.categories as any)?.name || undefined,
+    category_name: categoryName,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     account_name: (transaction.accounts as any)?.name || undefined,
   }

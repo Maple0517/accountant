@@ -15,6 +15,12 @@ export interface ParsedReceipt {
   transaction_type: 'expense' | 'income' | 'transfer' | 'unknown'
   store_name: string
   description: string
+  category?: {
+    name: string
+    name_zh?: string
+    icon?: string
+    type: 'expense' | 'income' | 'transfer'
+  }
   date: string
   items: Array<{
     name: string
@@ -36,7 +42,7 @@ const CAPTURE_TYPES = new Set([
 const TRANSACTION_TYPES = new Set(['expense', 'income', 'transfer', 'unknown'])
 const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
 
-const RECEIPT_PROMPT = `You are a personal finance transaction parser. Analyze the image. It may be a paper receipt photo, a payment app screenshot, an online order confirmation, a credit card transaction screen, or a banking transaction screenshot.
+const buildReceiptPrompt = (categoriesContext: string) => `You are a personal finance transaction parser. Analyze the image. It may be a paper receipt photo, a payment app screenshot, an online order confirmation, a credit card transaction screen, or a banking transaction screenshot.
 
 Extract exactly one transaction if possible and return JSON in this format:
 
@@ -45,6 +51,12 @@ Extract exactly one transaction if possible and return JSON in this format:
   "transaction_type": "expense | income | transfer | unknown",
   "store_name": "merchant, payee, payer, or counterparty name",
   "description": "short human-readable description",
+  "category": {
+    "name": "Short English Name",
+    "name_zh": "Chinese Name",
+    "icon": "Emoji",
+    "type": "expense | income | transfer"
+  },
   "date": "Date in YYYY-MM-DD format",
   "items": [
     {"name": "Item name", "quantity": 1, "price": 10.50}
@@ -56,6 +68,7 @@ Extract exactly one transaction if possible and return JSON in this format:
 }
 
 Rules:
+- Assign a category. Try to use one from the Existing Categories if it fits. If not, create a new one.
 - Classify money paid by the user as "expense".
 - Classify money received by the user as "income".
 - Classify movement between the user's own accounts as "transfer".
@@ -66,7 +79,10 @@ Rules:
 - Ignore account balances, credit limits, reward points, tips that are not part of the final amount, and unrelated UI totals
 - The confidence_score should reflect how confident you are in the extraction (0.0-1.0)
 - If line items are not visible, return an empty items array
-- Return ONLY valid JSON, no markdown or other text`
+- Return ONLY valid JSON, no markdown or other text
+
+Existing Categories:
+${categoriesContext}`
 
 /**
  * Parse a receipt image using Gemini Vision API
@@ -74,7 +90,8 @@ Rules:
 export async function parseReceipt(
   imageBase64: string,
   mimeType: string = 'image/jpeg',
-  currencyOverride?: string
+  currencyOverride?: string,
+  existingCategories: any[] = []
 ): Promise<ParsedReceipt> {
   const apiKey = process.env.GEMINI_API_KEY
   const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL
@@ -85,9 +102,19 @@ export async function parseReceipt(
 
   const genAI = new GoogleGenAI({ apiKey })
 
+  const categoriesContext = JSON.stringify(
+    existingCategories.map((c) => ({
+      name: c.name,
+      name_zh: c.name_zh,
+      icon: c.icon,
+      type: c.type,
+    }))
+  )
+
+  const basePrompt = buildReceiptPrompt(categoriesContext)
   const prompt = currencyOverride
-    ? `${RECEIPT_PROMPT}\n\nIMPORTANT: The user specified the currency is ${currencyOverride}. Use this regardless of what the receipt shows.`
-    : RECEIPT_PROMPT
+    ? `${basePrompt}\n\nIMPORTANT: The user specified the currency is ${currencyOverride}. Use this regardless of what the receipt shows.`
+    : basePrompt
 
   let response
 
