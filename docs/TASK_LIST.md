@@ -50,19 +50,22 @@
 - [ ] AI 辅助分类（Gemini 优化商户名后再推送 Notion）
 - [ ] 自动触发（目前靠手动点击 Force Sync）
 
-## Phase 6: iOS Shortcut + 收据识别（代码实现，数据库未建）
+## Phase 6: iOS Shortcut + 截图/收据识别 ✅（本地迁移已补）
 - [x] `POST /api/receipt` 端点（`src/app/api/receipt/route.ts`）
   - 支持 multipart/form-data（来自 iOS Shortcut）
   - 支持 JSON body（base64 图片）
-  - [ ] ⚠️ **`receipts` 表未在 Supabase 建立**，调用会报数据库错误
-  - [ ] ⚠️ API Key 认证是临时方案（用 user_id 当 key），需替换
-- [x] Gemini Vision 收据解析（`src/lib/gemini/receipt-parser.ts`）
+  - 支持收据照片、支付截图、银行/信用卡交易截图
+  - 无 Plaid 账户时自动创建/复用 `iOS Capture` 手动账户
+  - [x] `receipts` 表补充迁移（`supabase/migrations/002_ios_receipt_api_keys.sql`）
+  - [x] API Key 认证替换为 `ak_...` token + SHA-256 hash 存储
+- [x] Gemini Vision 交易截图解析（`src/lib/gemini/receipt-parser.ts`）
   - 使用 `gemini-2.0-flash` 模型
   - 支持 USD / CNY 自动识别
-- [ ] iOS Shortcut 配置指南（尚未编写）
+- [x] iOS Shortcut 配置指南（`ios-shortcut-guide.md`）
+- [x] `/settings` 页面支持生成、复制、撤销 iOS Shortcut API key
 
-## 尚未建的数据库表
-以下表在原始 Schema 设计里，代码也已引用，但 **Supabase 里还没有执行建表 SQL**：
+## 尚未完成的数据库能力
+以下能力在原始 Schema 设计里，页面或代码仍需继续对接：
 - [ ] `categories` — 自定义分类表
 - [ ] `budgets` — 预算表
-- [ ] `receipts` — 收据记录表（**阻塞 Phase 6 功能**）
+- [x] `receipts` — 收据记录表（Phase 6 迁移已补，远端 Supabase 需执行迁移）

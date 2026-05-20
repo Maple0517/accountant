@@ -5,21 +5,6 @@ import type { Transaction } from '@/types'
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
 
-const NOTION_PROPERTIES = {
-  Name: 'title',
-  Amount: 'number',
-  Currency: 'select',
-  Date: 'date',
-  Category: 'select',
-  Account: 'select',
-  Type: 'select',
-  'Payment Channel': 'select',
-  Notes: 'rich_text',
-  Source: 'select',
-  Tags: 'multi_select',
-  'Transaction ID': 'rich_text',
-} as const
-
 /**
  * Create the Notion database structure for transactions
  */
@@ -207,19 +192,36 @@ async function findNotionPageByTransactionId(
   notionToken?: string
 ): Promise<string | null> {
   try {
-    const notion = getNotionClient(notionToken)
+    const token = notionToken || process.env.NOTION_TOKEN
+    if (!token) throw new Error('No Notion token')
 
-    const response = await notion.databases.query({
-      database_id: databaseId,
-      filter: {
-        property: 'Transaction ID',
-        rich_text: { equals: transactionId },
+    const response = await fetch(
+      `https://api.notion.com/v1/databases/${databaseId}/query`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Notion-Version': '2022-06-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filter: {
+            property: 'Transaction ID',
+            rich_text: { equals: transactionId },
+          },
+          page_size: 1,
+        }),
       },
-      page_size: 1,
-    })
+    )
 
-    if (response.results.length > 0) {
-      return response.results[0].id
+    if (!response.ok) {
+      return null
+    }
+
+    const data: { results?: Array<{ id: string }> } = await response.json()
+
+    if (data.results && data.results.length > 0) {
+      return data.results[0].id
     }
 
     return null

@@ -1,12 +1,18 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { hashApiKey } from '@/lib/api-keys'
 import { parseReceipt } from '@/lib/gemini/receipt-parser'
 
 export const dynamic = 'force-dynamic'
 
+type ReceiptAuth = {
+  userId: string
+}
+
 /**
  * POST /api/receipt
- * Accepts a receipt image (multipart form or base64 JSON) and parses it using Gemini Vision.
+ * Accepts a receipt, payment screenshot, or transaction screenshot and parses it using Gemini Vision.
  * Used by iOS Shortcut and web app.
  *
  * Form data fields:
@@ -29,7 +35,7 @@ export async function POST(request: NextRequest) {
     let mimeType: string = 'image/jpeg'
     let currency: string | undefined
     let notes: string | undefined
-    let userId: string | undefined
+    let auth: ReceiptAuth | undefined
 
     if (contentType.includes('multipart/form-data')) {
       // Handle form data (from iOS Shortcut)
@@ -45,12 +51,12 @@ export async function POST(request: NextRequest) {
 
       // Authenticate via API key or session
       if (apiKey) {
-        userId = await authenticateWithApiKey(apiKey)
+        auth = await authenticateWithApiKey(apiKey)
       } else {
-        userId = await authenticateWithSession()
+        auth = await authenticateWithSession()
       }
 
-      if (!userId) {
+      if (!auth) {
         return Response.json({ error: 'Unauthorized' }, { status: 401 })
       }
 
@@ -72,26 +78,26 @@ export async function POST(request: NextRequest) {
       }
 
       if (body.api_key) {
-        userId = await authenticateWithApiKey(body.api_key)
+        auth = await authenticateWithApiKey(body.api_key)
       } else {
-        userId = await authenticateWithSession()
+        auth = await authenticateWithSession()
       }
 
-      if (!userId) {
+      if (!auth) {
         return Response.json({ error: 'Unauthorized' }, { status: 401 })
       }
     }
 
-    // Parse receipt with Gemini Vision
+    // Parse image with Gemini Vision
     const parsed = await parseReceipt(imageBase64, mimeType, currency)
 
     // Store receipt record
-    const supabase = await createClient()
+    const supabase = createAdminClient()
 
     const { data: receipt, error: receiptError } = await supabase
       .from('receipts')
       .insert({
-        user_id: userId,
+        user_id: auth.userId,
         image_url: `data:${mimeType};base64,${imageBase64.substring(0, 100)}...`, // Store reference, not full image
         parsed_data: parsed,
         status: 'parsed',
@@ -103,60 +109,85 @@ export async function POST(request: NextRequest) {
       console.error('Failed to store receipt:', receiptError)
     }
 
-    // Get user's default account (or first cash account)
-    const { data: accounts } = await supabase
-      .from('accounts')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true })
-      .limit(1)
+    const accountId = await getOrCreateIosCaptureAccount(
+      auth.userId,
+      parsed.currency
+    )
+
+    if (!accountId) {
+      return Response.json(
+        { error: 'Failed to prepare iOS Capture account' },
+        { status: 500 }
+      )
+    }
 
     let transactionId: string | undefined
 
-    if (accounts && accounts.length > 0) {
-      // Auto-create transaction from parsed receipt
-      const { data: transaction, error: txError } = await supabase
-        .from('transactions')
-        .insert({
-          user_id: userId,
-          account_id: accounts[0].id,
-          amount: -Math.abs(parsed.total_amount), // Expenses are negative
-          iso_currency_code: parsed.currency,
-          date: parsed.date,
-          merchant_name: parsed.store_name,
-          description: parsed.store_name,
-          source: 'receipt',
-          notes: notes || undefined,
-        })
-        .select()
-        .single()
+    const signedAmount = toTransactionAmount(
+      parsed.total_amount,
+      parsed.transaction_type
+    )
+    const mergedNotes = [
+      notes,
+      `Captured from ${parsed.capture_type}.`,
+      `Payment method: ${parsed.payment_method || 'unknown'}.`,
+      `AI confidence: ${Math.round(parsed.confidence_score * 100)}%.`,
+    ]
+      .filter(Boolean)
+      .join('\n')
 
-      if (txError) {
-        console.error('Failed to create transaction:', txError)
-      } else if (transaction) {
-        transactionId = transaction.id
+    const { data: transaction, error: txError } = await supabase
+      .from('transactions')
+      .insert({
+        user_id: auth.userId,
+        account_id: accountId,
+        amount: signedAmount,
+        iso_currency_code: parsed.currency,
+        date: parsed.date,
+        merchant_name: parsed.store_name,
+        description: parsed.description || parsed.store_name,
+        source: 'receipt',
+        tags: [parsed.capture_type, parsed.transaction_type].filter(
+          (tag) => tag !== 'unknown'
+        ),
+        notes: mergedNotes || undefined,
+      })
+      .select()
+      .single()
 
-        // Link receipt to transaction
-        if (receipt) {
-          await supabase
-            .from('receipts')
-            .update({
-              transaction_id: transaction.id,
-              status: 'confirmed',
-            })
-            .eq('id', receipt.id)
-        }
+    if (txError) {
+      console.error('Failed to create transaction:', txError)
+      return Response.json(
+        { error: 'Failed to create transaction', details: txError.message },
+        { status: 500 }
+      )
+    } else if (transaction) {
+      transactionId = transaction.id
+
+      // Link receipt to transaction
+      if (receipt) {
+        await supabase
+          .from('receipts')
+          .update({
+            transaction_id: transaction.id,
+            status: 'confirmed',
+          })
+          .eq('id', receipt.id)
       }
     }
 
     return Response.json({
       success: true,
       receipt: {
+        capture_type: parsed.capture_type,
+        transaction_type: parsed.transaction_type,
         store_name: parsed.store_name,
+        description: parsed.description,
         date: parsed.date,
         items: parsed.items,
         total: parsed.total_amount,
         currency: parsed.currency,
+        payment_method: parsed.payment_method,
       },
       confidence: parsed.confidence_score,
       transaction_id: transactionId,
@@ -170,16 +201,70 @@ export async function POST(request: NextRequest) {
   }
 }
 
+async function getOrCreateIosCaptureAccount(
+  userId: string,
+  currency: string
+): Promise<string | undefined> {
+  const supabase = createAdminClient()
+
+  const { data: existingAccount } = await supabase
+    .from('accounts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('is_manual', true)
+    .eq('name', 'iOS Capture')
+    .maybeSingle()
+
+  if (existingAccount?.id) {
+    return existingAccount.id
+  }
+
+  const { data: newAccount, error } = await supabase
+    .from('accounts')
+    .insert({
+      user_id: userId,
+      name: 'iOS Capture',
+      type: 'cash',
+      subtype: 'shortcut',
+      iso_currency_code: currency || 'USD',
+      is_manual: true,
+      current_balance: 0,
+      available_balance: 0,
+    })
+    .select('id')
+    .single()
+
+  if (error) {
+    console.error('Failed to create iOS capture account:', error)
+    return undefined
+  }
+
+  return newAccount?.id
+}
+
+function toTransactionAmount(
+  amount: number,
+  transactionType: 'expense' | 'income' | 'transfer' | 'unknown'
+) {
+  const positiveAmount = Math.abs(amount)
+
+  if (transactionType === 'income') {
+    return -positiveAmount
+  }
+
+  return positiveAmount
+}
+
 /**
  * Authenticate using Supabase session (web app)
  */
-async function authenticateWithSession(): Promise<string | undefined> {
+async function authenticateWithSession(): Promise<ReceiptAuth | undefined> {
   try {
     const supabase = await createClient()
     const {
       data: { user },
     } = await supabase.auth.getUser()
-    return user?.id
+    return user?.id ? { userId: user.id } : undefined
   } catch {
     return undefined
   }
@@ -187,30 +272,33 @@ async function authenticateWithSession(): Promise<string | undefined> {
 
 /**
  * Authenticate using API key (iOS Shortcut)
- * For simplicity, we use the Supabase service role to look up the user by their API key.
- * The API key is stored in the user's profile.
+ * API keys are stored as SHA-256 hashes, so the raw ak_ token is only visible once.
  */
 async function authenticateWithApiKey(
   apiKey: string
-): Promise<string | undefined> {
+): Promise<ReceiptAuth | undefined> {
   try {
-    // For now, use the API key as the user's Supabase access token
-    // In production, you'd want a dedicated API key system
-    const { createClient: createAdminClient } = await import(
-      '@supabase/supabase-js'
-    )
-    const supabase = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    )
+    const normalizedApiKey = apiKey.trim()
+    if (!normalizedApiKey) return undefined
+
+    const supabase = createAdminClient()
+    const keyHash = hashApiKey(normalizedApiKey)
 
     const { data } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', apiKey) // Simple: api_key IS the user_id for now
+      .from('api_keys')
+      .select('id, user_id')
+      .eq('key_hash', keyHash)
+      .is('revoked_at', null)
       .single()
 
-    return data?.id
+    if (!data?.user_id) return undefined
+
+    await supabase
+      .from('api_keys')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', data.id)
+
+    return { userId: data.user_id }
   } catch {
     return undefined
   }

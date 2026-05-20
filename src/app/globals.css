@@ -783,6 +783,83 @@ body {
           font-size: 0.9rem;
           word-break: break-all;
         }
+        .api-key-reveal {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 1rem;
+          margin-bottom: 1.25rem;
+          border: 1px solid rgba(0, 230, 118, 0.2);
+          border-radius: 12px;
+          background: rgba(0, 230, 118, 0.08);
+        }
+        .api-key-reveal > div {
+          min-width: 0;
+          flex: 1;
+        }
+        .api-key-actions {
+          display: flex;
+          align-items: flex-end;
+          gap: 0.75rem;
+          margin-bottom: 1.25rem;
+        }
+        .api-key-name {
+          flex: 1;
+          margin-bottom: 0;
+        }
+        .api-key-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+        .api-key-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          padding: 1rem;
+          border: 1px solid var(--glass-border);
+          border-radius: 12px;
+          background: rgba(255, 255, 255, 0.03);
+        }
+        .api-key-title {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.35rem;
+          font-weight: 600;
+        }
+        .api-key-meta {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.75rem;
+          color: var(--text-muted);
+          font-size: 0.75rem;
+        }
+        .api-key-meta code {
+          color: var(--text-secondary);
+          font-family: var(--font-mono);
+        }
+        .api-key-active {
+          background: rgba(0, 230, 118, 0.15);
+          color: var(--accent-green);
+        }
+        .api-key-revoked {
+          background: rgba(255, 82, 82, 0.15);
+          color: var(--accent-red);
+        }
+        @media (max-width: 640px) {
+          .settings-grid {
+            grid-template-columns: 1fr;
+          }
+          .api-key-actions,
+          .api-key-reveal,
+          .api-key-row {
+            align-items: stretch;
+            flex-direction: column;
+          }
+        }
 
         .form-actions {
           display: flex;
@@ -1315,4 +1392,3 @@ body {
           color: var(--text-muted);
         }
       
-

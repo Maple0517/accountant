@@ -61,7 +61,7 @@ export default async function DashboardPage() {
     { label: 'Total Balance', value: totalBalance, change: 'Updated', trend: 'neutral' },
     { label: 'Monthly Spending', value: monthlySpending, change: 'This Month', trend: 'neutral' },
     { label: 'Monthly Income', value: monthlyIncome, change: 'This Month', trend: 'neutral' },
-    { label: 'Savings Rate', value: Math.max(0, savingsRate).toFixed(1), isPercentage: true, change: 'This Month', trend: 'neutral' },
+    { label: 'Savings Rate', value: Math.max(0, savingsRate), isPercentage: true, change: 'This Month', trend: 'neutral' },
   ]
 
   // Fetch recent transactions
@@ -96,7 +96,7 @@ export default async function DashboardPage() {
     <div className="dashboard">
       <div className="welcome-section">
         <h2>Welcome back! 👋</h2>
-        <p className="text-secondary">Here's your financial overview.</p>
+        <p className="text-secondary">Here&apos;s your financial overview.</p>
       </div>
 
       <div className="stats-grid">
@@ -105,7 +105,7 @@ export default async function DashboardPage() {
             <span className="stat-label">{stat.label}</span>
             <div className="stat-value-row">
               <span className="stat-value">
-                {stat.isPercentage ? `${stat.value}%` : formatCurrency(stat.value)}
+                {stat.isPercentage ? `${stat.value.toFixed(1)}%` : formatCurrency(stat.value)}
               </span>
               <span className={`stat-change ${stat.trend}`}>
                 {stat.change}

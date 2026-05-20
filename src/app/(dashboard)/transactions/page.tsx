@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/currency'
 import type { Transaction } from '@/types'
@@ -24,49 +24,55 @@ export default function TransactionsPage() {
     dateTo: '',
   })
 
-  const supabase = createClient()
-
-  const fetchTransactions = useCallback(async () => {
-    setLoading(true)
-
-    let query = supabase
-      .from('transactions')
-      .select(`*, categories ( name, icon, color ), accounts ( name, type )`)
-      .order('date', { ascending: false })
-      .limit(200)
-
-    if (filters.search) {
-      query = query.or(
-        `merchant_name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
-      )
-    }
-    if (filters.source !== 'all') {
-      query = query.eq('source', filters.source)
-    }
-    if (filters.currency !== 'all') {
-      query = query.eq('iso_currency_code', filters.currency)
-    }
-    if (filters.dateFrom) {
-      query = query.gte('date', filters.dateFrom)
-    }
-    if (filters.dateTo) {
-      query = query.lte('date', filters.dateTo)
-    }
-
-    const { data, error } = await query
-
-    if (error) {
-      console.error('Error fetching transactions:', error)
-    } else {
-      setTransactions(data || [])
-    }
-
-    setLoading(false)
-  }, [supabase, filters])
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
+    let isMounted = true
+
+    async function fetchTransactions() {
+      let query = supabase
+        .from('transactions')
+        .select(`*, categories ( name, icon, color ), accounts ( name, type )`)
+        .order('date', { ascending: false })
+        .limit(200)
+
+      if (filters.search) {
+        query = query.or(
+          `merchant_name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
+        )
+      }
+      if (filters.source !== 'all') {
+        query = query.eq('source', filters.source)
+      }
+      if (filters.currency !== 'all') {
+        query = query.eq('iso_currency_code', filters.currency)
+      }
+      if (filters.dateFrom) {
+        query = query.gte('date', filters.dateFrom)
+      }
+      if (filters.dateTo) {
+        query = query.lte('date', filters.dateTo)
+      }
+
+      const { data, error } = await query
+
+      if (!isMounted) return
+
+      if (error) {
+        console.error('Error fetching transactions:', error)
+      } else {
+        setTransactions(data || [])
+      }
+
+      setLoading(false)
+    }
+
     fetchTransactions()
-  }, [fetchTransactions])
+
+    return () => {
+      isMounted = false
+    }
+  }, [supabase, filters])
 
   // Group transactions by date
   const groupedTransactions = transactions.reduce(
@@ -192,9 +198,9 @@ export default function TransactionsPage() {
                 <div className="group-header">
                   <span className="group-date">{formatDate(date)}</span>
                   <span
-                    className={`group-total ${dayTotal >= 0 ? 'income' : 'expense'}`}
+                    className={`group-total ${dayTotal <= 0 ? 'income' : 'expense'}`}
                   >
-                    {formatCurrency(dayTotal, txs[0]?.iso_currency_code || 'USD')}
+                    {formatCurrency(-dayTotal, txs[0]?.iso_currency_code || 'USD')}
                   </span>
                 </div>
                 <div className="card transaction-list-card">
@@ -216,7 +222,8 @@ export default function TransactionsPage() {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function TransactionItem({ transaction: tx }: { transaction: any }) {
   const amount = Number(tx.amount)
-  const isIncome = amount > 0
+  const isIncome = amount < 0
+  const displayAmount = -amount
   const categoryIcon = tx.categories?.icon || '📦'
   const categoryName = tx.categories?.name || 'Uncategorized'
   const merchantName = tx.merchant_name || tx.description
@@ -235,7 +242,7 @@ function TransactionItem({ transaction: tx }: { transaction: any }) {
         </span>
       </div>
       <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
-        {formatCurrency(amount, tx.iso_currency_code || 'USD')}
+        {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
       </div>
 
       

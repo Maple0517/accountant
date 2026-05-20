@@ -19,7 +19,8 @@
 | **Auth 方式** | Email/Password（Supabase Auth） |
 | **Bank Sync** | Plaid API — ⚠️ **当前运行在 `production` 环境** |
 | **Notion Sync** | Notion REST API v1（2022-06-28）— 绕过官方 SDK，见下方 |
-| **收据解析** | Google Gemini 2.0 Flash（Vision 多模态） |
+| **iOS 截图/收据解析** | Google Gemini 2.0 Flash（Vision 多模态） |
+| **iOS Shortcut API Key** | `ak_...` 随机 token；数据库只保存 SHA-256 hash |
 
 ---
 
@@ -51,8 +52,10 @@
 │   │       │   └── sync-transactions/route.ts
 │   │       ├── notion/
 │   │       │   └── sync/route.ts
-│   │       └── receipt/
-│   │           └── route.ts       # iOS Shortcut 端点（已实现）
+│   │       ├── receipt/
+│   │       │   └── route.ts       # iOS Shortcut 端点（已实现）
+│   │       └── settings/
+│   │           └── api-keys/route.ts # iOS Shortcut API key 管理
 │   ├── components/
 │   │   ├── layout/                # Sidebar、Header 等布局组件
 │   │   └── accounts/              # Plaid Link 连接银行的组件
@@ -82,8 +85,8 @@
 
 ## 🗄️ 实际数据库 Schema（Supabase）
 
-> ⚠️ **设计稿规划了 7 张表，目前 Supabase 里实际只建了以下 4 张。**  
-> `categories`、`budgets`、`receipts` 三张表**尚未创建**（即使代码已经引用了 `receipts` 表）。
+> ⚠️ **远端 Supabase 的真实状态可能落后于本地迁移。**
+> 初始部署时只确认了核心 4 张表；`supabase/migrations/002_ios_receipt_api_keys.sql` 已补上 iOS 收据需要的 `receipts` 和 `api_keys`，但仍需在远端执行。
 
 最快了解数据模型的方式：阅读 [`src/types/index.ts`](./src/types/index.ts)。
 
@@ -142,17 +145,37 @@
 | `tags` | text[] | |
 | `notes` | text | |
 
-> **尚未建的表**：`categories`（分类）、`budgets`（预算）、`receipts`（收据记录）  
-> ⚠️ `api/receipt/route.ts` 代码里会往 `receipts` 表写数据，**但这张表不存在**，会报错。
+### `receipts` — iOS Shortcut 上传记录
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK) | |
+| `image_url` | text | 当前只保存 data URL 片段/引用，不保存完整图片 |
+| `parsed_data` | jsonb | Gemini 解析结果 |
+| `status` | text | 'pending' / 'parsed' / 'confirmed' / 'error' |
+| `transaction_id` | uuid (FK → transactions) | 自动生成交易后回写 |
+
+### `api_keys` — iOS Shortcut API Key
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK) | |
+| `name` | text | 用户可读名称 |
+| `key_prefix` | text | UI 展示用前缀 |
+| `key_hash` | text | `ak_...` token 的 SHA-256 hash |
+| `last_used_at` | timestamptz | 成功调用 `/api/receipt` 时更新 |
+| `revoked_at` | timestamptz | 撤销后不再可用 |
+
+> **仍需确认/补齐的表**：`categories`（分类）、`budgets`（预算）。
 
 ---
 
 ## ⚠️ Critical Quirks & Workarounds（必读）
 
 ### 1. Notion SDK Bug — `databases.create` 会丢失所有列定义
-**问题**：`@notionhq/client` 的 `notion.databases.create()` 会静默地从请求体中剥离 `properties`，导致在 Notion 里建出一张只有 "Name" 一列的空白表。  
-**报错现象**：`"Amount is not a property that exists. Date is not a property that exists..."`  
-**解决方案**：`src/lib/notion/sync.ts` 中的 `createTransactionDatabase()` **完全绕过 SDK**，改用原生 `fetch` 直接 POST 到 `https://api.notion.com/v1/databases`。  
+**问题**：`@notionhq/client` 的 `notion.databases.create()` 会静默地从请求体中剥离 `properties`，导致在 Notion 里建出一张只有 "Name" 一列的空白表。
+**报错现象**：`"Amount is not a property that exists. Date is not a property that exists..."`
+**解决方案**：`src/lib/notion/sync.ts` 中的 `createTransactionDatabase()` **完全绕过 SDK**，改用原生 `fetch` 直接 POST 到 `https://api.notion.com/v1/databases`。
 **❌ 禁止**：不要把这个函数改回使用 `notion.databases.create()`，除非确认 Notion 官方已修复。
 
 ### 2. Notion 同步是单向增量的
@@ -167,24 +190,26 @@
 - **⚠️ 不要随意清空 `plaid_items` 表**：已连接的真实银行（如 US Bank）的 production `access_token` 存在这里，删了需要用户重新走 Plaid Link 授权流程
 
 ### 4. Plaid Production — 大银行 OAuth 限制
-**背景**：已于 2026-05-20 从 `sandbox` 切换为 `production`。  
-**问题**：Chase、Amex、Capital One 等大银行要求在 Plaid Dashboard 额外注册 OAuth 应用，未注册的话 Plaid Link 在手机验证码步骤后会弹出 "Something went wrong: Internal error occurred"。  
+**背景**：已于 2026-05-20 从 `sandbox` 切换为 `production`。
+**问题**：Chase、Amex、Capital One 等大银行要求在 Plaid Dashboard 额外注册 OAuth 应用，未注册的话 Plaid Link 在手机验证码步骤后会弹出 "Something went wrong: Internal error occurred"。
 **结论**：这是 Plaid Dashboard 配置问题，不是代码 bug。US Bank 可正常连接。
 
 ### 5. Notion Token 存在数据库里，不是环境变量
-Notion Token 由**用户在 `/settings` 页面手动填写**，存入 Supabase `profiles.notion_token`。  
+Notion Token 由**用户在 `/settings` 页面手动填写**，存入 Supabase `profiles.notion_token`。
 后端调用 Notion API 前，会先从数据库读取当前用户的 token。`NOTION_TOKEN` **不在** `.env.local` 里。
 
 ### 6. middleware.ts 弃用警告
-服务器日志会持续出现：  
-`⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.`  
+服务器日志会持续出现：
+`⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.`
 这是因为 `src/middleware.ts` 在这个 Next.js 版本里应该改名为 `src/proxy.ts`。功能正常，但警告一直存在。
 
-### 7. Receipt API 实现了但依赖表未建
-`src/app/api/receipt/route.ts` 和 `src/lib/gemini/receipt-parser.ts` 代码已完整实现，但 `receipts` 数据库表**尚未创建**。调用该 API 会报 Supabase 数据库错误。需先在 Supabase 里建表。
+### 7. iOS Capture / Receipt API 依赖的迁移
+`src/app/api/receipt/route.ts` 和 `src/lib/gemini/receipt-parser.ts` 代码已实现。Phase 6 的补充迁移在 `supabase/migrations/002_ios_receipt_api_keys.sql`，包含 `receipts` 表和 `api_keys` 表。若远端 Supabase 还没运行这条迁移，iOS Shortcut 仍会报数据库错误。
 
-### 8. iOS Shortcut 认证方案是临时方案（安全隐患）
-`receipt/route.ts` 里 `authenticateWithApiKey()` 的实现非常简化——它直接把用户传入的 `api_key` 当作 `user_id` 来查找用户。这是一个临时方案，不够安全，需要将来替换为真正的 API Key 系统。
+该 API 现在不依赖 Plaid：识别到收据照片、支付截图、银行/信用卡交易截图后，会自动创建/复用一个 `accounts.name = 'iOS Capture'` 的手动 cash 账户，并向 `transactions` 插入一笔 `source = 'receipt'` 的记录。
+
+### 8. iOS Shortcut API Key
+`/settings` 页面可以生成、复制、撤销 `ak_...` API key。完整 key 只显示一次，数据库 `api_keys.key_hash` 只保存 SHA-256 hash；`/api/receipt` 会用 service role 查 hash 并更新 `last_used_at`。不要恢复成“user_id 当 key”的旧方案。
 
 ---
 
@@ -227,11 +252,10 @@ npm run dev
 |---|---|---|---|
 | 🔴 | Bug | Sidebar CSS 问题 | 侧边栏在某些宽度下有对齐问题 |
 | 🔴 | Bug | Dashboard 显示 placeholder | 部分统计卡片未接入真实数据 |
-| 🔴 | Bug | `receipts` 表未建 | `/api/receipt` 调用会报数据库错误 |
+| 🔴 | Ops | 运行 Phase 6 迁移 | 远端 Supabase 需执行 `002_ios_receipt_api_keys.sql` |
 | 🔴 | Bug | `middleware.ts` 弃用警告 | 需改名为 `proxy.ts` |
 | 🟡 | Feature | AI 智能分类 | 用 Gemini 优化 Plaid 商户名和分类后再推 Notion |
 | 🟡 | Feature | Plaid Webhooks | 当前需手动点击触发同步，应改为 webhook 实时推送 |
-| 🟡 | Security | iOS Shortcut API Key | 认证方案过于简单，需替换为真正的 API Key 系统 |
 | 🟢 | Feature | Budget 预算逻辑 | 页面已有 UI，但无真实数据逻辑 |
 | 🟢 | Feature | Analytics 图表完善 | 图表需对接真实交易数据 |
 | 🟢 | Feature | Chase / Amex OAuth 注册 | 在 Plaid Dashboard 申请以解锁大银行连接 |
@@ -247,8 +271,9 @@ npm run dev
 - ✅ Accounts 账户管理页
 - ✅ Analytics 图表页（基础版）
 - ✅ Settings 页面（Notion Token 配置入口）
+- ✅ Settings 页面生成/撤销 iOS Shortcut `ak_...` API key
 - ✅ Notion 数据库自动创建（使用原生 fetch 绕过 SDK bug）
 - ✅ Notion 增量同步（Force Sync 按钮）
-- ✅ Gemini Vision 收据解析 API（代码完整，但依赖表未建）
+- ✅ Gemini Vision iOS 截图/收据解析 API（依赖 `002_ios_receipt_api_keys.sql`）
 
 Good luck! 🚀

@@ -1,46 +1,80 @@
-# Accountant App - iOS Shortcut Setup Guide
+# Accountant App - iOS Shortcut Capture Guide
 
-This guide explains how to set up the Apple Shortcut on your iPhone to scan receipts and automatically sync them to your Accountant app via Gemini Vision API.
+This guide sets up an Apple Shortcut that sends a receipt photo, payment screenshot, or banking transaction screenshot to Accountant. Gemini Vision extracts the transaction and the app saves it automatically.
 
 ## Prerequisites
-1. You have a deployed version of the Accountant App (e.g. on Vercel).
-2. You have created an account and retrieved your **API Key** (User ID) from the Settings page.
+1. You have a deployed Accountant App URL, for example `https://your-app-domain.com`.
+2. You have created an account in the web app.
+3. In the web app, open **Settings -> iOS Shortcut Capture** and click **Generate Key**. Copy the `ak_...` key immediately; it is only shown once.
 
-## Creating the Shortcut
+## What The App Does
+When the Shortcut posts an image to `/api/receipt`, the app will:
+1. Authenticate the request with your `ak_...` API key.
+2. Use Gemini Vision to identify the merchant/counterparty, amount, currency, date, payment method, and whether it is an expense, income, or transfer.
+3. Create or reuse a manual account named **iOS Capture**.
+4. Insert a transaction into the app with `source = receipt` and useful tags like `payment_screenshot` or `expense`.
 
-Open the **Shortcuts** app on your iPhone and create a new Shortcut.
+This workflow does not require Plaid.
 
-### Step 1: Take Photo
-1. Add the **Take Photo** action.
-2. Ensure it takes 1 photo with the Back camera.
+## Recommended Shortcut: Share Screenshot Or Photo
+This is the most reliable iOS flow because it works with screenshots from any app.
 
-### Step 2: Get File Size (Optional but recommended)
-You can optionally compress the image if it's too large to save bandwidth.
-- Add **Resize Image** to resize the photo to a max width of 1024.
+1. Open **Shortcuts** and create a new Shortcut named `Capture Transaction`.
+2. Open the Shortcut details and enable **Show in Share Sheet**.
+3. Set accepted input types to **Images**.
+4. Add **Resize Image** and resize the Shortcut Input to a max width of `1280`.
+5. Add a **Text** action with your Capture Endpoint:
+   `https://your-app-domain.com/api/receipt`
+6. Add **Get Contents of URL**:
+   - URL: the Text action from step 5
+   - Method: `POST`
+   - Request Body: `Form`
+7. Add these form fields:
+   - Type: `File`, Key: `image`, Value: the resized image
+   - Type: `Text`, Key: `api_key`, Value: your `ak_...` key
+   - Type: `Text`, Key: `currency`, Value: `USD` or `CNY`
+   - Type: `Text`, Key: `notes`, Value: optional
+8. Add **Show Result** and show the response from **Get Contents of URL**.
 
-### Step 3: Get API Endpoint URL
-1. Add a **Text** action.
-2. Enter your app's endpoint URL: `https://your-app-domain.com/api/receipt`
+Usage:
+1. Take a normal iPhone screenshot of a receipt, Apple Pay screen, bank transaction, WeChat/Alipay payment, or card charge.
+2. Open the screenshot, tap Share, and run `Capture Transaction`.
+3. The transaction should appear in Accountant under the **iOS Capture** account.
 
-### Step 4: Get Contents of URL
-1. Add the **Get Contents of URL** action.
-2. Set the URL to the Text from Step 3.
-3. Click "Show More" and configure as follows:
-   - **Method**: `POST`
-   - **Headers**: Leave empty
-   - **Request Body**: `Form`
-4. Add the following new fields to the Request Body:
-   - Type: `File`, Key: `image`, Value: `[Resized Image or Photo]`
-   - Type: `Text`, Key: `api_key`, Value: `[Paste your API Key from Settings]`
-   - Type: `Text`, Key: `currency`, Value: `USD` (or `CNY` based on preference)
+## Optional Shortcut: Take Photo Receipt
+Use this when you want a home-screen button for paper receipts.
 
-### Step 5: Show Result
-1. Add the **Show Result** action.
-2. Set it to show the `Contents of URL`. This will display the parsed receipt data (JSON) so you know it succeeded!
+1. Add **Take Photo**.
+2. Add **Resize Image** to max width `1280`.
+3. Use the same **Get Contents of URL** setup above.
 
-## Usage
-Add the Shortcut to your Home Screen. Now, whenever you have a receipt:
-1. Tap the Shortcut.
-2. Snap a photo of the receipt.
-3. The Shortcut securely sends it to your `/api/receipt` endpoint.
-4. Gemini Vision parses it, stores the receipt, creates the transaction in Supabase, and logs it!
+## Optional Shortcut: One-Tap Screenshot
+Some iOS versions expose a **Take Screenshot** action in Shortcuts. If it is available on your phone, use it as the first action, then feed that image into the same Resize Image and Get Contents of URL steps.
+
+If that action is unavailable, use the Share Sheet workflow above. It is still only a few taps and is more reliable across apps.
+
+## API Response
+A successful response looks like:
+
+```json
+{
+  "success": true,
+  "receipt": {
+    "capture_type": "payment_screenshot",
+    "transaction_type": "expense",
+    "store_name": "Starbucks",
+    "description": "Coffee purchase",
+    "date": "2026-05-20",
+    "total": 6.45,
+    "currency": "USD",
+    "payment_method": "Apple Pay"
+  },
+  "confidence": 0.92,
+  "transaction_id": "..."
+}
+```
+
+## Managing API Keys
+- API keys are stored as hashes, so the app cannot show an existing key again.
+- If a key is lost, generate a new one in Settings and update the Shortcut.
+- If a phone or Shortcut is no longer trusted, revoke its key in Settings.

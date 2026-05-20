@@ -1,18 +1,23 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Profile } from '@/types'
+import type { Profile, ReceiptApiKey } from '@/types'
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [apiKeyBusy, setApiKeyBusy] = useState(false)
+  const [apiKeys, setApiKeys] = useState<ReceiptApiKey[]>([])
+  const [apiKeyMigrationRequired, setApiKeyMigrationRequired] = useState(false)
+  const [apiKeyName, setApiKeyName] = useState('iOS Shortcut')
+  const [generatedApiKey, setGeneratedApiKey] = useState('')
+  const [receiptEndpoint, setReceiptEndpoint] = useState('')
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [parentPageId, setParentPageId] = useState('')
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     async function loadProfile() {
@@ -28,9 +33,24 @@ export default function SettingsPage() {
           setProfile(data)
         }
       }
-      setLoading(false)
     }
+    async function loadInitialApiKeys() {
+      const response = await fetch('/api/settings/api-keys')
+      const data = await response.json()
+
+      if (response.ok) {
+        setApiKeys(data.api_keys || [])
+        setApiKeyMigrationRequired(Boolean(data.migration_required))
+      }
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setReceiptEndpoint(`${window.location.origin}/api/receipt`)
+    })
     loadProfile()
+    loadInitialApiKeys()
+
+    return () => window.cancelAnimationFrame(frameId)
   }, [supabase])
 
   const handleSave = async (e: React.FormEvent) => {
@@ -89,20 +109,91 @@ export default function SettingsPage() {
           .single()
         if (newProfile) setProfile(newProfile)
       }
-    } catch (e) {
+    } catch {
       setMessage({ text: 'An unexpected error occurred.', type: 'error' })
     } finally {
       setSyncing(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="settings-page">
-        <h1>Settings</h1>
-        <div className="card skeleton" style={{ height: '400px' }}></div>
-      </div>
-    )
+  const handleCreateApiKey = async () => {
+    setApiKeyBusy(true)
+    setMessage(null)
+
+    try {
+      const response = await fetch('/api/settings/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: apiKeyName }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        setMessage({ text: data.error || 'Failed to create API key.', type: 'error' })
+        return
+      }
+
+      setGeneratedApiKey(data.token)
+      setApiKeys((keys) => [data.api_key, ...keys])
+      setMessage({ text: 'API key created. Copy it now; it will only be shown once.', type: 'success' })
+    } catch {
+      setMessage({ text: 'Failed to create API key.', type: 'error' })
+    } finally {
+      setApiKeyBusy(false)
+    }
+  }
+
+  const handleRevokeApiKey = async (id: string) => {
+    setApiKeyBusy(true)
+    setMessage(null)
+
+    try {
+      const response = await fetch('/api/settings/api-keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        setMessage({ text: data.error || 'Failed to revoke API key.', type: 'error' })
+        return
+      }
+
+      setApiKeys((keys) =>
+        keys.map((key) =>
+          key.id === id ? { ...key, revoked_at: new Date().toISOString() } : key
+        )
+      )
+      setMessage({ text: 'API key revoked.', type: 'success' })
+    } catch {
+      setMessage({ text: 'Failed to revoke API key.', type: 'error' })
+    } finally {
+      setApiKeyBusy(false)
+    }
+  }
+
+  const handleCopy = async (text: string, label: string) => {
+    if (!text) return
+
+    try {
+      await navigator.clipboard.writeText(text)
+      setMessage({ text: `${label} copied.`, type: 'success' })
+    } catch {
+      setMessage({ text: `Could not copy ${label.toLowerCase()}.`, type: 'error' })
+    }
+  }
+
+  const formatTimestamp = (value?: string | null) => {
+    if (!value) return 'Never'
+
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(value))
   }
 
   return (
@@ -216,19 +307,107 @@ export default function SettingsPage() {
         </div>
 
         <div className="card settings-card full-width">
-          <h2>iOS Shortcut & Receipt API</h2>
+          <h2>iOS Shortcut Capture</h2>
           <p className="text-secondary mb-4 text-sm">
-            Use the Apple Shortcuts app to scan receipts via the Gemini Vision API.
+            Capture receipts, payment screenshots, or transaction screens and turn them into app transactions.
           </p>
           
           <div className="input-group">
-            <label className="input-label">Your API Key (User ID)</label>
+            <label className="input-label">Capture Endpoint</label>
             <div className="code-block">
-              <code>{profile?.id || 'Loading...'}</code>
+              <code>{receiptEndpoint || '/api/receipt'}</code>
             </div>
             <p className="text-muted text-xs mt-2">
-              Use this key in your iOS Shortcut to authenticate with the /api/receipt endpoint.
+              Put this URL in the Shortcut “Get Contents of URL” action.
             </p>
+          </div>
+
+          {generatedApiKey && (
+            <div className="api-key-reveal">
+              <div>
+                <label className="input-label">New API Key</label>
+                <div className="code-block">
+                  <code>{generatedApiKey}</code>
+                </div>
+                <p className="text-muted text-xs mt-2">
+                  Copy this key now. It is stored as a hash and cannot be shown again.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => handleCopy(generatedApiKey, 'API key')}
+              >
+                Copy Key
+              </button>
+            </div>
+          )}
+
+          {apiKeyMigrationRequired && (
+            <div className="alert alert-error mb-4">
+              API key storage is not ready. Run <code>supabase/migrations/002_ios_receipt_api_keys.sql</code> in Supabase before generating Shortcut keys.
+            </div>
+          )}
+
+          <div className="api-key-actions">
+            <div className="input-group api-key-name">
+              <label className="input-label">Key Name</label>
+              <input
+                type="text"
+                className="input"
+                value={apiKeyName}
+                onChange={(e) => setApiKeyName(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleCreateApiKey}
+              disabled={apiKeyBusy || apiKeyMigrationRequired}
+            >
+              {apiKeyBusy ? 'Working...' : 'Generate Key'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => handleCopy(receiptEndpoint, 'Endpoint')}
+            >
+              Copy Endpoint
+            </button>
+          </div>
+
+          <div className="api-key-list">
+            {apiKeys.length === 0 ? (
+              <p className="text-muted text-sm">No API keys yet.</p>
+            ) : (
+              apiKeys.map((key) => (
+                <div key={key.id} className="api-key-row">
+                  <div>
+                    <div className="api-key-title">
+                      <span>{key.name}</span>
+                      <span className={key.revoked_at ? 'badge api-key-revoked' : 'badge api-key-active'}>
+                        {key.revoked_at ? 'Revoked' : 'Active'}
+                      </span>
+                    </div>
+                    <div className="api-key-meta">
+                      <code>{key.key_prefix}...</code>
+                      <span>Created {formatTimestamp(key.created_at)}</span>
+                      <span>Last used {formatTimestamp(key.last_used_at)}</span>
+                    </div>
+                  </div>
+                  {!key.revoked_at && (
+                    <button
+                      type="button"
+                      className="btn btn-danger"
+                      onClick={() => handleRevokeApiKey(key.id)}
+                      disabled={apiKeyBusy}
+                    >
+                      Revoke
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </div>
 
