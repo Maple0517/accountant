@@ -2,7 +2,10 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { hashApiKey } from '@/lib/api-keys'
-import { parseReceipt } from '@/lib/gemini/receipt-parser'
+import {
+  parseReceipt,
+  ReceiptParsingQuotaError,
+} from '@/lib/gemini/receipt-parser'
 
 export const dynamic = 'force-dynamic'
 
@@ -194,6 +197,25 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Receipt processing error:', error)
+
+    if (error instanceof ReceiptParsingQuotaError) {
+      const retryAfterSeconds = error.retryAfterSeconds ?? 30
+
+      return Response.json(
+        {
+          error: 'AI parsing is temporarily busy',
+          details: `Gemini quota is temporarily exhausted. Please try again in about ${retryAfterSeconds} seconds.`,
+          retry_after_seconds: retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(retryAfterSeconds),
+          },
+        }
+      )
+    }
+
     return Response.json(
       { error: 'Failed to process receipt', details: String(error) },
       { status: 500 }

@@ -1,60 +1,126 @@
-# Accountant App - iOS Shortcut Capture Guide
+# Accountant App - iOS Shortcut 中文使用说明
 
-This guide sets up an Apple Shortcut that sends a receipt photo, payment screenshot, or banking transaction screenshot to Accountant. Gemini Vision extracts the transaction and the app saves it automatically.
+这份说明教你在 iPhone 上创建一个 Apple 快捷指令，把收据照片、支付截图、银行卡交易截图发送到 Accountant。Gemini 会自动识别交易信息，应用会把这笔记录直接存进你的账本。
 
-## Prerequisites
-1. You have a deployed Accountant App URL, for example `https://your-app-domain.com`.
-2. You have created an account in the web app.
-3. In the web app, open **Settings -> iOS Shortcut Capture** and click **Generate Key**. Copy the `ak_...` key immediately; it is only shown once.
+## 你现在需要准备的东西
+1. 你的 Accountant 公网地址已经可用：`https://accountant-rose.vercel.app`
+2. 你已经能在网页里登录自己的账号。
+3. 打开网页里的 **Settings -> iOS Shortcut Capture**。
+4. 点击 **Generate Key** 生成一个 `ak_...` 开头的 API Key。
+5. 这个 Key 只会显示一次，生成后请立刻复制并保存，稍后要贴到快捷指令里。
 
-## What The App Does
-When the Shortcut posts an image to `/api/receipt`, the app will:
-1. Authenticate the request with your `ak_...` API key.
-2. Use Gemini Vision to identify the merchant/counterparty, amount, currency, date, payment method, and whether it is an expense, income, or transfer.
-3. Create or reuse a manual account named **iOS Capture**.
-4. Insert a transaction into the app with `source = receipt` and useful tags like `payment_screenshot` or `expense`.
+## 这个功能会做什么
+当快捷指令把图片发送到 `/api/receipt` 时，应用会自动：
+1. 用你的 `ak_...` API Key 验证请求。
+2. 用 Gemini Vision 识别商户、金额、币种、日期、支付方式，以及这笔交易是支出、收入还是转账。
+3. 自动创建或复用一个名为 **iOS Capture** 的手动账户。
+4. 把交易写进应用，`source = receipt`，并附带一些识别标签，比如 `payment_screenshot`、`expense`。
 
-This workflow does not require Plaid.
+这个流程不依赖 Plaid，所以你现在可以先完整用起来。
 
-## Recommended Shortcut: Share Screenshot Or Photo
-This is the most reliable iOS flow because it works with screenshots from any app.
+## 推荐方式：从分享面板发送截图或照片
+这是最稳的 iPhone 用法，因为几乎任何 App 里的截图都能直接分享进快捷指令。
 
-1. Open **Shortcuts** and create a new Shortcut named `Capture Transaction`.
-2. Open the Shortcut details and enable **Show in Share Sheet**.
-3. Set accepted input types to **Images**.
-4. Add **Resize Image** and resize the Shortcut Input to a max width of `1280`.
-5. Add a **Text** action with your Capture Endpoint:
-   `https://your-app-domain.com/api/receipt`
-6. Add **Get Contents of URL**:
-   - URL: the Text action from step 5
-   - Method: `POST`
-   - Request Body: `Form`
-7. Add these form fields:
-   - Type: `File`, Key: `image`, Value: the resized image
-   - Type: `Text`, Key: `api_key`, Value: your `ak_...` key
-   - Type: `Text`, Key: `currency`, Value: `USD` or `CNY`
-   - Type: `Text`, Key: `notes`, Value: optional
-8. Add **Show Result** and show the response from **Get Contents of URL**.
+### 第一步：创建快捷指令
+1. 打开 iPhone 上的 **快捷指令** App。
+2. 点右上角 `+` 新建快捷指令。
+3. 名字建议改成：`记一笔交易`
 
-Usage:
-1. Take a normal iPhone screenshot of a receipt, Apple Pay screen, bank transaction, WeChat/Alipay payment, or card charge.
-2. Open the screenshot, tap Share, and run `Capture Transaction`.
-3. The transaction should appear in Accountant under the **iOS Capture** account.
+### 第二步：打开分享面板支持
+1. 点快捷指令右上角下拉按钮，进入详情设置。
+2. 打开 **在共享表单中显示**。
+3. 在可接受的输入类型里，只保留 **图像**。
 
-## Optional Shortcut: Take Photo Receipt
-Use this when you want a home-screen button for paper receipts.
+### 第三步：添加动作
+按下面顺序添加动作：
 
-1. Add **Take Photo**.
-2. Add **Resize Image** to max width `1280`.
-3. Use the same **Get Contents of URL** setup above.
+#### 动作 1：调整图像大小
+添加 **调整图像大小**：
+- 输入：快捷指令输入
+- 宽度建议设成 `1280`
+- 高度让系统自动保持比例
 
-## Optional Shortcut: One-Tap Screenshot
-Some iOS versions expose a **Take Screenshot** action in Shortcuts. If it is available on your phone, use it as the first action, then feed that image into the same Resize Image and Get Contents of URL steps.
+这样能减小上传体积，也更稳定。
 
-If that action is unavailable, use the Share Sheet workflow above. It is still only a few taps and is more reliable across apps.
+#### 动作 2：文本
+添加 **文本** 动作，内容填：
 
-## API Response
-A successful response looks like:
+```text
+https://accountant-rose.vercel.app/api/receipt
+```
+
+这是上传接口地址。
+
+#### 动作 3：获取 URL 内容
+添加 **获取 URL 内容**，按下面设置：
+- URL：选择上一步的“文本”输出
+- 方法：`POST`
+- 请求正文：`表单`
+
+然后添加这些表单字段：
+
+1. `image`
+- 类型：`文件`
+- 值：上一步调整后的图片
+
+2. `api_key`
+- 类型：`文本`
+- 值：你刚才生成的 `ak_...` Key
+
+3. `currency`
+- 类型：`文本`
+- 值：你常用的币种，比如：
+  - `CNY`
+  - `USD`
+
+4. `notes`
+- 类型：`文本`
+- 值：可选，可以先留空
+
+#### 动作 4：显示结果
+添加 **显示结果**，内容选择“获取 URL 内容”的返回结果。
+
+这样跑完后，你可以直接看到接口返回的识别结果。
+
+## 手机上怎么实际使用
+你以后记账时，流程是这样的：
+
+1. 正常截图
+- 商家小票
+- Apple Pay 成功页
+- 微信支付截图
+- 支付宝截图
+- 银行交易详情页
+- 信用卡扣款记录
+
+2. 打开这张截图
+3. 点 **分享**
+4. 选择你刚建的快捷指令：`记一笔交易`
+5. 等几秒钟
+6. 如果返回成功，打开 Accountant，就能在 **iOS Capture** 账户下看到这笔交易
+
+## 可选方式一：拍纸质小票
+如果你想做一个桌面按钮，专门拍收据，也可以。
+
+快捷指令前面改成这样：
+1. 添加 **拍照**
+2. 再接 **调整图像大小**，宽度 `1280`
+3. 后面的 **获取 URL 内容** 完全照上面一样配置
+
+这样你拍完就能直接上传。
+
+## 可选方式二：一键截图后上传
+有些 iOS 版本里，快捷指令支持 **截取屏幕截图** 动作。
+
+如果你的手机里有这个动作，可以这样做：
+1. 第一项动作用 **截取屏幕截图**
+2. 第二项接 **调整图像大小**
+3. 然后继续接上面的上传动作
+
+如果你的手机没有这个动作，就继续用“截图后从分享面板发送”的方案。那个方案兼容性最好，也最稳定。
+
+## 成功返回示例
+成功时返回内容大概像这样：
 
 ```json
 {
@@ -74,7 +140,15 @@ A successful response looks like:
 }
 ```
 
-## Managing API Keys
-- API keys are stored as hashes, so the app cannot show an existing key again.
-- If a key is lost, generate a new one in Settings and update the Shortcut.
-- If a phone or Shortcut is no longer trusted, revoke its key in Settings.
+## 如果上传失败，先看这几项
+1. 确认你已经登录过网页端，并且数据库 migration 已经执行完成。
+2. 确认快捷指令里的地址是：
+   `https://accountant-rose.vercel.app/api/receipt`
+3. 确认 `api_key` 填的是最新生成的 `ak_...` Key。
+4. 如果 Key 丢了，去 Settings 重新生成一个新的。
+5. 如果旧手机或旧快捷指令不再可信，可以在 Settings 里 revoke 那个 Key。
+
+## API Key 管理说明
+- API Key 在系统里是哈希保存的，所以网页里不会再次显示完整 Key。
+- 一旦丢失，只能重新生成新的 Key。
+- 重新生成后，记得把快捷指令里的 `api_key` 一起更新掉。

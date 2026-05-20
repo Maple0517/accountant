@@ -1,5 +1,15 @@
 import { GoogleGenAI } from '@google/genai'
 
+export class ReceiptParsingQuotaError extends Error {
+  retryAfterSeconds?: number
+
+  constructor(message: string, retryAfterSeconds?: number) {
+    super(message)
+    this.name = 'ReceiptParsingQuotaError'
+    this.retryAfterSeconds = retryAfterSeconds
+  }
+}
+
 export interface ParsedReceipt {
   capture_type: 'receipt' | 'payment_screenshot' | 'bank_transaction' | 'other'
   transaction_type: 'expense' | 'income' | 'transfer' | 'unknown'
@@ -24,6 +34,7 @@ const CAPTURE_TYPES = new Set([
   'other',
 ])
 const TRANSACTION_TYPES = new Set(['expense', 'income', 'transfer', 'unknown'])
+const DEFAULT_GEMINI_MODEL = 'gemini-3.5-flash'
 
 const RECEIPT_PROMPT = `You are a personal finance transaction parser. Analyze the image. It may be a paper receipt photo, a payment app screenshot, an online order confirmation, a credit card transaction screen, or a banking transaction screenshot.
 
@@ -66,6 +77,8 @@ export async function parseReceipt(
   currencyOverride?: string
 ): Promise<ParsedReceipt> {
   const apiKey = process.env.GEMINI_API_KEY
+  const model = process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL
+
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured')
   }
@@ -76,27 +89,33 @@ export async function parseReceipt(
     ? `${RECEIPT_PROMPT}\n\nIMPORTANT: The user specified the currency is ${currencyOverride}. Use this regardless of what the receipt shows.`
     : RECEIPT_PROMPT
 
-  const response = await genAI.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          {
-            inlineData: {
-              mimeType,
-              data: imageBase64,
+  let response
+
+  try {
+    response = await genAI.models.generateContent({
+      model,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: imageBase64,
+              },
             },
-          },
-          { text: prompt },
-        ],
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
       },
-    ],
-    config: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-    },
-  })
+    })
+  } catch (error) {
+    throw normalizeGeminiError(error)
+  }
 
   const text = response.text ?? ''
 
@@ -145,4 +164,26 @@ export async function parseReceipt(
     console.error('Failed to parse Gemini response:', text)
     throw new Error(`Failed to parse receipt data: ${parseError}`)
   }
+}
+
+function normalizeGeminiError(error: unknown) {
+  const errorText = String(error)
+
+  if (
+    errorText.includes('RESOURCE_EXHAUSTED') ||
+    errorText.includes('quota') ||
+    errorText.includes('429')
+  ) {
+    const retryMatch = errorText.match(/retry in\s+([0-9.]+)s/i)
+    const retryAfterSeconds = retryMatch
+      ? Math.max(1, Math.ceil(Number(retryMatch[1])))
+      : undefined
+
+    return new ReceiptParsingQuotaError(
+      'Gemini API quota exceeded',
+      retryAfterSeconds
+    )
+  }
+
+  return error instanceof Error ? error : new Error(errorText)
 }
