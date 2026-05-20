@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Accountant — 个人智能记账
 
-## Getting Started
+> 类 Copilot 的个人财务追踪服务。通过 Plaid API 自动同步银行/信用卡消费，支持 iOS 截图一键记账，并同步至 Notion。
 
-First, run the development server:
+**线上地址**: https://accountant-rose.vercel.app
+
+---
+
+## 功能
+
+- 🏦 **银行自动同步** — 通过 Plaid（Production 环境）增量拉取信用卡和银行账户交易
+- 📱 **iOS 截图记账** — 分享收据/支付截图到 iOS 快捷指令，Gemini Vision 自动识别并记录
+- 📝 **Notion 同步** — 交易数据单向推送至用户自己的 Notion 数据库
+- 📊 **数据看板** — Dashboard / Transactions / Analytics / Accounts / Budgets
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| Framework | Next.js (App Router + Turbopack) |
+| Language | TypeScript |
+| Styling | Tailwind CSS + Radix UI |
+| Database / Auth | Supabase (PostgreSQL + Auth) |
+| Bank Sync | Plaid API (Production) |
+| Notion Sync | Notion REST API v1 (原生 fetch，绕过 SDK bug) |
+| Receipt OCR | Google Gemini 2.0 Flash (Vision) |
+| Deploy | Vercel + Supabase Cloud |
+
+## 本地开发
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # 填入各项密钥
+npm run dev                  # → http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+环境变量说明见 [`.env.example`](.env.example)。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> **注意**：Notion Token 不在 `.env.local` 里，由用户在 `/settings` 页面填写，存入 Supabase `profiles.notion_token`。
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 文档
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [`AI_HANDOFF.md`](./AI_HANDOFF.md) — **AI Agent 接手必读**：当前真实状态、已知 bug、关键 workaround
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — 系统架构、数据库 Schema、API 设计
+- [`docs/ios-shortcut-guide.md`](./docs/ios-shortcut-guide.md) — iOS 快捷指令配置指南
