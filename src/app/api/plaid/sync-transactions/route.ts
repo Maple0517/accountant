@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { plaidClient } from '@/lib/plaid/client'
+import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -84,6 +85,20 @@ export async function POST(request: Request) {
       
       if (insertError) {
         console.error('Error inserting transactions:', insertError)
+      } else {
+        const insertedPlaidIds = transactionsToInsert.map(
+          (tx) => tx.plaid_transaction_id
+        )
+
+        const { data: insertedTransactions } = await supabase
+          .from('transactions')
+          .select('id')
+          .eq('user_id', user.id)
+          .in('plaid_transaction_id', insertedPlaidIds)
+
+        for (const transaction of insertedTransactions || []) {
+          void syncSingleTransactionIfEnabled(user.id, transaction.id)
+        }
       }
     }
 
@@ -112,6 +127,20 @@ export async function POST(request: Request) {
         
       if (updateError) {
         console.error('Error updating transactions:', updateError)
+      } else {
+        const updatedPlaidIds = transactionsToUpdate.map(
+          (tx) => tx.plaid_transaction_id
+        )
+
+        const { data: updatedTransactions } = await supabase
+          .from('transactions')
+          .select('id')
+          .eq('user_id', user.id)
+          .in('plaid_transaction_id', updatedPlaidIds)
+
+        for (const transaction of updatedTransactions || []) {
+          void syncSingleTransactionIfEnabled(user.id, transaction.id)
+        }
       }
     }
 

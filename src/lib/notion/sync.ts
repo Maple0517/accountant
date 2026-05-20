@@ -1,6 +1,7 @@
 import { getNotionClient } from './client'
 import { Sema } from 'async-sema'
 import type { Transaction } from '@/types'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
@@ -159,9 +160,14 @@ export async function batchSyncToNotion(
   })[],
   databaseId: string,
   notionToken?: string
-): Promise<{ synced: number; failed: number }> {
+): Promise<{
+  synced: number
+  failed: number
+  results: Array<{ transactionId: string; notionPageId: string }>
+}> {
   let synced = 0
   let failed = 0
+  const results: Array<{ transactionId: string; notionPageId: string }> = []
 
   for (const transaction of transactions) {
     const pageId = await syncTransactionToNotion(
@@ -172,6 +178,7 @@ export async function batchSyncToNotion(
 
     if (pageId) {
       synced++
+      results.push({ transactionId: transaction.id, notionPageId: pageId })
     } else {
       failed++
     }
@@ -180,7 +187,75 @@ export async function batchSyncToNotion(
     await new Promise((resolve) => setTimeout(resolve, 350))
   }
 
-  return { synced, failed }
+  return { synced, failed, results }
+}
+
+/**
+ * Auto-sync a single transaction when the user's Notion integration is enabled.
+ */
+export async function syncSingleTransactionIfEnabled(
+  userId: string,
+  transactionId: string
+): Promise<string | null> {
+  const supabase = createAdminClient()
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('notion_sync_enabled, notion_token, notion_database_id')
+    .eq('id', userId)
+    .single()
+
+  if (
+    profileError ||
+    !profile?.notion_sync_enabled ||
+    !profile?.notion_token ||
+    !profile?.notion_database_id
+  ) {
+    return null
+  }
+
+  const { data: transaction, error: transactionError } = await supabase
+    .from('transactions')
+    .select(
+      `
+      *,
+      categories ( name ),
+      accounts ( name )
+    `
+    )
+    .eq('id', transactionId)
+    .eq('user_id', userId)
+    .single()
+
+  if (transactionError || !transaction) {
+    return null
+  }
+
+  const mappedTransaction = {
+    ...transaction,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    category_name: (transaction.categories as any)?.name || undefined,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    account_name: (transaction.accounts as any)?.name || undefined,
+  }
+
+  const notionPageId = await syncTransactionToNotion(
+    mappedTransaction,
+    profile.notion_database_id,
+    profile.notion_token
+  )
+
+  if (!notionPageId) {
+    return null
+  }
+
+  await supabase
+    .from('transactions')
+    .update({ notion_page_id: notionPageId })
+    .eq('id', transactionId)
+    .eq('user_id', userId)
+
+  return notionPageId
 }
 
 /**

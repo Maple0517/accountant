@@ -6,6 +6,7 @@ import {
   parseReceipt,
   ReceiptParsingQuotaError,
 } from '@/lib/gemini/receipt-parser'
+import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -177,6 +178,8 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', receipt.id)
       }
+
+      void syncSingleTransactionIfEnabled(auth.userId, transaction.id)
     }
 
     return Response.json({

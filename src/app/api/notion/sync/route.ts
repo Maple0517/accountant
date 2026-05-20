@@ -118,8 +118,15 @@ export async function POST(request: Request) {
       profile.notion_token
     )
 
-    // Update notion_page_id for synced transactions
-    // (This is handled inside batchSyncToNotion returning page IDs)
+    if (result.results.length > 0) {
+      for (const item of result.results) {
+        await supabase
+          .from('transactions')
+          .update({ notion_page_id: item.notionPageId })
+          .eq('id', item.transactionId)
+          .eq('user_id', user.id)
+      }
+    }
 
     return Response.json({
       success: true,
