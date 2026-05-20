@@ -13,6 +13,41 @@ export const dynamic = 'force-dynamic'
 
 type ReceiptAuth = {
   userId: string
+  apiKeyId?: string
+}
+
+type ReceiptStatus = 'parsed' | 'confirmed' | 'error'
+
+async function updateReceiptRecord(
+  receiptId: string | undefined,
+  updates: {
+    status: ReceiptStatus
+    transaction_id?: string
+    error_message?: string
+  }
+) {
+  if (!receiptId) return
+
+  try {
+    const supabase = createAdminClient()
+    await supabase.from('receipts').update(updates).eq('id', receiptId)
+  } catch (error) {
+    console.error('Failed to update receipt status:', error)
+  }
+}
+
+async function markApiKeyUsed(apiKeyId: string | undefined) {
+  if (!apiKeyId) return
+
+  try {
+    const supabase = createAdminClient()
+    await supabase
+      .from('api_keys')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', apiKeyId)
+  } catch (error) {
+    console.error('Failed to update API key usage timestamp:', error)
+  }
 }
 
 /**
@@ -34,6 +69,8 @@ type ReceiptAuth = {
  * - api_key: string
  */
 export async function POST(request: NextRequest) {
+  let receiptId: string | undefined
+
   try {
     const contentType = request.headers.get('content-type') || ''
     let imageBase64: string
@@ -113,6 +150,8 @@ export async function POST(request: NextRequest) {
 
     if (receiptError) {
       console.error('Failed to store receipt:', receiptError)
+    } else {
+      receiptId = receipt.id
     }
 
     const accountId = await getOrCreateIosCaptureAccount(
@@ -121,6 +160,11 @@ export async function POST(request: NextRequest) {
     )
 
     if (!accountId) {
+      await updateReceiptRecord(receiptId, {
+        status: 'error',
+        error_message: 'Failed to prepare iOS Capture account',
+      })
+
       return Response.json(
         { error: 'Failed to prepare iOS Capture account' },
         { status: 500 }
@@ -177,6 +221,11 @@ export async function POST(request: NextRequest) {
 
     if (txError) {
       console.error('Failed to create transaction:', txError)
+      await updateReceiptRecord(receiptId, {
+        status: 'error',
+        error_message: txError.message,
+      })
+
       return Response.json(
         { error: 'Failed to create transaction', details: txError.message },
         { status: 500 }
@@ -185,18 +234,15 @@ export async function POST(request: NextRequest) {
       transactionId = transaction.id
 
       // Link receipt to transaction
-      if (receipt) {
-        await supabase
-          .from('receipts')
-          .update({
-            transaction_id: transaction.id,
-            status: 'confirmed',
-          })
-          .eq('id', receipt.id)
-      }
+      await updateReceiptRecord(receiptId, {
+        transaction_id: transaction.id,
+        status: 'confirmed',
+      })
 
       await syncSingleTransactionIfEnabled(auth.userId, transaction.id)
     }
+
+    await markApiKeyUsed(auth.apiKeyId)
 
     return Response.json({
       success: true,
@@ -216,6 +262,11 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Receipt processing error:', error)
+
+    await updateReceiptRecord(receiptId, {
+      status: 'error',
+      error_message: error instanceof Error ? error.message : String(error),
+    })
 
     if (error instanceof ReceiptParsingQuotaError) {
       const retryAfterSeconds = error.retryAfterSeconds ?? 30
@@ -334,12 +385,7 @@ async function authenticateWithApiKey(
 
     if (!data?.user_id) return undefined
 
-    await supabase
-      .from('api_keys')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('id', data.id)
-
-    return { userId: data.user_id }
+    return { userId: data.user_id, apiKeyId: data.id }
   } catch {
     return undefined
   }
