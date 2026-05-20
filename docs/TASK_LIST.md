@@ -1,52 +1,68 @@
-# Accountant — 任务清单
+# Accountant — 任务清单（真实状态）
 
-## Phase 1: Environment & Tooling Setup
-- [x] Create Next.js 15 project (App Router)
-- [x] Configure TailwindCSS / global CSS design system
-- [x] Set up Supabase clients (client & server)
-- [x] Define TypeScript interfaces (matching Supabase schema)
-- [x] Initialize Git repository
-- [x] Create `.env.example`
+> 最后更新：2026-05-20
 
-## Phase 2: Database & Authentication
-- [x] Write and run Supabase SQL migrations (tables, RLS policies, triggers)
-- [x] Setup Next.js middleware for session management
-- [x] Build `/auth/login` page (Email/Password)
-- [x] Implement OAuth callback route
-- [x] Build root layout with Sidebar and Header navigation
-- [x] Build `/dashboard` landing page
+## Phase 1: 基础设施 ✅
+- [x] 创建 Next.js 16 项目（App Router + Turbopack）
+- [x] 配置 Tailwind CSS + CSS Variables 设计系统
+- [x] 配置 Supabase 客户端（浏览器端 + 服务端）
+- [x] 定义 TypeScript 类型（`src/types/index.ts`）
+- [x] 初始化 Git 仓库 + `.env.example`
 
-## Phase 3: Plaid Integration (Bank Sync)
-- [x] Configure Plaid SDK client
-- [x] Create `/api/plaid/create-link-token` endpoint
-- [x] Build `PlaidLinkButton` UI component
-- [x] Create `/api/plaid/exchange-token` endpoint (save items/accounts)
-- [x] Create `/api/plaid/sync-transactions` endpoint (sync logic)
-- [x] Map Plaid categories to custom app categories
-- [x] Build `/accounts` page UI with Account cards
-- [x] Switch from Plaid Sandbox → Production environment
-- [ ] 分类映射精细化 (PFC → custom categories)
+## Phase 2: 数据库 & 认证 ✅
+- [x] Supabase SQL 建表（`profiles`, `plaid_items`, `accounts`, `transactions`）
+- [x] Row Level Security（RLS）策略
+- [x] Next.js Auth 中间件（`src/middleware.ts`）
+  - [ ] ⚠️ 弃用警告：需改名为 `src/proxy.ts`
+- [x] `/auth/login` 登录页（Email/Password）
+- [x] Auth callback 路由
+- [x] Dashboard 根布局（Sidebar + Header）
 
-## Phase 4: Web UI
-- [x] Dashboard 页面 (消费概览)
-- [x] Transactions 列表页 (筛选/搜索)
-- [x] Analytics 图表页 (饼图/折线图/柱状图)
-- [x] Accounts 账户管理页
-- [x] Budgets 预算页
-- [x] UI 组件 (Card, Button, Badge, Modal, CurrencyDisplay)
-- [ ] Sidebar CSS 修复 (某些宽度下对齐有问题)
-- [ ] Dashboard 真实数据接入 (部分卡片还是 placeholder)
+## Phase 3: Plaid 银行同步 ✅
+- [x] Plaid SDK 客户端配置（`src/lib/plaid/client.ts`）
+- [x] `POST /api/plaid/create-link-token` 端点
+- [x] Plaid Link 前端组件（`src/components/accounts/`）
+- [x] `POST /api/plaid/exchange-token` 端点（交换并保存 access_token）
+- [x] `POST /api/plaid/sync-transactions` 端点（增量 cursor 同步）
+- [x] Plaid PFC 分类映射（`src/lib/categories.ts`）
+- [x] `/accounts` 账户管理页
+- [x] 从 Sandbox 切换到 **Production** 环境（2026-05-20）
+- [ ] Plaid Webhooks 实时推送（目前靠手动触发同步）
+- [ ] Chase / Amex OAuth 应用注册（Plaid Dashboard 配置）
 
-## Phase 5: Notion 同步
-- [x] Notion client 配置
-- [x] 同步逻辑 (增量推送)
-- [x] Settings 页面 (Notion 配置入口)
-- [x] 自动同步触发器
-- [x] **修复 Notion SDK `databases.create` bug** (绕过 SDK 使用原生 fetch)
-- [ ] AI 智能分类 (用 Gemini 优化商户名和分类后再推送 Notion)
-- [ ] Plaid Webhooks 实时同步 (替代当前的手动同步)
+## Phase 4: Web UI ✅（部分完成）
+- [x] `/dashboard` 首页概览
+  - [ ] ⚠️ 部分统计卡片仍显示 placeholder 数据
+- [x] `/transactions` 交易列表（含搜索/筛选）
+- [x] `/analytics` 图表页（基础版）
+  - [ ] 图表数据需进一步对接真实交易
+- [x] `/accounts` 账户管理页
+- [x] `/budgets` 预算页（UI 已有，无真实数据逻辑）
+- [ ] ⚠️ Sidebar CSS 问题（某些宽度下对齐异常）
 
-## Phase 6: iOS Shortcut + 截图记账（未实现）
-- [ ] Receipt API 端点 (`/api/receipt/route.ts`)
-- [ ] Gemini Vision 收据解析 (`src/lib/gemini/receipt-parser.ts`)
-- [ ] iOS Shortcut 配置指南
+## Phase 5: Notion 同步 ✅
+- [x] Notion 客户端（`src/lib/notion/client.ts`）
+- [x] 同步逻辑（`src/lib/notion/sync.ts`）
+  - [x] **⚠️ 关键 workaround**：`createTransactionDatabase()` 绕过 SDK，使用原生 fetch 建表（SDK bug 会丢失 properties）
+- [x] `/settings` 页面（Notion Token 配置 + Force Sync 按钮）
+- [x] 增量同步（通过 `notion_page_id` 字段判断是否已同步）
+- [x] 限流（`async-sema`，~3 req/s）
+- [ ] AI 辅助分类（Gemini 优化商户名后再推送 Notion）
+- [ ] 自动触发（目前靠手动点击 Force Sync）
+
+## Phase 6: iOS Shortcut + 收据识别（代码实现，数据库未建）
+- [x] `POST /api/receipt` 端点（`src/app/api/receipt/route.ts`）
+  - 支持 multipart/form-data（来自 iOS Shortcut）
+  - 支持 JSON body（base64 图片）
+  - [ ] ⚠️ **`receipts` 表未在 Supabase 建立**，调用会报数据库错误
+  - [ ] ⚠️ API Key 认证是临时方案（用 user_id 当 key），需替换
+- [x] Gemini Vision 收据解析（`src/lib/gemini/receipt-parser.ts`）
+  - 使用 `gemini-2.0-flash` 模型
+  - 支持 USD / CNY 自动识别
+- [ ] iOS Shortcut 配置指南（尚未编写）
+
+## 尚未建的数据库表
+以下表在原始 Schema 设计里，代码也已引用，但 **Supabase 里还没有执行建表 SQL**：
+- [ ] `categories` — 自定义分类表
+- [ ] `budgets` — 预算表
+- [ ] `receipts` — 收据记录表（**阻塞 Phase 6 功能**）

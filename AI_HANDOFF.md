@@ -1,150 +1,211 @@
 # AI Handoff Document: Automated Personal Finance Tracker
 
-> 📖 **新接手的 AI Agent 请先读这份文档**。这里记录了项目的真实当前状态、所有踩过的坑和绕过方案，能帮你避免重复犯同样的错误。
+> 📖 **新接手的 AI Agent 请先读这份文档**，它记录了项目的**真实当前状态**和所有踩过的坑。
 >
-> 相关文档：
-> - [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) — 完整系统架构和功能蓝图
-> - [`docs/TASK_LIST.md`](./docs/TASK_LIST.md) — 各 Phase 的完成状态
+> 配套文档（均在 `docs/` 目录下）：
+> - [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) — 完整系统架构和功能蓝图（原始设计稿）
+> - [`docs/TASK_LIST.md`](./docs/TASK_LIST.md) — 各 Phase 的真实完成状态
 
 ---
 
-## 🚀 Tech Stack（实际使用的版本）
+## 🚀 Tech Stack（实际版本）
 
 | 技术 | 版本/配置 |
 |---|---|
-| **Framework** | Next.js 16.2.6 (App Router, Turbopack) |
+| **Framework** | Next.js 16.2.6（App Router + Turbopack） |
 | **Language** | TypeScript |
-| **Styling** | Tailwind CSS + Radix UI (shadcn/ui-like) |
-| **Database** | Supabase (PostgreSQL) |
-| **Auth** | Supabase Auth (Email/Password) |
-| **Bank Sync** | Plaid API — **当前: `production` 环境** |
-| **Notion Sync** | Notion API v1 (2022-06-28) — 绕过官方 SDK，见下方 |
+| **Styling** | Tailwind CSS + Radix UI（shadcn/ui 风格） |
+| **Database / Auth** | Supabase（PostgreSQL + Auth） |
+| **Auth 方式** | Email/Password（Supabase Auth） |
+| **Bank Sync** | Plaid API — ⚠️ **当前运行在 `production` 环境** |
+| **Notion Sync** | Notion REST API v1（2022-06-28）— 绕过官方 SDK，见下方 |
+| **收据解析** | Google Gemini 2.0 Flash（Vision 多模态） |
 
 ---
 
-## 📂 实际项目结构
+## 📂 真实项目结构
+
+> ⚠️ 只列出**实际存在**的文件夹。Components 目录很精简，大部分页面逻辑直接写在各 page.tsx 里。
 
 ```
-src/
-├── app/
-│   ├── (dashboard)/        # 需要登录的页面组 (layout.tsx 含 Sidebar+Header)
-│   │   ├── dashboard/      # 首页概览
-│   │   ├── transactions/   # 交易流水列表
-│   │   ├── accounts/       # 已连接银行账户
-│   │   ├── analytics/      # 图表统计
-│   │   ├── budgets/        # 预算管理
-│   │   └── settings/       # 设置 (Notion 配置入口在这里)
-│   ├── auth/login/         # 登录页
-│   └── api/
-│       ├── plaid/
-│       │   ├── create-link-token/route.ts
-│       │   ├── exchange-token/route.ts
-│       │   └── sync-transactions/route.ts
-│       └── notion/
-│           └── sync/route.ts
-├── components/
-│   ├── layout/Sidebar.tsx
-│   └── ...
-└── lib/
-    ├── plaid/client.ts
-    ├── notion/
-    │   ├── client.ts
-    │   └── sync.ts          # ⚠️ 有关键 workaround，见下方
-    └── supabase/
-        ├── client.ts        # 浏览器端
-        └── server.ts        # 服务端
+/
+├── src/
+│   ├── middleware.ts              # Auth 守卫（⚠️ 有弃用警告，见下方）
+│   ├── app/
+│   │   ├── layout.tsx             # Root layout
+│   │   ├── page.tsx               # 根路由 → 重定向到 /dashboard 或 /auth/login
+│   │   ├── globals.css            # 全局样式 + CSS 变量（设计系统 token 在这里）
+│   │   ├── (dashboard)/           # 路由组（括号表示不影响 URL，共享同一个 layout）
+│   │   │   ├── layout.tsx         # Dashboard 布局（含 Sidebar + Header）
+│   │   │   ├── dashboard/         # /dashboard 首页概览
+│   │   │   ├── transactions/      # /transactions 交易流水列表
+│   │   │   ├── accounts/          # /accounts 已连接银行账户
+│   │   │   ├── analytics/         # /analytics 图表统计
+│   │   │   ├── budgets/           # /budgets 预算管理
+│   │   │   └── settings/          # /settings Notion 配置入口（⚠️ 关键）
+│   │   ├── auth/login/            # /auth/login 登录页
+│   │   └── api/
+│   │       ├── plaid/
+│   │       │   ├── create-link-token/route.ts
+│   │       │   ├── exchange-token/route.ts
+│   │       │   └── sync-transactions/route.ts
+│   │       ├── notion/
+│   │       │   └── sync/route.ts
+│   │       └── receipt/
+│   │           └── route.ts       # iOS Shortcut 端点（已实现）
+│   ├── components/
+│   │   ├── layout/                # Sidebar、Header 等布局组件
+│   │   └── accounts/              # Plaid Link 连接银行的组件
+│   ├── lib/
+│   │   ├── plaid/client.ts        # Plaid 客户端初始化
+│   │   ├── notion/
+│   │   │   ├── client.ts          # Notion 客户端
+│   │   │   └── sync.ts            # ⚠️ 含关键 workaround，见下方
+│   │   ├── gemini/
+│   │   │   └── receipt-parser.ts  # Gemini Vision 收据解析（已实现）
+│   │   ├── supabase/
+│   │   │   ├── client.ts          # 浏览器端 Supabase client
+│   │   │   └── server.ts          # 服务端 Supabase client
+│   │   ├── categories.ts          # Plaid 分类 → 自定义分类的映射逻辑
+│   │   └── currency.ts            # 货币格式化工具
+│   └── types/
+│       └── index.ts               # ⭐ 先读这个！所有数据模型的 TS 类型定义都在这里
+├── docs/
+│   ├── IMPLEMENTATION_PLAN.md
+│   └── TASK_LIST.md
+├── AI_HANDOFF.md                  # 本文件
+├── .env.local                     # 环境变量（不在 Git 里）
+└── .env.example                   # 环境变量模板
 ```
 
 ---
 
 ## 🗄️ 实际数据库 Schema（Supabase）
 
-> ⚠️ **注意**：Implementation Plan 里规划了7张表，但目前实际只创建并运行了以下4张。
+> ⚠️ **设计稿规划了 7 张表，目前 Supabase 里实际只建了以下 4 张。**  
+> `categories`、`budgets`、`receipts` 三张表**尚未创建**（即使代码已经引用了 `receipts` 表）。
 
-### `profiles` — 用户配置
+最快了解数据模型的方式：阅读 [`src/types/index.ts`](./src/types/index.ts)。
+
+### `profiles` — 用户配置（对应 `auth.users`）
 | 列名 | 类型 | 说明 |
 |---|---|---|
-| `id` | uuid (PK) | 对应 `auth.users.id` |
-| `notion_token` | text | Notion Integration Token（用户填写，非环境变量） |
-| `notion_database_id` | text | 已创建的 Notion 数据库 ID（系统自动写入） |
-| `notion_sync_enabled` | boolean | 是否开启同步 |
+| `id` | uuid (PK) | 等于 `auth.users.id` |
+| `display_name` | text | 显示名 |
+| `default_currency` | text | 默认 'USD' |
+| `notion_sync_enabled` | boolean | 是否开启 Notion 同步 |
+| `notion_token` | text | Notion Integration Token（用户在 Settings 填写） |
+| `notion_database_id` | text | 系统自动写入（首次同步时创建数据库后回写） |
 
-### `plaid_items` — 已连接的银行
+### `plaid_items` — 已连接的银行机构
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | |
+| `user_id` | uuid (FK → auth.users) | |
+| `access_token` | text | Plaid access_token（⚠️ 生产环境真实密钥） |
+| `item_id` | text | Plaid item ID |
+| `institution_name` | text | 银行名称（如 "US Bank"） |
+| `cursor` | text | `/transactions/sync` 增量游标，记录上次同步位置 |
+| `status` | text | 'active' / 'error' / 'login_required' |
+
+### `accounts` — 银行子账户缓存
+| 列名 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid (PK) | 内部 ID |
+| `user_id` | uuid (FK) | |
+| `plaid_item_id` | uuid (FK → plaid_items) | 注意：文档里曾写 `item_id`，代码里是 `plaid_item_id` |
+| `plaid_account_id` | text | Plaid 的 account_id |
+| `name` | text | 账户名 |
+| `mask` | text | 卡号后 4 位 |
+| `current_balance` | numeric | 当前余额 |
+| `available_balance` | numeric | 可用余额 |
+| `iso_currency_code` | text | 默认 'USD' |
+| `type` | text | 'checking' / 'savings' / 'credit' 等 |
+| `subtype` | text | |
+
+### `transactions` — 交易记录（核心）
 | 列名 | 类型 | 说明 |
 |---|---|---|
 | `id` | uuid (PK) | |
 | `user_id` | uuid (FK) | |
-| `access_token` | text | Plaid access token |
-| `item_id` | text | Plaid item ID |
-| `institution_name` | text | 银行名称 |
-| `cursor` | text | `/transactions/sync` 的增量游标 |
-
-### `accounts` — 银行子账户
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `account_id` | text | Plaid account ID |
-| `name` / `mask` | text | 账户名 / 卡号后4位 |
-| `current_balance` / `available_balance` | numeric | 余额 |
-| `type` / `subtype` | text | checking / savings / credit 等 |
-| `iso_currency_code` | text | 默认 USD |
-| `item_id` | uuid (FK → plaid_items) | |
-
-### `transactions` — 交易记录（核心表）
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `plaid_transaction_id` | text (unique) | Plaid 交易 ID，用于去重 |
-| `account_id` | uuid (FK) | |
-| `name` | text | 商户名 |
-| `amount` | numeric | 正数=支出，负数=收入（Plaid 约定） |
+| `account_id` | uuid (FK → accounts) | |
+| `plaid_transaction_id` | text (unique) | Plaid 交易 ID，用于去重，手动记录为 null |
+| `amount` | numeric | **⚠️ Plaid 约定：正数=支出，负数=收入** |
+| `iso_currency_code` | text | |
 | `date` | date | |
-| `category` | text | 分类名称 |
 | `merchant_name` | text | |
+| `description` / `name` | text | 商户名/描述 |
+| `payment_channel` | text | 'online' / 'in store' / 'other' |
 | `pending` | boolean | |
+| `source` | text | 'plaid' / 'manual' / 'receipt' |
+| `notion_page_id` | text | 已同步到 Notion 的 page ID（用于增量判断） |
+| `tags` | text[] | |
+| `notes` | text | |
 
-> **尚未创建的表**：`categories`, `budgets`, `receipts`（见 TASK_LIST.md Phase 6）
+> **尚未建的表**：`categories`（分类）、`budgets`（预算）、`receipts`（收据记录）  
+> ⚠️ `api/receipt/route.ts` 代码里会往 `receipts` 表写数据，**但这张表不存在**，会报错。
 
 ---
 
 ## ⚠️ Critical Quirks & Workarounds（必读）
 
-### 1. Notion SDK Bug — `databases.create` 会丢失 `properties`
-**问题**：`@notionhq/client` 的 `notion.databases.create()` 会静默地把 `properties`（表头定义）从请求体中剥离，导致在 Notion 里建出一张只有 "Name" 列的空白数据库。  
-**现象**：同步时报错 `"Amount is not a property that exists. Date is not a property that exists..."`  
-**解决方案**：`src/lib/notion/sync.ts` 中的 `createTransactionDatabase()` 函数**完全绕过 SDK**，改用原生 `fetch` 直接调用 `https://api.notion.com/v1/databases`（POST）。  
-**警告**：❌ 不要把这个函数改回使用 `notion.databases.create()`，除非 Notion 官方修复了这个 bug。
+### 1. Notion SDK Bug — `databases.create` 会丢失所有列定义
+**问题**：`@notionhq/client` 的 `notion.databases.create()` 会静默地从请求体中剥离 `properties`，导致在 Notion 里建出一张只有 "Name" 一列的空白表。  
+**报错现象**：`"Amount is not a property that exists. Date is not a property that exists..."`  
+**解决方案**：`src/lib/notion/sync.ts` 中的 `createTransactionDatabase()` **完全绕过 SDK**，改用原生 `fetch` 直接 POST 到 `https://api.notion.com/v1/databases`。  
+**❌ 禁止**：不要把这个函数改回使用 `notion.databases.create()`，除非确认 Notion 官方已修复。
 
-### 2. Plaid Production — 大银行 OAuth 问题
-**背景**：已从 `sandbox` 切换为 `production` 环境（2026-05-20 完成）。  
-**问题**：Chase、Amex、Capital One 等大银行在生产环境需要额外的 OAuth 应用注册和 Plaid 人工审批，否则 Plaid Link 会在手机验证码之后弹出 "Internal error occurred"。  
-**结论**：这是 Plaid Dashboard 配置问题，不是代码问题。US Bank 等不需要 OAuth 的银行可以正常连接。
+### 2. Notion 同步是单向增量的
+- **方向**：Supabase → Notion（单向推送，Notion 里的修改不会同步回来）
+- **增量判断**：通过 `transactions.notion_page_id` 字段。若为 null → 创建新页面；若有值 → 更新现有页面
+- **限流**：使用 `async-sema` 控制约 3 req/s，避免触发 Notion 限流
+- **重置方法**：如需重新建表，在 Supabase Dashboard 里把该用户的 `profiles.notion_database_id` 清空为 null，然后去 Notion 里删掉旧的数据库，再次 Force Sync 时会自动重建
 
-### 3. Notion Token 的存储位置
-Notion Token 不在 `.env.local` 里，而是由**用户在 Settings 页面填写**，然后存入 Supabase 的 `profiles` 表。  
-后端 API 在需要调用 Notion 时，会先从数据库读取该用户的 `notion_token`。
+### 3. Plaid 同步是增量的（基于 cursor）
+- 每次调用 `/api/plaid/sync-transactions`，会用 `plaid_items.cursor` 作为起点，只拉取上次同步以来的新/改/删交易
+- `cursor` 会在每次成功同步后自动更新写回 `plaid_items` 表
+- **⚠️ 不要随意清空 `plaid_items` 表**：已连接的真实银行（如 US Bank）的 production `access_token` 存在这里，删了需要用户重新走 Plaid Link 授权流程
 
-### 4. `styled-jsx` 在 Server Component 中报错
-项目中 `(dashboard)/layout.tsx` 曾出现过 `'styled-jsx' cannot be imported from a Server Component` 的 Build Error。已解决，确保该文件有 `'use client'` 标记或不使用 styled-jsx。
+### 4. Plaid Production — 大银行 OAuth 限制
+**背景**：已于 2026-05-20 从 `sandbox` 切换为 `production`。  
+**问题**：Chase、Amex、Capital One 等大银行要求在 Plaid Dashboard 额外注册 OAuth 应用，未注册的话 Plaid Link 在手机验证码步骤后会弹出 "Something went wrong: Internal error occurred"。  
+**结论**：这是 Plaid Dashboard 配置问题，不是代码 bug。US Bank 可正常连接。
+
+### 5. Notion Token 存在数据库里，不是环境变量
+Notion Token 由**用户在 `/settings` 页面手动填写**，存入 Supabase `profiles.notion_token`。  
+后端调用 Notion API 前，会先从数据库读取当前用户的 token。`NOTION_TOKEN` **不在** `.env.local` 里。
+
+### 6. middleware.ts 弃用警告
+服务器日志会持续出现：  
+`⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.`  
+这是因为 `src/middleware.ts` 在这个 Next.js 版本里应该改名为 `src/proxy.ts`。功能正常，但警告一直存在。
+
+### 7. Receipt API 实现了但依赖表未建
+`src/app/api/receipt/route.ts` 和 `src/lib/gemini/receipt-parser.ts` 代码已完整实现，但 `receipts` 数据库表**尚未创建**。调用该 API 会报 Supabase 数据库错误。需先在 Supabase 里建表。
+
+### 8. iOS Shortcut 认证方案是临时方案（安全隐患）
+`receipt/route.ts` 里 `authenticateWithApiKey()` 的实现非常简化——它直接把用户传入的 `api_key` 当作 `user_id` 来查找用户。这是一个临时方案，不够安全，需要将来替换为真正的 API Key 系统。
 
 ---
 
-## 🔑 环境变量 (`.env.local`)
+## 🔑 环境变量（`.env.local`）
 
 ```env
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_URL=https://wzzdylcwfitgrrugxzxy.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_SERVICE_ROLE_KEY=...
 
-# Plaid (当前: production)
-PLAID_CLIENT_ID=...
-PLAID_SECRET=...          # 使用 Production Secret
+# Plaid — 当前: production 环境
+PLAID_CLIENT_ID=6a0d5284a0443c000dedf2a7
+PLAID_SECRET=...     # Production Secret
 PLAID_ENV=production
 
-# Gemini (收据识别功能，Phase 6)
+# Gemini（收据解析，已用于 /api/receipt）
 GEMINI_API_KEY=...
 ```
 
-> **注意**：`NOTION_TOKEN` **不在** `.env.local` 里，是每个用户在 `/settings` 页面自行配置的。
+> **不在 `.env.local` 里的**：`NOTION_TOKEN`（存在 Supabase 数据库里）
 
 ---
 
@@ -152,23 +213,42 @@ GEMINI_API_KEY=...
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+npm run dev
+# → http://localhost:3000
+# 未登录会自动跳转到 /auth/login
+# 登录后跳转到 /dashboard
 ```
 
 ---
 
-## 🎯 未完成的功能（接下来可以做）
+## 🎯 未完成 / 已知问题（按优先级）
 
-| 优先级 | 功能 | 说明 |
-|---|---|---|
-| 🔴 高 | Sidebar CSS 修复 | 侧边栏在某些宽度下有对齐问题 |
-| 🔴 高 | Dashboard 真实数据 | 部分统计卡片还是 placeholder |
-| 🟡 中 | AI 智能分类 | 用 Gemini 自动优化 Plaid 的商户名和分类 |
-| 🟡 中 | Plaid Webhooks | 目前是手动触发同步，应改为实时 webhook 推送 |
-| 🟢 低 | iOS Shortcut 收据识别 | Phase 6，Gemini Vision 解析小票 |
-| 🟢 低 | Budget 预算功能 | 页面已有但无真实数据逻辑 |
-| 🟢 低 | Analytics 图表完善 | 图表数据对接真实交易 |
+| 优先级 | 类型 | 功能/问题 | 说明 |
+|---|---|---|---|
+| 🔴 | Bug | Sidebar CSS 问题 | 侧边栏在某些宽度下有对齐问题 |
+| 🔴 | Bug | Dashboard 显示 placeholder | 部分统计卡片未接入真实数据 |
+| 🔴 | Bug | `receipts` 表未建 | `/api/receipt` 调用会报数据库错误 |
+| 🔴 | Bug | `middleware.ts` 弃用警告 | 需改名为 `proxy.ts` |
+| 🟡 | Feature | AI 智能分类 | 用 Gemini 优化 Plaid 商户名和分类后再推 Notion |
+| 🟡 | Feature | Plaid Webhooks | 当前需手动点击触发同步，应改为 webhook 实时推送 |
+| 🟡 | Security | iOS Shortcut API Key | 认证方案过于简单，需替换为真正的 API Key 系统 |
+| 🟢 | Feature | Budget 预算逻辑 | 页面已有 UI，但无真实数据逻辑 |
+| 🟢 | Feature | Analytics 图表完善 | 图表需对接真实交易数据 |
+| 🟢 | Feature | Chase / Amex OAuth 注册 | 在 Plaid Dashboard 申请以解锁大银行连接 |
 
 ---
 
-Good luck! 🚀 有任何关于这个项目的问题，可以从 `docs/IMPLEMENTATION_PLAN.md` 找到系统设计的完整背景。
+## 📋 已实现功能清单
+
+- ✅ Email/Password 注册登录（Supabase Auth）
+- ✅ Plaid Link 连接银行（Production 环境）
+- ✅ Plaid `/transactions/sync` 增量拉取交易
+- ✅ Transactions 列表页（带筛选/搜索）
+- ✅ Accounts 账户管理页
+- ✅ Analytics 图表页（基础版）
+- ✅ Settings 页面（Notion Token 配置入口）
+- ✅ Notion 数据库自动创建（使用原生 fetch 绕过 SDK bug）
+- ✅ Notion 增量同步（Force Sync 按钮）
+- ✅ Gemini Vision 收据解析 API（代码完整，但依赖表未建）
+
+Good luck! 🚀
