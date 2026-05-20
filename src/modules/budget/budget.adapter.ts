@@ -34,9 +34,18 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
 /**
  * Maps transaction rows to BudgetTransactionInput[].
  *
- * Uses the `categoryMap` to resolve each transaction's type from its
- * linked category.  Falls back to `'expense'` when the category is
- * missing or unrecognised.
+ * Amount sign is normalised here, not in the engine. Across the current app,
+ * the dominant storage convention is:
+ * - negative amount = expense
+ * - positive amount = income
+ *
+ * BudgetEngine should not need to know or guess that persistence detail, so
+ * expense-like transactions are converted to a negative spend amount and
+ * income-like transactions are converted to a positive inflow amount.
+ *
+ * Uses the `categoryMap` to resolve each transaction's type from its linked
+ * category. Falls back to `'expense'` when the category is missing or
+ * unrecognised so uncategorized outflows can still participate in filtering.
  */
 export function adaptTransactions(
   rows: Transaction[],
@@ -47,12 +56,22 @@ export function adaptTransactions(
       ? categoryMap.get(row.category_id)
       : undefined;
 
+    const type = category?.type ?? 'expense';
+    const rawAmount = Number(row.amount);
+
+    let normalizedAmount = rawAmount;
+    if (type === 'expense') {
+      normalizedAmount = -Math.abs(rawAmount);
+    } else if (type === 'income') {
+      normalizedAmount = Math.abs(rawAmount);
+    }
+
     return {
       id: row.id,
-      amount: row.amount,
+      amount: normalizedAmount,
       date: row.date,
       categoryId: row.category_id ?? null,
-      type: category?.type ?? 'expense',
+      type,
       status: row.pending ? ('pending' as const) : ('posted' as const),
       isHidden: false,
       isDeleted: false,

@@ -244,3 +244,47 @@ test('total aggregation correct', () => {
   assert.equal(result.totalRemaining, 175)
   assert.equal(result.totalPercentUsed, 125 / 300)
 })
+
+
+test('month boundary includes first day and excludes next month start', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries],
+      transactions: [
+        { id: 'tx1', amount: -25, date: '2026-05-01', categoryId: 'cat_groceries', type: 'expense' },
+        { id: 'tx2', amount: -40, date: '2026-06-01', categoryId: 'cat_groceries', type: 'expense' },
+      ],
+      budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
+    })
+  )
+
+  assert.equal(result.categories[0].actualSpend, 25)
+})
+
+test('transaction without categoryId is not counted', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries],
+      transactions: [
+        { id: 'tx1', amount: -25, date: '2026-05-10', categoryId: null, type: 'expense' },
+      ],
+      budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
+    })
+  )
+
+  assert.equal(result.categories[0].actualSpend, 0)
+})
+
+test('transaction with unknown categoryId is not counted', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries],
+      transactions: [
+        { id: 'tx1', amount: -25, date: '2026-05-10', categoryId: 'cat_unknown', type: 'expense' },
+      ],
+      budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
+    })
+  )
+
+  assert.equal(result.categories[0].actualSpend, 0)
+})

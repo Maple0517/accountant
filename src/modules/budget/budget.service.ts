@@ -10,9 +10,24 @@ import {
   upsertCategoryBudget,
 } from './budget.repository'
 
-function validateMonthFormat(month: string): void {
+function isValidMonthString(month: string): boolean {
   if (!/^\d{4}-\d{2}$/.test(month)) {
+    return false
+  }
+
+  const numericMonth = Number(month.slice(5, 7))
+  return Number.isInteger(numericMonth) && numericMonth >= 1 && numericMonth <= 12
+}
+
+function validateMonth(month: string): void {
+  if (!isValidMonthString(month)) {
     throw new Error('Invalid month format: expected YYYY-MM')
+  }
+}
+
+function validateCategoryId(categoryId: string): void {
+  if (categoryId.trim().length === 0) {
+    throw new Error('categoryId is required')
   }
 }
 
@@ -42,7 +57,7 @@ export async function getMonthlySummary(
   userId: string,
   month: string,
 ): Promise<MonthlyBudgetSummary> {
-  validateMonthFormat(month)
+  validateMonth(month)
 
   const { numericYear, numericMonth, monthStart, monthEnd } = parseMonth(month)
 
@@ -85,12 +100,23 @@ export async function updateCategoryBudget(
   month: string,
   amount: number,
 ): Promise<void> {
+  if (!Number.isFinite(amount)) {
+    throw new Error('Amount must be a finite number')
+  }
   if (amount < 0) {
     throw new Error('Amount must be non-negative')
   }
-  validateMonthFormat(month)
+
+  validateCategoryId(categoryId)
+  validateMonth(month)
 
   const { numericMonth, numericYear } = parseMonth(month)
+  const categories = await loadCategoriesForBudget(supabase, userId)
+  const categoryExists = categories.some((category) => category.id === categoryId)
+
+  if (!categoryExists) {
+    throw new Error('Category not found for user')
+  }
 
   await upsertCategoryBudget(supabase, userId, categoryId, numericMonth, numericYear, amount)
 }

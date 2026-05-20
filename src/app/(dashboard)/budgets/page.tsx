@@ -1,31 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { formatCurrency } from '@/lib/currency'
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type CategoryBudgetSummary = {
-  categoryId: string
-  categoryName: string
-  groupId: string | null
-  baseBudget: number
-  actualSpend: number
-  remaining: number
-  percentUsed: number | null
-  status: 'under' | 'near' | 'over' | 'no_budget'
-}
-
-type MonthlyBudgetSummary = {
-  userId: string
-  month: string
-  budgetingEnabled: boolean
-  totalBaseBudget: number
-  totalActualSpend: number
-  totalRemaining: number
-  totalPercentUsed: number | null
-  categories: CategoryBudgetSummary[]
-}
+import type { CategoryBudgetSummary, MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,10 +44,12 @@ export default function BudgetsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const fetchSummary = useCallback(async (targetMonth: string) => {
     setLoading(true)
     setError(null)
+    setSaveError(null)
     try {
       const res = await fetch(`/api/budget/monthly-summary?month=${targetMonth}`)
       if (!res.ok) {
@@ -102,6 +81,7 @@ export default function BudgetsPage() {
   // ── Inline editing ─────────────────────────────────────────────────────────
 
   function startEdit(cat: CategoryBudgetSummary) {
+    setSaveError(null)
     setEditingId(cat.categoryId)
     setEditValue(String(cat.baseBudget))
   }
@@ -114,23 +94,40 @@ export default function BudgetsPage() {
   async function commitEdit(categoryId: string) {
     const amount = parseFloat(editValue)
     if (isNaN(amount) || amount < 0) {
+      setSaveError('Budget amount must be a non-negative number.')
       cancelEdit()
       return
     }
+
     setSaving(true)
+    setSaveError(null)
+
     try {
       const res = await fetch('/api/budget/category-budget', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ categoryId, month, amount }),
       })
+
       if (!res.ok) {
-        throw new Error(`Save failed (${res.status})`)
+        let message = `Save failed (${res.status})`
+        try {
+          const payload = (await res.json()) as { error?: string }
+          if (payload?.error) {
+            message = payload.error
+          }
+        } catch {
+          // Ignore response parsing issues and keep fallback message.
+        }
+        throw new Error(message)
       }
+
       setEditingId(null)
       setEditValue('')
       await fetchSummary(month)
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to update budget'
+      setSaveError(message)
       console.error('Failed to update budget:', err)
     } finally {
       setSaving(false)
@@ -209,6 +206,13 @@ export default function BudgetsPage() {
       {!loading && error && (
         <div className="card alert alert-error" style={{ padding: '1.5rem' }}>
           ⚠️ {error}
+        </div>
+      )}
+
+      {/* Save error */}
+      {!loading && !error && saveError && (
+        <div className="card alert alert-error" style={{ padding: '1rem 1.5rem' }}>
+          ⚠️ {saveError}
         </div>
       )}
 
@@ -555,42 +559,36 @@ function CategoryRow({
 
 // ── EditInput ────────────────────────────────────────────────────────────────
 
-const EditInput = ({
-  ref: _ref,
-  value,
-  disabled,
-  onChange,
-  onKeyDown,
-  onBlur,
-}: {
-  ref: React.RefObject<HTMLInputElement | null>
+const EditInput = forwardRef<HTMLInputElement, {
   value: string
   disabled: boolean
   onChange: React.ChangeEventHandler<HTMLInputElement>
   onKeyDown: React.KeyboardEventHandler<HTMLInputElement>
   onBlur: React.FocusEventHandler<HTMLInputElement>
-}) => (
-  <input
-    ref={_ref}
-    type="number"
-    min="0"
-    step="0.01"
-    value={value}
-    disabled={disabled}
-    onChange={onChange}
-    onKeyDown={onKeyDown}
-    onBlur={onBlur}
-    style={{
-      width: '110px',
-      padding: '0.25rem 0.5rem',
-      background: 'rgba(0,0,0,0.3)',
-      border: '1px solid var(--accent-primary)',
-      borderRadius: '8px',
-      color: 'var(--text-primary)',
-      fontFamily: 'var(--font-mono)',
-      fontSize: '0.875rem',
-      outline: 'none',
-      boxShadow: '0 0 0 3px rgba(108, 92, 231, 0.2)',
-    }}
-  />
-)
+}>(function EditInput({ value, disabled, onChange, onKeyDown, onBlur }, ref) {
+  return (
+    <input
+      ref={ref}
+      type="number"
+      min="0"
+      step="0.01"
+      value={value}
+      disabled={disabled}
+      onChange={onChange}
+      onKeyDown={onKeyDown}
+      onBlur={onBlur}
+      style={{
+        width: '110px',
+        padding: '0.25rem 0.5rem',
+        background: 'rgba(0,0,0,0.3)',
+        border: '1px solid var(--accent-primary)',
+        borderRadius: '8px',
+        color: 'var(--text-primary)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: '0.875rem',
+        outline: 'none',
+        boxShadow: '0 0 0 3px rgba(108, 92, 231, 0.2)',
+      }}
+    />
+  )
+})
