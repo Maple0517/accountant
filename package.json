@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "pretest": "rm -rf .tmp-tests && ./node_modules/typescript/bin/tsc -p /tmp/accountant-test-tsconfig.json",
+    "test": "node --import ./test/register-alias.mjs --test .tmp-tests/**/*.test.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

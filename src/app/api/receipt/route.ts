@@ -7,6 +7,7 @@ import {
   ReceiptParsingQuotaError,
 } from '@/lib/gemini/receipt-parser'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
+import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
 
 export const dynamic = 'force-dynamic'
 
@@ -92,11 +93,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Parse image with Gemini Vision
-    const parsed = await parseReceipt(imageBase64, mimeType, currency)
-
-    // Store receipt record
+    // Fetch categories for Gemini to reuse if possible
     const supabase = createAdminClient()
+    const userCategories = await getUserCategories(supabase, auth.userId)
+
+    // Parse image with Gemini Vision
+    const parsed = await parseReceipt(imageBase64, mimeType, currency, userCategories)
 
     const { data: receipt, error: receiptError } = await supabase
       .from('receipts')
@@ -140,11 +142,25 @@ export async function POST(request: NextRequest) {
       .filter(Boolean)
       .join('\n')
 
+    let categoryId = null
+    if (parsed.category) {
+      const catRow = await getOrCreateCategory(
+        supabase,
+        auth.userId,
+        parsed.category,
+        userCategories
+      )
+      if (catRow) {
+        categoryId = catRow.id
+      }
+    }
+
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
       .insert({
         user_id: auth.userId,
         account_id: accountId,
+        category_id: categoryId,
         amount: signedAmount,
         iso_currency_code: parsed.currency,
         date: parsed.date,

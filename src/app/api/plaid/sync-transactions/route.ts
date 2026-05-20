@@ -1,8 +1,38 @@
 import { createClient } from '@/lib/supabase/server'
 import { plaidClient } from '@/lib/plaid/client'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
+import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
+import { classifyTransactionsBatch, RawTransactionToClassify } from '@/lib/gemini/classifier'
 
 export const dynamic = 'force-dynamic'
+
+type ExistingTransactionSnapshot = {
+  category_id: string | null
+  merchant_name: string | null
+}
+
+export function mergeTransactionClassification(
+  existingTransaction: ExistingTransactionSnapshot | undefined,
+  plaidTransaction: {
+    merchant_name: string | null
+    name: string
+  },
+  classification?: {
+    clean_merchant_name: string
+    category?: {
+      id: string
+    }
+  }
+) {
+  return {
+    categoryId: classification?.category?.id ?? existingTransaction?.category_id ?? null,
+    cleanName:
+      classification?.clean_merchant_name ||
+      existingTransaction?.merchant_name ||
+      plaidTransaction.merchant_name ||
+      plaidTransaction.name,
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -60,85 +90,115 @@ export async function POST(request: Request) {
       cursor = data.next_cursor
     }
 
-    // Process added transactions
-    const transactionsToInsert = added
-      .filter(tx => accountMap.has(tx.account_id))
-      .map(tx => ({
-        user_id: user.id,
-        account_id: accountMap.get(tx.account_id),
-        plaid_transaction_id: tx.transaction_id,
-        amount: tx.amount, // Plaid amounts are positive for expenses, negative for income/refunds
-        iso_currency_code: tx.iso_currency_code || 'USD',
-        date: tx.date,
-        authorized_date: tx.authorized_date || null,
+    const upsertList = [...added, ...modified].filter(tx => accountMap.has(tx.account_id))
+    
+    if (upsertList.length > 0) {
+      const userCategories = await getUserCategories(supabase, user.id)
+
+      const rawTxs: RawTransactionToClassify[] = upsertList.map((tx) => ({
+        id: tx.transaction_id,
         merchant_name: tx.merchant_name || null,
         description: tx.name,
-        payment_channel: tx.payment_channel,
-        pending: tx.pending,
-        source: 'plaid',
-      }))
-
-    if (transactionsToInsert.length > 0) {
-      const { error: insertError } = await supabase
-        .from('transactions')
-        .upsert(transactionsToInsert, { onConflict: 'plaid_transaction_id' })
-      
-      if (insertError) {
-        console.error('Error inserting transactions:', insertError)
-      } else {
-        const insertedPlaidIds = transactionsToInsert.map(
-          (tx) => tx.plaid_transaction_id
-        )
-
-        const { data: insertedTransactions } = await supabase
-          .from('transactions')
-          .select('id')
-          .eq('user_id', user.id)
-          .in('plaid_transaction_id', insertedPlaidIds)
-
-        for (const transaction of insertedTransactions || []) {
-          await syncSingleTransactionIfEnabled(user.id, transaction.id)
-        }
-      }
-    }
-
-    // Process modified transactions (upsert handles this if we map them same as added)
-    const transactionsToUpdate = modified
-      .filter(tx => accountMap.has(tx.account_id))
-      .map(tx => ({
-        user_id: user.id,
-        account_id: accountMap.get(tx.account_id),
-        plaid_transaction_id: tx.transaction_id,
         amount: tx.amount,
-        iso_currency_code: tx.iso_currency_code || 'USD',
-        date: tx.date,
-        authorized_date: tx.authorized_date || null,
-        merchant_name: tx.merchant_name || null,
-        description: tx.name,
-        payment_channel: tx.payment_channel,
-        pending: tx.pending,
-        source: 'plaid',
       }))
 
-    if (transactionsToUpdate.length > 0) {
-      const { error: updateError } = await supabase
+      // Classify in batches if needed, but usually incremental sync is small
+      let classified: any[] = []
+      try {
+        classified = await classifyTransactionsBatch(rawTxs, userCategories)
+      } catch (err) {
+        console.error('Classification failed, continuing with raw names', err)
+      }
+
+      const existingPlaidIds = upsertList.map((tx) => tx.transaction_id)
+      const { data: existingTransactions, error: existingTransactionsError } = await supabase
         .from('transactions')
-        .upsert(transactionsToUpdate, { onConflict: 'plaid_transaction_id' })
-        
-      if (updateError) {
-        console.error('Error updating transactions:', updateError)
-      } else {
-        const updatedPlaidIds = transactionsToUpdate.map(
-          (tx) => tx.plaid_transaction_id
+        .select('plaid_transaction_id, category_id, merchant_name')
+        .eq('user_id', user.id)
+        .in('plaid_transaction_id', existingPlaidIds)
+
+      if (existingTransactionsError) {
+        console.error('Error loading existing transactions:', existingTransactionsError)
+      }
+
+      const existingTransactionMap = new Map(
+        (existingTransactions || []).map((tx) => [tx.plaid_transaction_id, tx])
+      )
+
+      const classMap = new Map(classified.map((c) => [c.id, c]))
+      const transactionsToUpsert = []
+
+      for (const tx of upsertList) {
+        const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+        let classificationForMerge:
+          | {
+              clean_merchant_name: string
+              category?: { id: string }
+            }
+          | undefined
+
+        const cInfo = classMap.get(tx.transaction_id)
+        if (cInfo) {
+          if (cInfo.category) {
+            const catRow = await getOrCreateCategory(
+              supabase,
+              user.id,
+              cInfo.category,
+              userCategories
+            )
+            if (catRow) {
+              classificationForMerge = {
+                clean_merchant_name: cInfo.clean_merchant_name,
+                category: { id: catRow.id },
+              }
+            }
+          }
+
+          if (!classificationForMerge) {
+            classificationForMerge = {
+              clean_merchant_name: cInfo.clean_merchant_name,
+            }
+          }
+        }
+
+        const { categoryId, cleanName } = mergeTransactionClassification(
+          existingTransaction,
+          tx,
+          classificationForMerge
         )
 
-        const { data: updatedTransactions } = await supabase
+        transactionsToUpsert.push({
+          user_id: user.id,
+          account_id: accountMap.get(tx.account_id),
+          category_id: categoryId,
+          plaid_transaction_id: tx.transaction_id,
+          amount: tx.amount,
+          iso_currency_code: tx.iso_currency_code || 'USD',
+          date: tx.date,
+          authorized_date: tx.authorized_date || null,
+          merchant_name: cleanName,
+          description: tx.name,
+          payment_channel: tx.payment_channel,
+          pending: tx.pending,
+          source: 'plaid',
+        })
+      }
+
+      const { error: upsertError } = await supabase
+        .from('transactions')
+        .upsert(transactionsToUpsert, { onConflict: 'plaid_transaction_id' })
+
+      if (upsertError) {
+        console.error('Error upserting transactions:', upsertError)
+      } else {
+        const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
+        const { data: dbTransactions } = await supabase
           .from('transactions')
           .select('id')
           .eq('user_id', user.id)
-          .in('plaid_transaction_id', updatedPlaidIds)
+          .in('plaid_transaction_id', upsertedPlaidIds)
 
-        for (const transaction of updatedTransactions || []) {
+        for (const transaction of dbTransactions || []) {
           await syncSingleTransactionIfEnabled(user.id, transaction.id)
         }
       }
