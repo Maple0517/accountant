@@ -528,6 +528,19 @@ body {
           font-weight: 600;
           color: var(--text-primary);
         }
+
+        .sync-status {
+          z-index: 1;
+          color: var(--text-secondary);
+          font-size: 0.8rem;
+          line-height: 1.4;
+          border-top: 1px solid var(--glass-border);
+          padding-top: 0.75rem;
+        }
+
+        .sync-status.error {
+          color: var(--accent-orange);
+        }
       
 
 

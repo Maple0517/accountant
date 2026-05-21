@@ -6,6 +6,15 @@ import type { Account } from '@/types'
 import AccountCard from '@/components/accounts/AccountCard'
 import PlaidLinkButton from '@/components/accounts/PlaidLinkButton'
 
+type PlaidSyncMetadata = {
+  last_synced_at?: string | null
+  last_sync_error?: string | null
+}
+
+type AccountRow = Account & {
+  plaid_items?: PlaidSyncMetadata | PlaidSyncMetadata[] | null
+}
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
@@ -16,30 +25,41 @@ export default function AccountsPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('accounts')
-      .select('*')
+      .select('*, plaid_items(last_synced_at, last_sync_error)')
       .order('created_at', { ascending: false })
       
     if (!error && data) {
-      setAccounts(data)
+      const accountsWithSyncMetadata = (data as AccountRow[]).map((account) => {
+        const plaidItem = Array.isArray(account.plaid_items)
+          ? account.plaid_items[0]
+          : account.plaid_items
+
+        return {
+          ...account,
+          last_synced_at: plaidItem?.last_synced_at || null,
+          last_sync_error: plaidItem?.last_sync_error || null,
+        }
+      })
+
+      setAccounts(accountsWithSyncMetadata)
     }
     setLoading(false)
   }, [supabase])
 
   useEffect(() => {
-    fetchAccounts()
+    void Promise.resolve().then(fetchAccounts)
   }, [fetchAccounts])
 
-  const handleSyncTransactions = async (plaidItemId: string) => {
+  const handleRefresh = async (plaidItemId: string) => {
     try {
       await fetch('/api/plaid/sync-transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaid_item_id: plaidItemId }),
       })
-      // Refresh accounts in case balances changed
       fetchAccounts()
     } catch (e) {
-      console.error('Failed to sync', e)
+      console.error('Failed to check for Plaid updates', e)
     }
   }
 
@@ -80,7 +100,7 @@ export default function AccountsPage() {
                   <AccountCard 
                     key={account.id} 
                     account={account} 
-                    onSync={handleSyncTransactions} 
+                    onRefresh={handleRefresh} 
                   />
                 ))}
               </div>
@@ -95,7 +115,7 @@ export default function AccountsPage() {
                   <AccountCard 
                     key={account.id} 
                     account={account} 
-                    onSync={handleSyncTransactions} 
+                    onRefresh={handleRefresh} 
                   />
                 ))}
               </div>
@@ -110,7 +130,7 @@ export default function AccountsPage() {
                   <AccountCard 
                     key={account.id} 
                     account={account} 
-                    onSync={handleSyncTransactions} 
+                    onRefresh={handleRefresh} 
                   />
                 ))}
               </div>
@@ -125,7 +145,7 @@ export default function AccountsPage() {
                   <AccountCard 
                     key={account.id} 
                     account={account} 
-                    onSync={handleSyncTransactions} 
+                    onRefresh={handleRefresh} 
                   />
                 ))}
               </div>

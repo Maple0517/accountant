@@ -1,9 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
-import { syncPlaidItemTransactions } from '@/lib/plaid/transactions-sync'
+import {
+  getSafePlaidSyncError,
+  syncPlaidItemTransactions,
+} from '@/lib/plaid/transactions-sync'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: Request) {
+  let plaidItemId: string | undefined
+  let userId: string | undefined
+
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -12,7 +18,9 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    userId = user.id
     const { plaid_item_id, backfill_uncategorized } = await request.json()
+    plaidItemId = plaid_item_id
 
     if (!plaid_item_id) {
       return Response.json({ error: 'Missing plaid_item_id' }, { status: 400 })
@@ -26,11 +34,27 @@ export async function POST(request: Request) {
       ensureWebhook: true,
     })
 
-    return Response.json(result)
+    return Response.json({
+      ...result,
+      message:
+        'Synced transaction updates already available from Plaid. This does not force the bank to produce new pending transactions.',
+    })
   } catch (error: unknown) {
     console.error('Error syncing transactions:', error)
-    const errorMessage =
-      error instanceof Error ? error.message : 'Failed to sync transactions'
+    const errorMessage = getSafePlaidSyncError(error)
+
+    if (plaidItemId && userId) {
+      try {
+        const supabase = await createClient()
+        await supabase
+          .from('plaid_items')
+          .update({ last_sync_error: errorMessage })
+          .eq('id', plaidItemId)
+          .eq('user_id', userId)
+      } catch (metadataError) {
+        console.error('Error storing Plaid sync failure metadata:', metadataError)
+      }
+    }
 
     return Response.json(
       { error: errorMessage },

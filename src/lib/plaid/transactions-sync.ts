@@ -48,6 +48,14 @@ export type SyncPlaidItemTransactionsResult = {
   uncategorized_before_sync: number
 }
 
+export function getSafePlaidSyncError(error: unknown) {
+  if (error instanceof Error && error.message === 'Item not found') {
+    return error.message
+  }
+
+  return 'Failed to sync available Plaid updates'
+}
+
 export async function syncPlaidItemTransactions({
   supabase,
   plaidItemId,
@@ -282,13 +290,15 @@ export async function syncPlaidItemTransactions({
     }
   }
 
-  if (cursor) {
-    await supabase
-      .from('plaid_items')
-      .update({ cursor })
-      .eq('id', plaidItemId)
-      .eq('user_id', itemUserId)
-  }
+  await supabase
+    .from('plaid_items')
+    .update({
+      cursor,
+      last_synced_at: new Date().toISOString(),
+      last_sync_error: null,
+    })
+    .eq('id', plaidItemId)
+    .eq('user_id', itemUserId)
 
   return {
     success: true,

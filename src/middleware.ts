@@ -44,6 +44,7 @@ export async function middleware(request: NextRequest) {
     !user &&
     !request.nextUrl.pathname.startsWith('/auth') &&
     !request.nextUrl.pathname.startsWith('/api/receipt') &&
+    !request.nextUrl.pathname.startsWith('/api/cron') &&
     !request.nextUrl.pathname.startsWith('/api/plaid/webhook') &&
     request.nextUrl.pathname !== '/'
   ) {
