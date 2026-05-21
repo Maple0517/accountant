@@ -133,6 +133,7 @@ export default function AnalyticsPage() {
   }, [supabase, period])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAnalytics()
   }, [fetchAnalytics])
 

@@ -51,6 +51,7 @@ export type Category = {
   plaid_primary?: string
   plaid_detailed?: string
   type: 'income' | 'expense' | 'transfer'
+  is_excluded_from_budget?: boolean
   sort_order: number
   created_at: string
 }

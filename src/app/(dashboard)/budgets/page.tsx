@@ -65,6 +65,7 @@ export default function BudgetsPage() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSummary(month)
   }, [month, fetchSummary])
 
@@ -249,7 +250,7 @@ export default function BudgetsPage() {
               <span className="empty-icon">🎯</span>
               <h3>No budgets set up yet</h3>
               <p className="text-secondary">
-                Click any category's budget amount below to set a spending limit for{' '}
+                Click any category&apos;s budget amount below to set a spending limit for{' '}
                 {formatMonthLabel(month)}.
               </p>
             </div>

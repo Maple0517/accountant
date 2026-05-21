@@ -17,7 +17,8 @@ import type {
  * Maps category rows to BudgetCategoryInput[].
  *
  * - `type` is passed through directly (DB uses 'income' | 'expense' | 'transfer').
- * - Non-expense categories are excluded from budgeting.
+ * - Non-expense categories and explicitly excluded categories are excluded
+ *   from budgeting.
  * - `groupId` is always null (no group concept in the DB yet).
  */
 export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
@@ -26,7 +27,8 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
     name: row.name,
     groupId: null,
     type: row.type,
-    isExcludedFromBudget: row.type !== 'expense',
+    isExcludedFromBudget:
+      row.type !== 'expense' || row.is_excluded_from_budget === true,
     sortOrder: row.sort_order,
   }));
 }

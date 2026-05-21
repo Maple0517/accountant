@@ -12,11 +12,14 @@ import type { Category, Transaction } from '@/types'
 
 type TransactionFilter = {
   search: string
-  source: string
+  sourceOrAccount: string
+  category: string
   currency: string
   dateFrom: string
   dateTo: string
 }
+
+type TransactionGroupBy = 'date' | 'category'
 
 type AiClassificationJob = {
   id: string
@@ -29,11 +32,45 @@ type AiClassificationJob = {
 }
 
 type TransactionWithRelations = Transaction & {
-  categories?: Pick<Category, 'id' | 'name' | 'name_zh' | 'icon' | 'color'> | null
-  accounts?: {
-    name?: string | null
-    type?: string | null
+  categories?: Pick<
+    Category,
+    'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
+  > | null
+  accounts?: TransactionAccountRelation | null
+}
+
+type TransactionAccountRelation = {
+  id?: string | null
+  name?: string | null
+  official_name?: string | null
+  type?: string | null
+  subtype?: string | null
+  mask?: string | null
+  is_manual?: boolean | null
+  plaid_items?: {
+    institution_name?: string | null
+    institution_id?: string | null
   } | null
+}
+
+type AccountFilterOption = {
+  id: string
+  label: string
+  institutionName?: string | null
+  accountName?: string | null
+  mask?: string | null
+  type?: string | null
+}
+
+type CategoryTransactionGroup = {
+  key: string
+  categoryId: string | null
+  categoryName: string
+  categoryIcon: string
+  categoryColor?: string | null
+  sortOrder: number
+  transactions: TransactionWithRelations[]
+  total: number
 }
 
 type SimilarCategorySuggestion = {
@@ -72,6 +109,27 @@ function getCategoryButtonStyle(category: Category, selected: boolean) {
   }
 }
 
+function formatAccountSourceLabel(account: TransactionAccountRelation) {
+  const institutionName = account.plaid_items?.institution_name
+  const accountName =
+    account.official_name ||
+    account.name ||
+    account.subtype ||
+    account.type ||
+    'Account'
+  const mask = account.mask ? ` ••••${account.mask}` : ''
+
+  if (account.is_manual) {
+    return `Manual · ${accountName}${mask}`
+  }
+
+  if (institutionName) {
+    return `${institutionName} · ${accountName}${mask}`
+  }
+
+  return `${accountName}${mask}`
+}
+
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 
@@ -82,7 +140,9 @@ export default function TransactionsPage() {
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
   const [aiJob, setAiJob] = useState<AiClassificationJob | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
+  const [accountOptions, setAccountOptions] = useState<AccountFilterOption[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
+  const [groupBy, setGroupBy] = useState<TransactionGroupBy>('date')
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null)
   const [savingCategory, setSavingCategory] = useState(false)
   const [categorySaveStatus, setCategorySaveStatus] = useState<{
@@ -93,7 +153,8 @@ export default function TransactionsPage() {
     useState<SimilarCategorySuggestion | null>(null)
   const [filters, setFilters] = useState<TransactionFilter>({
     search: '',
-    source: 'all',
+    sourceOrAccount: 'all',
+    category: 'all',
     currency: 'all',
     dateFrom: '',
     dateTo: '',
@@ -105,7 +166,30 @@ export default function TransactionsPage() {
     async (isMounted = true) => {
       let query = supabase
         .from('transactions')
-        .select(`*, categories ( id, name, name_zh, icon, color ), accounts ( name, type )`)
+        .select(`
+          *,
+          categories (
+            id,
+            name,
+            name_zh,
+            icon,
+            color,
+            is_excluded_from_budget
+          ),
+          accounts (
+            id,
+            name,
+            official_name,
+            type,
+            subtype,
+            mask,
+            is_manual,
+            plaid_items (
+              institution_name,
+              institution_id
+            )
+          )
+        `)
         .order('date', { ascending: false })
         .limit(200)
 
@@ -114,8 +198,20 @@ export default function TransactionsPage() {
           `merchant_name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
         )
       }
-      if (filters.source !== 'all') {
-        query = query.eq('source', filters.source)
+      if (filters.sourceOrAccount === 'manual') {
+        query = query.eq('source', 'manual')
+      } else if (filters.sourceOrAccount === 'receipt') {
+        query = query.eq('source', 'receipt')
+      } else if (filters.sourceOrAccount.startsWith('account:')) {
+        query = query.eq(
+          'account_id',
+          filters.sourceOrAccount.slice('account:'.length)
+        )
+      }
+      if (filters.category === 'uncategorized') {
+        query = query.is('category_id', null)
+      } else if (filters.category !== 'all') {
+        query = query.eq('category_id', filters.category)
       }
       if (filters.currency !== 'all') {
         query = query.eq('iso_currency_code', filters.currency)
@@ -163,17 +259,53 @@ export default function TransactionsPage() {
     setCategoriesLoading(false)
   }, [supabase])
 
+  const fetchAccountFilters = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('accounts')
+      .select(`
+        id,
+        name,
+        official_name,
+        type,
+        subtype,
+        mask,
+        is_manual,
+        plaid_items (
+          institution_name,
+          institution_id
+        )
+      `)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      console.error('Error fetching account filters:', error)
+      return
+    }
+
+    setAccountOptions(
+      ((data || []) as TransactionAccountRelation[]).map((account) => ({
+        id: account.id || '',
+        label: formatAccountSourceLabel(account),
+        institutionName: account.plaid_items?.institution_name ?? null,
+        accountName: account.name ?? account.official_name ?? null,
+        mask: account.mask ?? null,
+        type: account.type ?? null,
+      })).filter((account) => account.id)
+    )
+  }, [supabase])
+
   useEffect(() => {
     let isMounted = true
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchTransactions(isMounted)
     fetchCategories()
+    fetchAccountFilters()
 
     return () => {
       isMounted = false
     }
-  }, [fetchCategories, fetchTransactions])
+  }, [fetchAccountFilters, fetchCategories, fetchTransactions])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
@@ -324,7 +456,10 @@ export default function TransactionsPage() {
       }
 
       const updatedCategory = data.transaction?.categories as
-        | Pick<Category, 'id' | 'name' | 'name_zh' | 'icon' | 'color'>
+        | Pick<
+            Category,
+            'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
+          >
         | undefined
       const categoryName =
         updatedCategory?.name_zh ||
@@ -413,15 +548,56 @@ export default function TransactionsPage() {
     }
   }
 
-  const groupedTransactions = transactions.reduce(
-    (groups, tx) => {
-      const date = tx.date
-      if (!groups[date]) groups[date] = []
-      groups[date].push(tx)
-      return groups
-    },
-    {} as Record<string, TransactionWithRelations[]>
+  const transactionsGroupedByDate = useMemo(
+    () =>
+      transactions.reduce(
+        (groups, tx) => {
+          const date = tx.date
+          if (!groups[date]) groups[date] = []
+          groups[date].push(tx)
+          return groups
+        },
+        {} as Record<string, TransactionWithRelations[]>
+      ),
+    [transactions]
   )
+
+  const transactionsGroupedByCategory = useMemo(() => {
+    const categorySortMap = new Map(
+      categories.map((category) => [category.id, category.sort_order ?? 0])
+    )
+    const groupMap = new Map<string, CategoryTransactionGroup>()
+
+    for (const tx of transactions) {
+      const categoryId = tx.category_id ?? null
+      const key = categoryId || 'uncategorized'
+      const category = tx.categories
+
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          key,
+          categoryId,
+          categoryName: category?.name_zh || category?.name || 'Uncategorized',
+          categoryIcon: category?.icon || '📦',
+          categoryColor: category?.color || null,
+          sortOrder: categoryId ? categorySortMap.get(categoryId) ?? 9999 : 10000,
+          transactions: [],
+          total: 0,
+        })
+      }
+
+      const group = groupMap.get(key)!
+      group.transactions.push(tx)
+      group.total += Number(tx.amount)
+    }
+
+    return Array.from(groupMap.values()).sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+      return a.categoryName.localeCompare(b.categoryName)
+    })
+  }, [transactions, categories])
+
+  const hasTransactions = transactions.length > 0
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr + 'T00:00:00')
@@ -438,6 +614,42 @@ export default function TransactionsPage() {
       day: 'numeric',
     })
   }
+
+  const renderTransactionItem = (tx: TransactionWithRelations) => (
+    <TransactionItem
+      key={tx.id}
+      transaction={tx}
+      categories={categories}
+      categoriesLoading={categoriesLoading}
+      isEditing={editingTransactionId === tx.id}
+      savingCategory={savingCategory}
+      statusMessage={
+        categorySaveStatus?.transactionId === tx.id
+          ? categorySaveStatus.message
+          : null
+      }
+      similarSuggestion={
+        similarSuggestion?.transactionId === tx.id ? similarSuggestion : null
+      }
+      onToggleCategoryPicker={() => {
+        setCategorySaveStatus(null)
+        setSimilarSuggestion(null)
+        setEditingTransactionId((current) => (current === tx.id ? null : tx.id))
+      }}
+      onSaveCategory={(categoryId) => handleCategorySave(tx.id, categoryId)}
+      onApplySimilar={(suggestion) =>
+        handleCategorySave(
+          suggestion.transactionId,
+          suggestion.categoryId,
+          'similar'
+        )
+      }
+      onDismissSimilar={() => setSimilarSuggestion(null)}
+      onCreateCategory={(name, icon, color) =>
+        handleCreateCategory(tx.id, name, icon, color)
+      }
+    />
+  )
 
   return (
     <div className="transactions-page">
@@ -488,15 +700,34 @@ export default function TransactionsPage() {
         <div className="filter-row">
           <select
             className="input"
-            value={filters.source}
+            value={filters.sourceOrAccount}
             onChange={(e) =>
-              setFilters((f) => ({ ...f, source: e.target.value }))
+              setFilters((f) => ({ ...f, sourceOrAccount: e.target.value }))
             }
           >
-            <option value="all">All Sources</option>
-            <option value="plaid">🏦 Bank Sync</option>
+            <option value="all">All Accounts</option>
+            {accountOptions.map((account) => (
+              <option key={account.id} value={`account:${account.id}`}>
+                🏦 {account.label}
+              </option>
+            ))}
             <option value="manual">✏️ Manual</option>
             <option value="receipt">📸 Receipt</option>
+          </select>
+          <select
+            className="input"
+            value={filters.category}
+            onChange={(e) =>
+              setFilters((f) => ({ ...f, category: e.target.value }))
+            }
+          >
+            <option value="all">All Categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.icon || '📦'} {category.name_zh || category.name}
+              </option>
+            ))}
+            <option value="uncategorized">📦 Uncategorized</option>
           </select>
           <select
             className="input"
@@ -528,6 +759,25 @@ export default function TransactionsPage() {
             placeholder="To"
           />
         </div>
+        <div className="view-toggle-row">
+          <span className="text-secondary">Group by</span>
+          <div className="segmented-control" aria-label="Group transactions by">
+            <button
+              type="button"
+              className={groupBy === 'date' ? 'active' : ''}
+              onClick={() => setGroupBy('date')}
+            >
+              Date
+            </button>
+            <button
+              type="button"
+              className={groupBy === 'category' ? 'active' : ''}
+              onClick={() => setGroupBy('category')}
+            >
+              Category
+            </button>
+          </div>
+        </div>
       </div>
 
       {loading ? (
@@ -539,7 +789,7 @@ export default function TransactionsPage() {
             </div>
           ))}
         </div>
-      ) : Object.keys(groupedTransactions).length === 0 ? (
+      ) : !hasTransactions ? (
         <div className="card empty-state">
           <span className="empty-icon">📭</span>
           <h3>No transactions yet</h3>
@@ -549,64 +799,66 @@ export default function TransactionsPage() {
         </div>
       ) : (
         <div className="transaction-groups">
-          {Object.entries(groupedTransactions).map(([date, txs]) => {
-            const dayTotal = txs.reduce((sum, tx) => sum + Number(tx.amount), 0)
-            return (
-              <div key={date} className="transaction-group">
-                <div className="group-header">
-                  <span className="group-date">{formatDate(date)}</span>
-                  <span
-                    className={`group-total ${dayTotal <= 0 ? 'income' : 'expense'}`}
-                  >
-                    {formatCurrency(-dayTotal, txs[0]?.iso_currency_code || 'USD')}
-                  </span>
+          {groupBy === 'date'
+            ? Object.entries(transactionsGroupedByDate).map(([date, txs]) => {
+                const dayTotal = txs.reduce(
+                  (sum, tx) => sum + Number(tx.amount),
+                  0
+                )
+                return (
+                  <div key={date} className="transaction-group">
+                    <div className="group-header">
+                      <span className="group-date">{formatDate(date)}</span>
+                      <span
+                        className={`group-total ${dayTotal <= 0 ? 'income' : 'expense'}`}
+                      >
+                        {formatCurrency(
+                          -dayTotal,
+                          txs[0]?.iso_currency_code || 'USD'
+                        )}
+                      </span>
+                    </div>
+                    <div className="card transaction-list-card">
+                      {txs.map(renderTransactionItem)}
+                    </div>
+                  </div>
+                )
+              })
+            : transactionsGroupedByCategory.map((group) => (
+                <div key={group.key} className="transaction-group">
+                  <div className="group-header">
+                    <span className="group-date">
+                      <span
+                        className="group-category-icon"
+                        style={
+                          group.categoryColor
+                            ? { color: group.categoryColor }
+                            : undefined
+                        }
+                      >
+                        {group.categoryIcon}
+                      </span>{' '}
+                      {group.categoryName}
+                      <span className="group-count">
+                        {' '}
+                        · {group.transactions.length} transaction
+                        {group.transactions.length === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                    <span
+                      className={`group-total ${group.total <= 0 ? 'income' : 'expense'}`}
+                    >
+                      {formatCurrency(
+                        -group.total,
+                        group.transactions[0]?.iso_currency_code || 'USD'
+                      )}
+                    </span>
+                  </div>
+                  <div className="card transaction-list-card">
+                    {group.transactions.map(renderTransactionItem)}
+                  </div>
                 </div>
-                <div className="card transaction-list-card">
-                  {txs.map((tx) => (
-                    <TransactionItem
-                      key={tx.id}
-                      transaction={tx}
-                      categories={categories}
-                      categoriesLoading={categoriesLoading}
-                      isEditing={editingTransactionId === tx.id}
-                      savingCategory={savingCategory}
-                      statusMessage={
-                        categorySaveStatus?.transactionId === tx.id
-                          ? categorySaveStatus.message
-                          : null
-                      }
-                      similarSuggestion={
-                        similarSuggestion?.transactionId === tx.id
-                          ? similarSuggestion
-                          : null
-                      }
-                      onToggleCategoryPicker={() => {
-                        setCategorySaveStatus(null)
-                        setSimilarSuggestion(null)
-                        setEditingTransactionId((current) =>
-                          current === tx.id ? null : tx.id
-                        )
-                      }}
-                      onSaveCategory={(categoryId) =>
-                        handleCategorySave(tx.id, categoryId)
-                      }
-                      onApplySimilar={(suggestion) =>
-                        handleCategorySave(
-                          suggestion.transactionId,
-                          suggestion.categoryId,
-                          'similar'
-                        )
-                      }
-                      onDismissSimilar={() => setSimilarSuggestion(null)}
-                      onCreateCategory={(name, icon, color) =>
-                        handleCreateCategory(tx.id, name, icon, color)
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-            )
-          })}
+              ))}
         </div>
       )}
     </div>
@@ -646,7 +898,7 @@ function TransactionItem({
   const categoryIcon = tx.categories?.icon || '📦'
   const categoryName = tx.categories?.name_zh || tx.categories?.name || 'Uncategorized'
   const merchantName = tx.merchant_name || tx.description
-  const accountName = tx.accounts?.name || null
+  const accountLabel = tx.accounts ? formatAccountSourceLabel(tx.accounts) : null
   const tags = Array.isArray(tx.tags) ? tx.tags : []
   const [showNewCategoryForm, setShowNewCategoryForm] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -662,8 +914,8 @@ function TransactionItem({
 
   const metaParts: string[] = []
 
-  if (accountName) {
-    metaParts.push(accountName)
+  if (accountLabel) {
+    metaParts.push(accountLabel)
   }
 
   if (classificationStatus) {
@@ -672,7 +924,7 @@ function TransactionItem({
 
   if (tx.source === 'receipt') {
     metaParts.push('Receipt')
-  } else if (tx.source === 'manual') {
+  } else if (tx.source === 'manual' && !accountLabel) {
     metaParts.push('Manual')
   }
   if (tx.pending) {
@@ -738,6 +990,9 @@ function TransactionItem({
                     <span className="category-chip-label">
                       {category.name_zh || category.name}
                     </span>
+                    {category.is_excluded_from_budget && (
+                      <span className="category-chip-badge">不计入预算</span>
+                    )}
                   </button>
                 )
               })}

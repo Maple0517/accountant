@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -23,10 +23,12 @@ export async function GET(request: Request) {
     }
 
     return Response.json({ accounts: accounts || [] })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error in accounts API:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Internal server error'
     return Response.json(
-      { error: error.message || 'Internal server error' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

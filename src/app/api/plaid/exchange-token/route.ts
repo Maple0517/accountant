@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { plaidClient } from '@/lib/plaid/client'
+import { CountryCode } from 'plaid'
 
 export const dynamic = 'force-dynamic'
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     if (institutionId) {
       const instResponse = await plaidClient.institutionsGetById({
         institution_id: institutionId,
-        country_codes: ['US' as any],
+        country_codes: [CountryCode.Us],
       })
       institutionName = instResponse.data.institution.name
     }
@@ -114,10 +115,12 @@ export async function POST(request: Request) {
     }
 
     return Response.json({ success: true, item_id: plaidItem.id })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error exchanging token:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to exchange token'
     return Response.json(
-      { error: error.message || 'Failed to exchange token' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

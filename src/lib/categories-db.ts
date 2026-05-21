@@ -9,10 +9,76 @@ export type CategoryRow = {
   icon: string | null
   color: string | null
   type: 'income' | 'expense' | 'transfer'
+  is_excluded_from_budget?: boolean | null
+  sort_order?: number | null
+  created_at?: string
 }
 
 function normalizeCategoryName(value: string) {
   return value.trim().toLocaleLowerCase('en-US')
+}
+
+async function ensureExcludedCategory(
+  supabase: SupabaseClient,
+  userId: string,
+  categories: CategoryRow[]
+): Promise<CategoryRow[]> {
+  const existing = categories.find(
+    (category) =>
+      category.is_excluded_from_budget === true ||
+      normalizeCategoryName(category.name) === 'excluded' ||
+      category.name_zh === '不计入'
+  )
+
+  if (existing) {
+    if (!existing.is_excluded_from_budget) {
+      const { data: updated, error } = await supabase
+        .from('categories')
+        .update({ is_excluded_from_budget: true })
+        .eq('id', existing.id)
+        .eq('user_id', userId)
+        .select('*')
+        .single()
+
+      if (error) {
+        console.error('Error marking excluded category:', error)
+        return categories
+      }
+
+      return categories.map((category) =>
+        category.id === updated.id ? (updated as CategoryRow) : category
+      )
+    }
+
+    return categories
+  }
+
+  const maxSortOrder = categories.reduce(
+    (max, category) => Math.max(max, Number(category.sort_order ?? 0)),
+    0
+  )
+
+  const { data: inserted, error } = await supabase
+    .from('categories')
+    .insert({
+      user_id: userId,
+      name: 'Excluded',
+      name_zh: '不计入',
+      icon: '🚫',
+      color: '#9e9e9e',
+      type: 'expense',
+      sort_order: maxSortOrder + 1,
+      is_excluded_from_budget: true,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('Error ensuring excluded category:', error)
+    return categories
+  }
+
+  return [...categories, inserted as CategoryRow]
 }
 
 /**
@@ -32,9 +98,8 @@ export async function getUserCategories(
     return []
   }
 
-  // If user has categories, return them
   if (categories && categories.length > 0) {
-    return categories as CategoryRow[]
+    return ensureExcludedCategory(supabase, userId, categories as CategoryRow[])
   }
 
   // Seed default categories
@@ -45,6 +110,7 @@ export async function getUserCategories(
     icon: c.icon,
     color: c.color,
     type: c.type,
+    is_excluded_from_budget: c.isExcludedFromBudget ?? false,
     sort_order: index,
   }))
 

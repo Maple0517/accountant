@@ -55,7 +55,7 @@ export async function PATCH(
           .single(),
         supabase
           .from('categories')
-          .select('id, user_id, name, name_zh, icon, color')
+          .select('id, user_id, name, name_zh, icon, color, is_excluded_from_budget')
           .eq('id', categoryId)
           .eq('user_id', user.id)
           .single(),

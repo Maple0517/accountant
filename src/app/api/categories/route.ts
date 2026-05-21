@@ -44,6 +44,10 @@ export async function POST(request: Request) {
     const icon = typeof body.icon === 'string' && body.icon.trim() ? body.icon.trim() : '📦'
     const color = typeof body.color === 'string' && body.color.trim() ? body.color.trim() : '#607d8b'
     const type = ['income', 'expense', 'transfer'].includes(body.type) ? body.type : 'expense'
+    const isExcludedFromBudget =
+      typeof body.is_excluded_from_budget === 'boolean'
+        ? body.is_excluded_from_budget
+        : false
 
     const { data: newCategory, error } = await supabase
       .from('categories')
@@ -54,6 +58,7 @@ export async function POST(request: Request) {
         color,
         type,
         sort_order: nextSortOrder,
+        is_excluded_from_budget: isExcludedFromBudget,
       })
       .select('*')
       .single()

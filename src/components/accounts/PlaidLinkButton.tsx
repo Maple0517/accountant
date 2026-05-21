@@ -24,7 +24,7 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
         } else {
           setError('Failed to get link token')
         }
-      } catch (e) {
+      } catch {
         setError('Error initializing Plaid')
       }
     }
@@ -32,7 +32,7 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
   }, [])
 
   const handleOnSuccess = useCallback(
-    async (public_token: string, metadata: any) => {
+    async (public_token: string) => {
       setLoading(true)
       try {
         // Exchange token
@@ -53,7 +53,7 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
           
           if (onSuccess) onSuccess()
         }
-      } catch (e) {
+      } catch {
         setError('Error linking account')
       } finally {
         setLoading(false)

@@ -231,7 +231,11 @@ export async function syncSingleTransactionIfEnabled(
     return null
   }
 
-  const category = transaction.categories as any
+  const category = transaction.categories as {
+    name?: string | null
+    name_zh?: string | null
+    icon?: string | null
+  } | null
   const categoryName = category
     ? `${category.icon ? category.icon + ' ' : ''}${category.name_zh || category.name}`.trim()
     : undefined
@@ -239,8 +243,9 @@ export async function syncSingleTransactionIfEnabled(
   const mappedTransaction = {
     ...transaction,
     category_name: categoryName,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    account_name: (transaction.accounts as any)?.name || undefined,
+    account_name:
+      (transaction.accounts as { name?: string | null } | null)?.name ||
+      undefined,
   }
 
   const notionPageId = await syncTransactionToNotion(
