@@ -4,7 +4,7 @@ import { CountryCode, Products } from 'plaid'
 
 export const dynamic = 'force-dynamic'
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -21,15 +21,21 @@ export async function POST(request: Request) {
       products: [Products.Transactions],
       country_codes: [CountryCode.Us],
       language: 'en',
+      ...(process.env.PLAID_WEBHOOK_URL
+        ? { webhook: process.env.PLAID_WEBHOOK_URL }
+        : {}),
     }
 
     const createTokenResponse = await plaidClient.linkTokenCreate(configs)
 
     return Response.json({ link_token: createTokenResponse.data.link_token })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error creating link token:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to create link token'
+
     return Response.json(
-      { error: error.message || 'Failed to create link token' },
+      { error: errorMessage },
       { status: 500 }
     )
   }
