@@ -88,6 +88,8 @@ PLAID_WEBHOOK_URL=https://your-domain.com/api/plaid/webhook?secret=replace-with-
 
 新连接的 Plaid Item 会在 Link Token 中带上 webhook URL。已经连接过的 Item，可在 Accounts 页面点一次同步按钮，后端会用 `/item/webhook/update` 给旧 Item 补注册 webhook。
 
+`vercel.json` 也配置了每日兜底同步 `/api/cron/plaid-sync`。生产环境需要设置 `CRON_SECRET`，Vercel Cron 会用 `Authorization: Bearer <CRON_SECRET>` 调用该路由。
+
 Plaid 交易数据并不是刷卡后的实时流；`/transactions/sync` 只能拿到 Plaid 最近一次从机构成功拉取的数据，通常依机构每天更新一到数次。
 
 ### AI 分类额度
