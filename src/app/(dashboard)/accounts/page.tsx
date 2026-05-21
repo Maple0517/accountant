@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Account } from '@/types'
 import AccountCard from '@/components/accounts/AccountCard'
@@ -19,17 +19,34 @@ export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
   
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('accounts')
-      .select('*, plaid_items(last_synced_at, last_sync_error)')
-      .order('created_at', { ascending: false })
-      
-    if (!error && data) {
-      const accountsWithSyncMetadata = (data as AccountRow[]).map((account) => {
+    try {
+      let { data, error } = await supabase
+        .from('accounts')
+        .select('*, plaid_items(last_synced_at, last_sync_error)')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.warn('Failed to fetch account sync metadata, falling back to accounts only:', error)
+        const fallback = await supabase
+          .from('accounts')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        data = fallback.data
+        error = fallback.error
+      }
+
+      if (error) {
+        console.error('Failed to fetch accounts:', error)
+        setAccounts([])
+        return
+      }
+
+      const accountsWithSyncMetadata = ((data || []) as AccountRow[]).map((account) => {
         const plaidItem = Array.isArray(account.plaid_items)
           ? account.plaid_items[0]
           : account.plaid_items
@@ -42,8 +59,9 @@ export default function AccountsPage() {
       })
 
       setAccounts(accountsWithSyncMetadata)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [supabase])
 
   useEffect(() => {
