@@ -105,3 +105,40 @@ export type ReceiptApiKey = {
   revoked_at?: string
   created_at: string
 }
+
+export type Receipt = {
+  id: string
+  user_id: string
+  parsed_data?: Record<string, unknown>
+  status: 'pending' | 'parsed' | 'confirmed' | 'error'
+  transaction_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AiClassificationJob = {
+  id: string
+  user_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
+  total_count: number
+  pending_count: number
+  completed_count: number
+  failed_count: number
+  error_message?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AiClassificationJobItem = {
+  id: string
+  job_id: string
+  user_id: string
+  transaction_id: string
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped'
+  attempts: number
+  error_message?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
+}

@@ -13,19 +13,19 @@
 - ✅ Plaid Link 连接银行（**Production 环境**，非 Sandbox）
 - ✅ Plaid `/transactions/sync` 增量拉取交易（基于 cursor）
 - ✅ Plaid `SYNC_UPDATES_AVAILABLE` webhook 自动触发增量同步
-- ✅ Transactions 列表页（带筛选/搜索）
-- ✅ Accounts / Analytics / Budgets 页面（UI 已有）
+- ✅ Transactions 列表页（带筛选/搜索/按日期分组）
+- ✅ Accounts 已连接账户与余额管理
+- ✅ Analytics 消费与收入多维度统计图表（已接入真实数据）
+- ✅ Budgets 预算管理逻辑（分类预算、进度计算、数据持久化已全部完工）
 - ✅ Settings 页面（Notion Token 配置 + iOS API Key 管理）
 - ✅ Notion 数据库自动创建 + 增量同步（Force Sync 按钮）
 - ✅ iOS 截图/收据解析 API（`/api/receipt`，Gemini Vision）
+- ✅ AI 智能分类（Gemini 优化 Plaid 商户名及分类，已实现队列批量处理和同名交易同步）
 
 **待处理**：
 
 | 优先级 | 类型 | 说明 |
 |---|---|---|
-| 🟡 | Feature | AI 智能分类（Gemini 优化 Plaid 商户名后再推 Notion） |
-| 🟢 | Feature | Budget 预算逻辑（页面有 UI，无数据） |
-| 🟢 | Feature | Analytics 图表接入真实数据 |
 | 🟢 | Config | Chase / Amex OAuth 注册（Plaid Dashboard 配置） |
 
 ---

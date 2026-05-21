@@ -67,8 +67,14 @@ graph TB
 | `access_token` | text | Plaid access_token（⚠️ 生产环境真实密钥） |
 | `item_id` | text | Plaid item ID |
 | `institution_name` | text | 银行名称（如 "US Bank"） |
+| `institution_id` | text | Plaid 机构 ID |
 | `cursor` | text | `/transactions/sync` 增量游标 |
 | `status` | text | 'active' / 'error' / 'login_required' |
+| `error_code` | text | Plaid 错误代码 |
+| `last_synced_at` | timestamptz | 最后成功同步时间 |
+| `last_sync_error` | text | 同步失败信息 |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `accounts` — 银行子账户缓存
 
@@ -79,11 +85,18 @@ graph TB
 | `plaid_item_id` | uuid (FK → plaid_items) | 注意：代码里是 `plaid_item_id`，不是 `item_id` |
 | `plaid_account_id` | text | Plaid 的 account_id |
 | `name` | text | 账户名（iOS Capture 账户名为 `'iOS Capture'`） |
+| `official_name` | text | 官方全称 |
 | `mask` | text | 卡号后 4 位 |
 | `current_balance` | numeric | 当前余额 |
 | `available_balance` | numeric | 可用余额 |
 | `iso_currency_code` | text | 默认 'USD' |
-| `type` | text | 'checking' / 'savings' / 'credit' 等 |
+| `type` | text | 'checking' / 'savings' / 'credit' / 'cash' / 'investment' / 'other' |
+| `subtype` | text | 账户子类型 |
+| `is_manual` | boolean | 是否手动账户 |
+| `last_synced_at` | timestamptz | |
+| `last_sync_error` | text | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `transactions` — 交易记录（核心）
 
@@ -92,18 +105,23 @@ graph TB
 | `id` | uuid (PK) | |
 | `user_id` | uuid (FK) | |
 | `account_id` | uuid (FK → accounts) | |
+| `category_id` | uuid (FK → categories) | |
 | `plaid_transaction_id` | text (unique) | Plaid 交易 ID，手动记录为 null |
 | `amount` | numeric | **⚠️ Plaid 约定：正数=支出，负数=收入** |
 | `iso_currency_code` | text | |
 | `date` | date | |
+| `authorized_date` | date | |
 | `merchant_name` | text | |
 | `description` | text | 商户名/描述 |
 | `payment_channel` | text | 'online' / 'in store' / 'other' |
 | `pending` | boolean | |
 | `source` | text | 'plaid' / 'manual' / 'receipt' |
+| `receipt_url` | text | 上传的小票图片链接 |
 | `notion_page_id` | text | 已同步到 Notion 的 page ID（用于增量判断） |
 | `tags` | text[] | |
 | `notes` | text | |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 分类相关系统标签：
 
@@ -126,7 +144,9 @@ graph TB
 | `plaid_primary` | text | Plaid primary 分类映射 |
 | `plaid_detailed` | text | Plaid detailed 分类映射 |
 | `type` | text | income/expense/transfer |
+| `is_excluded_from_budget`| boolean | 是否排除在预算外（如内部转账等）|
 | `sort_order` | integer | UI 排序 |
+| `created_at` | timestamptz | |
 
 ### `budgets` — 预算
 
@@ -140,6 +160,8 @@ graph TB
 | `month` | integer | 月度预算月份 |
 | `year` | integer | 年份 |
 | `alert_threshold` | numeric | 预警阈值，默认 0.80 |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `ai_classification_jobs` — Plaid AI 分类任务
 
@@ -206,9 +228,14 @@ graph TB
 | `/api/plaid/exchange-token` | POST | 交换 public_token → access_token，初始化账户 |
 | `/api/plaid/sync-transactions` | POST | 增量拉取 Plaid 交易（基于 cursor） |
 | `/api/plaid/webhook` | POST | 接收 Plaid 交易/Item webhook，自动触发增量同步或更新 Item 状态 |
+| `/api/plaid/accounts` | GET | 获取已连接的 Plaid 账户列表 |
 | `/api/plaid/ai-classification-jobs` | GET/POST | 查看最近 AI 分类任务 / 将待刷新 Plaid 交易一次性入队 |
 | `/api/plaid/ai-classification-jobs/process` | POST | 按队列批次处理 AI 分类 |
+| `/api/cron/plaid-sync` | GET | 定时兜底触发增量交易同步 (Cron) |
 | `/api/transactions/[id]/category` | PATCH | 手动修改分类，可选择同步同名交易 |
+| `/api/categories` | GET | 获取系统分类列表 |
+| `/api/budget/monthly-summary` | GET | 获取月度预算汇总与进度数据 |
+| `/api/budget/category-budget` | POST | 创建或更新指定分类的预算金额 |
 | `/api/notion/sync` | POST | 触发 Supabase → Notion 增量同步 |
 | `/api/receipt` | POST | iOS Shortcut 上传截图，Gemini 解析后写入交易 |
 | `/api/settings/api-keys` | GET/POST/DELETE | iOS Shortcut API Key 管理 |
