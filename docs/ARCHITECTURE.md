@@ -19,6 +19,9 @@ graph TB
         C3["/api/receipt"]
         C4["/api/settings/api-keys"]
         C5["/api/transactions/*"]
+        C6["/api/budget/*"]
+        C7["/api/categories"]
+        C8["/api/cron/*"]
     end
 
     subgraph "外部服务"
@@ -32,12 +35,15 @@ graph TB
         I["Auth"]
     end
 
-    A --> C1 & C2 & C4 & C5
+    A --> C1 & C2 & C4 & C5 & C6 & C7
     B --> C3
-    C1 --> E & G & H
+    C1 --> E & G & H & F
     C2 --> F & H
     C3 --> G & H
     C4 & C5 --> H
+    C6 & C7 --> H
+    C8 --> E & H
+    A --> H
     A --> I
 ```
 
@@ -57,6 +63,8 @@ graph TB
 | `notion_sync_enabled` | boolean | 是否开启 Notion 同步 |
 | `notion_token` | text | Notion Integration Token（用户在 Settings 填写） |
 | `notion_database_id` | text | 系统自动写入（首次同步时创建数据库后回写） |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `plaid_items` — 已连接的银行机构
 
@@ -93,8 +101,6 @@ graph TB
 | `type` | text | 'checking' / 'savings' / 'credit' / 'cash' / 'investment' / 'other' |
 | `subtype` | text | 账户子类型 |
 | `is_manual` | boolean | 是否手动账户 |
-| `last_synced_at` | timestamptz | |
-| `last_sync_error` | text | |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
@@ -178,6 +184,8 @@ graph TB
 | `failed_count` | integer | 失败数量 |
 | `error_message` | text | 任务级错误 |
 | `completed_at` | timestamptz | 完成时间 |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `ai_classification_job_items` — Plaid AI 分类队列项
 
@@ -191,6 +199,8 @@ graph TB
 | `attempts` | integer | 尝试次数 |
 | `error_message` | text | 单项错误 |
 | `completed_at` | timestamptz | 完成时间 |
+| `created_at` | timestamptz | |
+| `updated_at` | timestamptz | |
 
 ### `receipts` — iOS Shortcut 上传记录
 
@@ -202,7 +212,10 @@ graph TB
 | `user_id` | uuid (FK) | |
 | `parsed_data` | jsonb | Gemini 解析结果 |
 | `status` | text | 'pending' / 'parsed' / 'confirmed' / 'error' |
+| `image_url` | text | 上传截图的路径或 URL |
+| `error_message` | text | 解析错误信息 |
 | `transaction_id` | uuid (FK → transactions) | 自动生成交易后回写 |
+| `created_at` | timestamptz | |
 
 ### `api_keys` — iOS Shortcut API Key
 
@@ -217,6 +230,7 @@ graph TB
 | `key_hash` | text | `ak_...` token 的 SHA-256 hash |
 | `last_used_at` | timestamptz | 成功调用 `/api/receipt` 时更新 |
 | `revoked_at` | timestamptz | 撤销后不再可用 |
+| `created_at` | timestamptz | |
 
 ---
 
