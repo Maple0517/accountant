@@ -12,6 +12,7 @@
 - ✅ Email/Password 注册登录（Supabase Auth）
 - ✅ Plaid Link 连接银行（**Production 环境**，非 Sandbox）
 - ✅ Plaid `/transactions/sync` 增量拉取交易（基于 cursor）
+- ✅ Plaid `SYNC_UPDATES_AVAILABLE` webhook 自动触发增量同步
 - ✅ Transactions 列表页（带筛选/搜索）
 - ✅ Accounts / Analytics / Budgets 页面（UI 已有）
 - ✅ Settings 页面（Notion Token 配置 + iOS API Key 管理）
@@ -22,7 +23,6 @@
 
 | 优先级 | 类型 | 说明 |
 |---|---|---|
-| 🟡 | Feature | Plaid Webhooks（目前靠手动点击同步） |
 | 🟡 | Feature | AI 智能分类（Gemini 优化 Plaid 商户名后再推 Notion） |
 | 🟢 | Feature | Budget 预算逻辑（页面有 UI，无数据） |
 | 🟢 | Feature | Analytics 图表接入真实数据 |
@@ -71,7 +71,8 @@
 │   │       ├── plaid/
 │   │       │   ├── create-link-token/route.ts
 │   │       │   ├── exchange-token/route.ts
-│   │       │   └── sync-transactions/route.ts
+│   │       │   ├── sync-transactions/route.ts
+│   │       │   └── webhook/route.ts
 │   │       ├── notion/sync/route.ts
 │   │       ├── receipt/route.ts       # iOS Shortcut 端点（已实现）
 │   │       └── settings/api-keys/route.ts
@@ -80,6 +81,7 @@
 │   │   └── accounts/              # Plaid Link 连接银行的组件
 │   ├── lib/
 │   │   ├── plaid/client.ts
+│   │   ├── plaid/transactions-sync.ts # Plaid 手动同步 + webhook 共享逻辑
 │   │   ├── notion/
 │   │   │   ├── client.ts
 │   │   │   └── sync.ts            # ⚠️ 含关键 workaround，见下方
@@ -115,6 +117,8 @@ SUPABASE_SERVICE_ROLE_KEY=...
 PLAID_CLIENT_ID=6a0d5284a0443c000dedf2a7
 PLAID_SECRET=...     # Production Secret
 PLAID_ENV=production
+PLAID_WEBHOOK_SECRET=...
+PLAID_WEBHOOK_URL=https://accountant-rose.vercel.app/api/plaid/webhook?secret=...
 
 # Gemini（收据解析）
 GEMINI_API_KEY=...
@@ -140,6 +144,11 @@ GEMINI_API_KEY=...
 
 ### 3. Plaid 同步（基于 cursor）
 - 每次调用 `/api/plaid/sync-transactions`，用 `plaid_items.cursor` 作增量起点
+- 手动同步与 webhook 都调用 `src/lib/plaid/transactions-sync.ts`，避免两套入库逻辑分叉
+- `/api/plaid/webhook` 收到 `TRANSACTIONS:SYNC_UPDATES_AVAILABLE`、`DEFAULT_UPDATE`、`TRANSACTIONS_REMOVED` 后，会按 `item_id` 找到本地 `plaid_items.id` 并自动增量同步
+- 新 Plaid Link 连接会把 `PLAID_WEBHOOK_URL` 写进 Link Token；旧 Item 在用户下一次手动同步时会通过 `/item/webhook/update` 补注册 webhook
+- `PLAID_WEBHOOK_SECRET` 是轻量共享密钥：支持 `?secret=...` 或 `x-plaid-webhook-secret` header
+- Plaid 不是刷卡实时流；新交易何时出现仍取决于机构和 Plaid 的更新频率
 - ⚠️ **不要随意清空 `plaid_items` 表**：Production `access_token` 存在这里，删了需要用户重新 Plaid Link 授权
 
 ### 4. Plaid Production — 大银行 OAuth 限制

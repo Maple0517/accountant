@@ -12,6 +12,7 @@
 
 - 🏦 **Plaid 银行连接** — 支持 Production 环境，通过 Plaid Link 连接银行、信用卡和子账户。
 - 🔁 **增量交易同步** — 使用 Plaid `/transactions/sync` cursor 增量拉取新增/修改交易，避免重复导入。
+- 📬 **Plaid Webhook 自动同步** — 接收 `SYNC_UPDATES_AVAILABLE` 等交易通知后自动触发同一套增量同步逻辑。
 - 💳 **账户识别** — 交易列表直接展示具体账户/卡名，例如 `Bilt Palladium Card`，不再用笼统的 `plaid` 作为来源显示。
 - ⏳ **Pending 状态保留** — pending 交易在列表和预算计算中有明确处理，避免临时授权污染实际支出。
 
@@ -75,6 +76,19 @@ npm run dev                  # → http://localhost:3000
 环境变量说明见 [`.env.example`](.env.example)。
 
 > **注意**：Notion Token 不在 `.env.local` 里，由用户在 `/settings` 页面填写，存入 Supabase `profiles.notion_token`。
+
+### Plaid Webhook
+
+生产环境建议配置 Plaid webhook，让 Plaid 有新交易数据时自动调用 `/api/plaid/webhook`：
+
+```bash
+PLAID_WEBHOOK_SECRET=replace-with-a-random-secret
+PLAID_WEBHOOK_URL=https://your-domain.com/api/plaid/webhook?secret=replace-with-the-same-secret
+```
+
+新连接的 Plaid Item 会在 Link Token 中带上 webhook URL。已经连接过的 Item，可在 Accounts 页面点一次同步按钮，后端会用 `/item/webhook/update` 给旧 Item 补注册 webhook。
+
+Plaid 交易数据并不是刷卡后的实时流；`/transactions/sync` 只能拿到 Plaid 最近一次从机构成功拉取的数据，通常依机构每天更新一到数次。
 
 ### AI 分类额度
 

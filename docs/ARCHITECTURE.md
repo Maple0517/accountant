@@ -205,6 +205,7 @@ graph TB
 | `/api/plaid/create-link-token` | POST | 生成 Plaid Link Token |
 | `/api/plaid/exchange-token` | POST | 交换 public_token → access_token，初始化账户 |
 | `/api/plaid/sync-transactions` | POST | 增量拉取 Plaid 交易（基于 cursor） |
+| `/api/plaid/webhook` | POST | 接收 Plaid 交易/Item webhook，自动触发增量同步或更新 Item 状态 |
 | `/api/plaid/ai-classification-jobs` | GET/POST | 查看最近 AI 分类任务 / 将待刷新 Plaid 交易一次性入队 |
 | `/api/plaid/ai-classification-jobs/process` | POST | 按队列批次处理 AI 分类 |
 | `/api/transactions/[id]/category` | PATCH | 手动修改分类，可选择同步同名交易 |
@@ -221,6 +222,15 @@ graph TB
 5. `/api/plaid/ai-classification-jobs/process` 每次最多处理 20 笔，调用 Gemini 3.1 Flash Lite，并受默认 `15 RPM / 250k TPM / 500 RPD` 限制保护。
 6. AI 成功后写入分类、清洗商户名，并将标签切换为 `classification:ai`。
 7. 用户手动点击交易行分类 pill 修改分类时，系统清除自动分类标签；若存在同名交易，页面会询问是否通过 `apply_mode = 'similar'` 批量同步。
+
+### Plaid Webhook 同步流程
+
+1. `PLAID_WEBHOOK_URL` 配置后，新 Plaid Link Token 会携带 webhook URL。
+2. 已连接的旧 Item 在下一次手动调用 `/api/plaid/sync-transactions` 时，会通过 Plaid `/item/webhook/update` 补注册同一个 webhook URL。
+3. `/api/plaid/webhook` 用 `PLAID_WEBHOOK_SECRET` 校验 `?secret=...` 或 `x-plaid-webhook-secret`。
+4. 收到 `TRANSACTIONS:SYNC_UPDATES_AVAILABLE`、`DEFAULT_UPDATE` 或 `TRANSACTIONS_REMOVED` 后，按 Plaid `item_id` 查本地 `plaid_items`，再调用 `src/lib/plaid/transactions-sync.ts` 执行 cursor 增量同步。
+5. 收到 `ITEM:ERROR` 时会把本地 Plaid Item 标记为 `error` 或 `login_required`；收到 `ITEM:LOGIN_REPAIRED` 时恢复为 `active`。
+6. Plaid 交易更新不是刷卡实时流；webhook 表示 Plaid 已有可同步更新，不保证消费发生后立即到达。
 
 ### `/api/transactions/[id]/category` 详细
 
