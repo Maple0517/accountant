@@ -1,3 +1,4 @@
+import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncPlaidItemTransactions } from '@/lib/plaid/transactions-sync'
 
@@ -91,16 +92,27 @@ export async function POST(request: Request) {
       })
     }
 
-    const result = await syncPlaidItemTransactions({
-      supabase,
-      plaidItemId: item.id,
+    after(async () => {
+      try {
+        const result = await syncPlaidItemTransactions({
+          supabase,
+          plaidItemId: item.id,
+        })
+
+        console.info('Plaid webhook transaction sync completed:', {
+          item_id,
+          webhook_code,
+          result,
+        })
+      } catch (error) {
+        console.error('Error syncing Plaid webhook transactions:', error)
+      }
     })
 
     return Response.json({
       received: true,
-      synced: true,
+      sync_scheduled: true,
       webhook_code,
-      result,
     })
   } catch (error: unknown) {
     console.error('Error handling Plaid webhook:', error)

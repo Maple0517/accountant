@@ -1369,6 +1369,87 @@ body {
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        .new-category-section {
+          margin-top: 0.65rem;
+          border-top: 1px solid var(--glass-border);
+          padding-top: 0.65rem;
+        }
+        .new-category-toggle {
+          width: 100%;
+          padding: 0.4rem;
+          border: 1px dashed var(--glass-border);
+          border-radius: 8px;
+          background: transparent;
+          color: var(--text-secondary);
+          font: inherit;
+          font-size: 0.78rem;
+          cursor: pointer;
+          transition: color var(--transition-fast), border-color var(--transition-fast);
+        }
+        .new-category-toggle:hover {
+          color: var(--text-primary);
+          border-color: var(--text-secondary);
+        }
+        .new-category-form {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .new-category-input {
+          width: 100%;
+        }
+        .new-category-icons {
+          display: flex;
+          gap: 0.35rem;
+          flex-wrap: wrap;
+        }
+        .icon-option {
+          width: 2rem;
+          height: 2rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px solid var(--glass-border);
+          border-radius: 8px;
+          background: rgba(0, 0, 0, 0.18);
+          font-size: 1rem;
+          cursor: pointer;
+          transition: border-color var(--transition-fast), transform var(--transition-fast);
+        }
+        .icon-option:hover {
+          transform: translateY(-1px);
+        }
+        .icon-option.selected {
+          border-color: var(--accent-primary);
+          background: rgba(99, 102, 241, 0.15);
+        }
+        .new-category-colors {
+          display: flex;
+          gap: 0.35rem;
+          flex-wrap: wrap;
+        }
+        .color-option {
+          width: 1.5rem;
+          height: 1.5rem;
+          border: 2px solid transparent;
+          border-radius: 50%;
+          cursor: pointer;
+          transition: border-color var(--transition-fast), transform var(--transition-fast);
+        }
+        .color-option:hover {
+          transform: scale(1.15);
+        }
+        .color-option.selected {
+          border-color: var(--text-primary);
+        }
+        .new-category-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+        .btn-sm {
+          padding: 0.35rem 0.75rem;
+          font-size: 0.78rem;
+        }
         .category-save-status {
           font-size: 0.8rem;
           color: var(--text-secondary);

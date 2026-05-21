@@ -72,6 +72,9 @@ function getCategoryButtonStyle(category: Category, selected: boolean) {
   }
 }
 
+const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
+const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [loading, setLoading] = useState(true)
@@ -384,6 +387,32 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleCreateCategory = async (
+    transactionId: string,
+    name: string,
+    icon: string,
+    color: string
+  ) => {
+    try {
+      const response = await fetch('/api/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, icon, color, type: 'expense' }),
+      })
+      const newCategory = await response.json()
+      if (!response.ok) throw new Error(newCategory.error || 'Failed to create category')
+
+      setCategories((prev) => [newCategory as Category, ...prev])
+      await handleCategorySave(transactionId, newCategory.id)
+    } catch (error) {
+      console.error('Failed to create category:', error)
+      setCategorySaveStatus({
+        transactionId,
+        message: error instanceof Error ? error.message : 'Failed to create category',
+      })
+    }
+  }
+
   const groupedTransactions = transactions.reduce(
     (groups, tx) => {
       const date = tx.date
@@ -569,6 +598,9 @@ export default function TransactionsPage() {
                         )
                       }
                       onDismissSimilar={() => setSimilarSuggestion(null)}
+                      onCreateCategory={(name, icon, color) =>
+                        handleCreateCategory(tx.id, name, icon, color)
+                      }
                     />
                   ))}
                 </div>
@@ -593,6 +625,7 @@ function TransactionItem({
   onSaveCategory,
   onApplySimilar,
   onDismissSimilar,
+  onCreateCategory,
 }: {
   transaction: TransactionWithRelations
   categories: Category[]
@@ -605,6 +638,7 @@ function TransactionItem({
   onSaveCategory: (categoryId: string) => void
   onApplySimilar: (suggestion: SimilarCategorySuggestion) => void
   onDismissSimilar: () => void
+  onCreateCategory: (name: string, icon: string, color: string) => void
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
@@ -614,6 +648,10 @@ function TransactionItem({
   const merchantName = tx.merchant_name || tx.description
   const accountName = tx.accounts?.name || null
   const tags = Array.isArray(tx.tags) ? tx.tags : []
+  const [showNewCategoryForm, setShowNewCategoryForm] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
+  const [selectedNewIcon, setSelectedNewIcon] = useState(CATEGORY_ICONS[0])
+  const [selectedNewColor, setSelectedNewColor] = useState(CATEGORY_COLORS[5])
 
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
@@ -705,6 +743,86 @@ function TransactionItem({
               })}
             </div>
           )}
+          <div className="new-category-section">
+            {showNewCategoryForm ? (
+              <div className="new-category-form">
+                <input
+                  type="text"
+                  className="input new-category-input"
+                  placeholder="New category name..."
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newCategoryName.trim()) {
+                      onCreateCategory(newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                      setNewCategoryName('')
+                      setShowNewCategoryForm(false)
+                    }
+                  }}
+                  autoFocus
+                />
+                <div className="new-category-icons">
+                  {CATEGORY_ICONS.map((icon) => (
+                    <button
+                      key={icon}
+                      type="button"
+                      className={`icon-option ${selectedNewIcon === icon ? 'selected' : ''}`}
+                      onClick={() => setSelectedNewIcon(icon)}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+                <div className="new-category-colors">
+                  {CATEGORY_COLORS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`color-option ${selectedNewColor === color ? 'selected' : ''}`}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setSelectedNewColor(color)}
+                    />
+                  ))}
+                </div>
+                <div className="new-category-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={!newCategoryName.trim() || savingCategory}
+                    onClick={() => {
+                      onCreateCategory(newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                      setNewCategoryName('')
+                      setShowNewCategoryForm(false)
+                    }}
+                  >
+                    {savingCategory ? 'Creating...' : 'Create'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => {
+                      setShowNewCategoryForm(false)
+                      setNewCategoryName('')
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="new-category-toggle"
+                onClick={() => {
+                  setShowNewCategoryForm(true)
+                  setSelectedNewIcon(CATEGORY_ICONS[0])
+                  setSelectedNewColor(CATEGORY_COLORS[5])
+                }}
+              >
+                + New Category
+              </button>
+            )}
+          </div>
         </div>
       )}
       {(statusMessage || similarSuggestion) && (
