@@ -35,6 +35,8 @@ export type Account = {
   available_balance?: number
   iso_currency_code?: string
   is_manual: boolean
+  last_synced_at?: string | null
+  last_sync_error?: string | null
   created_at: string
   updated_at: string
 }
@@ -63,6 +65,8 @@ export type PlaidItem = {
   cursor?: string
   status: 'active' | 'error' | 'login_required'
   error_code?: string
+  last_synced_at?: string | null
+  last_sync_error?: string | null
   created_at: string
   updated_at: string
 }

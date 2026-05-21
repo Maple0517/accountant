@@ -1,6 +1,9 @@
 import { after } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { syncPlaidItemTransactions } from '@/lib/plaid/transactions-sync'
+import {
+  getSafePlaidSyncError,
+  syncPlaidItemTransactions,
+} from '@/lib/plaid/transactions-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -80,7 +83,7 @@ export async function POST(request: Request) {
 
     const { data: item, error } = await supabase
       .from('plaid_items')
-      .select('id')
+      .select('id, user_id')
       .eq('item_id', item_id)
       .single()
 
@@ -106,6 +109,11 @@ export async function POST(request: Request) {
         })
       } catch (error) {
         console.error('Error syncing Plaid webhook transactions:', error)
+        await supabase
+          .from('plaid_items')
+          .update({ last_sync_error: getSafePlaidSyncError(error) })
+          .eq('id', item.id)
+          .eq('user_id', item.user_id)
       }
     })
 

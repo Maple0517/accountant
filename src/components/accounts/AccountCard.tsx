@@ -6,19 +6,38 @@ import { useState } from 'react'
 
 interface AccountCardProps {
   account: Account
-  onSync?: (plaidItemId: string) => void
+  onRefresh?: (plaidItemId: string) => void
 }
 
-export default function AccountCard({ account, onSync }: AccountCardProps) {
-  const [syncing, setSyncing] = useState(false)
+export default function AccountCard({ account, onRefresh }: AccountCardProps) {
+  const [refreshing, setRefreshing] = useState(false)
 
-  const handleSync = async () => {
-    if (!account.plaid_item_id || !onSync) return
+  const handleRefresh = async () => {
+    if (!account.plaid_item_id || !onRefresh) return
     
-    setSyncing(true)
-    await onSync(account.plaid_item_id)
-    setSyncing(false)
+    setRefreshing(true)
+    await onRefresh(account.plaid_item_id)
+    setRefreshing(false)
   }
+
+  const getSyncStatusText = () => {
+    if (account.last_sync_error) {
+      return 'Last sync failed. Try again later.'
+    }
+
+    if (account.last_synced_at) {
+      return `Last checked: ${new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(account.last_synced_at))}`
+    }
+
+    return null
+  }
+
+  const syncStatusText = getSyncStatusText()
 
   // Generate a gradient based on account name/type
   const getGradient = () => {
@@ -48,12 +67,12 @@ export default function AccountCard({ account, onSync }: AccountCardProps) {
             {account.mask ? `•••• ${account.mask}` : account.type}
           </span>
         </div>
-        {account.plaid_item_id && onSync && (
+        {account.plaid_item_id && onRefresh && (
           <button 
-            className={`btn-sync ${syncing ? 'syncing' : ''}`}
-            onClick={handleSync}
-            disabled={syncing}
-            title="Sync transactions"
+            className={`btn-sync ${refreshing ? 'syncing' : ''}`}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Check for available updates"
           >
             🔄
           </button>
@@ -77,6 +96,12 @@ export default function AccountCard({ account, onSync }: AccountCardProps) {
           </div>
         )}
       </div>
+
+      {syncStatusText && (
+        <div className={`sync-status ${account.last_sync_error ? 'error' : ''}`}>
+          {syncStatusText}
+        </div>
+      )}
 
       
     </div>
