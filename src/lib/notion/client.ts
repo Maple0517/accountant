@@ -1,6 +1,6 @@
 import { Client } from '@notionhq/client'
 
-let notionClient: Client | null = null
+const notionClients = new Map<string, Client>()
 
 export function getNotionClient(token?: string): Client {
   const authToken = token || process.env.NOTION_TOKEN
@@ -8,16 +8,19 @@ export function getNotionClient(token?: string): Client {
     throw new Error('Notion token is required')
   }
 
-  if (!notionClient) {
-    notionClient = new Client({ auth: authToken })
+  const cachedClient = notionClients.get(authToken)
+  if (cachedClient) {
+    return cachedClient
   }
 
-  return notionClient
+  const client = new Client({ auth: authToken })
+  notionClients.set(authToken, client)
+  return client
 }
 
 /**
- * Reset the cached client (useful when token changes)
+ * Reset cached clients (useful when tokens change or in tests)
  */
 export function resetNotionClient(): void {
-  notionClient = null
+  notionClients.clear()
 }

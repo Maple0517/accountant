@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/currency'
 import { Chart, registerables } from 'chart.js'
@@ -27,7 +27,7 @@ export default function AnalyticsPage() {
   const lineChartInstance = useRef<Chart | null>(null)
   const barChartInstance = useRef<Chart | null>(null)
 
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true)
@@ -399,21 +399,21 @@ export default function AnalyticsPage() {
             <div className="card chart-card">
               <h3>Spending by Category</h3>
               <div className="chart-container pie-container">
-                <canvas ref={pieChartRef} />
+                <canvas ref={pieChartRef} role="img" aria-label="Spending by category chart" />
               </div>
             </div>
 
             <div className="card chart-card">
               <h3>Daily Spending Trend</h3>
               <div className="chart-container">
-                <canvas ref={lineChartRef} />
+                <canvas ref={lineChartRef} role="img" aria-label="Daily spending trend chart" />
               </div>
             </div>
 
             <div className="card chart-card full-width">
               <h3>Income vs Spending</h3>
               <div className="chart-container">
-                <canvas ref={barChartRef} />
+                <canvas ref={barChartRef} role="img" aria-label="Income versus spending chart" />
               </div>
             </div>
           </div>

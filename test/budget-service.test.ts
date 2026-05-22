@@ -11,6 +11,7 @@ function createSupabaseStub(categories: Array<Record<string, unknown>> = []) {
           return chain
         },
         eq(column: string, value: unknown) {
+          void value
           if (table === 'categories' && column === 'user_id') {
             return {
               order() {

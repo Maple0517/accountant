@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { plaidClient } from '@/lib/plaid/client'
+import { getPlaidClient } from '@/lib/plaid/client'
 import { CountryCode } from 'plaid'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     }
 
     // Exchange public token for access token
-    const tokenResponse = await plaidClient.itemPublicTokenExchange({
+    const tokenResponse = await getPlaidClient().itemPublicTokenExchange({
       public_token,
     })
 
@@ -38,12 +38,12 @@ export async function POST(request: Request) {
     const item_id = tokenResponse.data.item_id
 
     // Fetch item details to get institution info
-    const itemResponse = await plaidClient.itemGet({ access_token })
+    const itemResponse = await getPlaidClient().itemGet({ access_token })
     const institutionId = itemResponse.data.item.institution_id
 
     let institutionName = 'Unknown Institution'
     if (institutionId) {
-      const instResponse = await plaidClient.institutionsGetById({
+      const instResponse = await getPlaidClient().institutionsGetById({
         institution_id: institutionId,
         country_codes: [CountryCode.Us],
       })
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     }
 
     // Fetch accounts
-    const accountsResponse = await plaidClient.accountsGet({ access_token })
+    const accountsResponse = await getPlaidClient().accountsGet({ access_token })
     
     const existingAccountsByPlaidId = new Map(
       (

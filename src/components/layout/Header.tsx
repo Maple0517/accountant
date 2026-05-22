@@ -29,11 +29,11 @@ export default function Header() {
         <div className="header-actions">
           <div className="search-bar">
             <span className="search-icon">🔍</span>
-            <input type="text" placeholder="Search..." className="search-input" />
+            <input type="text" placeholder="Search..." className="search-input" aria-label="Search" />
           </div>
-          <button className="notification-btn">
+          <button className="notification-btn" aria-label="Notifications">
             🔔
-            <span className="notification-badge"></span>
+            <span className="notification-badge" aria-hidden="true"></span>
           </button>
         </div>
       </div>
