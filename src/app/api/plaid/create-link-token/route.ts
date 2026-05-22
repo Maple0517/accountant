@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { plaidClient } from '@/lib/plaid/client'
+import { getPlaidClient } from '@/lib/plaid/client'
 import { CountryCode, Products } from 'plaid'
 
 export const dynamic = 'force-dynamic'
@@ -26,7 +26,7 @@ export async function POST() {
         : {}),
     }
 
-    const createTokenResponse = await plaidClient.linkTokenCreate(configs)
+    const createTokenResponse = await getPlaidClient().linkTokenCreate(configs)
 
     return Response.json({ link_token: createTokenResponse.data.link_token })
   } catch (error: unknown) {

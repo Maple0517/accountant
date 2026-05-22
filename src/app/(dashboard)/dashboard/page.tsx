@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { formatCurrency } from '@/lib/currency'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
@@ -140,10 +141,10 @@ export default async function DashboardPage() {
           <div className="card budgets-card">
             <div className="card-header">
               <h3>Budget Progress</h3>
-              <a href="/budgets" className="btn btn-ghost text-sm">View All</a>
+              <Link href="/budgets" className="btn btn-ghost text-sm">View All</Link>
             </div>
             <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              Visit the <a href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</a> to set up monthly spending limits.
+              Visit the <Link href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</Link> to set up monthly spending limits.
             </div>
           </div>
         </div>
@@ -152,7 +153,7 @@ export default async function DashboardPage() {
           <div className="card transactions-card">
             <div className="card-header">
               <h3>Recent Transactions</h3>
-              <button className="btn btn-ghost text-sm">View All</button>
+              <Link href="/transactions" className="btn btn-ghost text-sm">View All</Link>
             </div>
             <div className="transaction-list">
               {recentTransactions.length > 0 ? (

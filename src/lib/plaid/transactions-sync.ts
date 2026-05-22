@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
 import { getCategoryFromPlaid } from '@/lib/categories'
-import { plaidClient } from '@/lib/plaid/client'
+import { getPlaidClient } from '@/lib/plaid/client'
 import {
   getPlaidPrimaryCategory,
   mergeTransactionClassification,
@@ -99,7 +99,7 @@ export async function syncPlaidItemTransactions({
 
   if (ensureWebhook && process.env.PLAID_WEBHOOK_URL) {
     try {
-      await plaidClient.itemWebhookUpdate({
+      await getPlaidClient().itemWebhookUpdate({
         access_token: item.access_token,
         webhook: process.env.PLAID_WEBHOOK_URL,
       })
@@ -146,7 +146,7 @@ export async function syncPlaidItemTransactions({
   let hasMore = true
 
   while (hasMore) {
-    const response = await plaidClient.transactionsSync({
+    const response = await getPlaidClient().transactionsSync({
       access_token: item.access_token,
       cursor,
     })
