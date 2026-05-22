@@ -8,7 +8,6 @@
 import type {
   BudgetEngineInput,
   BudgetTransactionInput,
-  BudgetCategoryInput,
   BudgetStatus,
   CategoryBudgetSummary,
   MonthlyBudgetSummary,

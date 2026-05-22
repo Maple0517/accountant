@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "pretest": "rm -rf .tmp-tests && ./node_modules/typescript/bin/tsc -p tsconfig.test.json",
     "test": "node --import ./test/register-alias.mjs --test .tmp-tests/**/*.test.js"
   },

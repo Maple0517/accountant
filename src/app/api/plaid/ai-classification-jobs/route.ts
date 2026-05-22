@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import type { AiClassificationJob } from '@/types'
 import {
-  AiClassificationJob,
   loadRefreshCandidateIds,
 } from '@/lib/plaid/ai-classification-queue'
 

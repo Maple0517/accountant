@@ -7,8 +7,9 @@ import {
   AI_CLASSIFIED_TAG,
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
+  stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
-import type { Category, Transaction } from '@/types'
+import type { AiClassificationJob, Category, Transaction } from '@/types'
 
 type TransactionFilter = {
   search: string
@@ -21,15 +22,6 @@ type TransactionFilter = {
 
 type TransactionGroupBy = 'date' | 'category'
 
-type AiClassificationJob = {
-  id: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
-  total_count: number
-  pending_count: number
-  completed_count: number
-  failed_count: number
-  error_message?: string | null
-}
 
 type TransactionWithRelations = Transaction & {
   categories?: Pick<
@@ -88,14 +80,6 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function stripAutomaticClassificationTags(tags: Transaction['tags']) {
-  return (Array.isArray(tags) ? tags : []).filter(
-    (tag) =>
-      tag !== AI_CLASSIFIED_TAG &&
-      tag !== AI_PENDING_TAG &&
-      tag !== PLAID_FALLBACK_TAG
-  )
-}
 
 function getCategoryButtonStyle(category: Category, selected: boolean) {
   const color = category.color || '#607d8b'

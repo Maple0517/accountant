@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Compiled JS output from `npm run pretest` (tsconfig.test.json → .tmp-tests/).
+    // These are CommonJS files and will always trigger @typescript-eslint/no-require-imports.
+    ".tmp-tests/**",
   ]),
 ]);
 

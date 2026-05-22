@@ -111,3 +111,18 @@ export function mergeTransactionClassification(
 export function getPlaidPrimaryCategory(tx: PlaidCategorySource) {
   return tx.personal_finance_category?.primary || tx.category?.[0] || null
 }
+
+/**
+ * Removes internal classification system tags from a tag array.
+ * Call this when a user manually sets a category so AI cannot overwrite it again.
+ */
+export function stripAutomaticClassificationTags(
+  tags: string[] | null | undefined
+): string[] {
+  return (Array.isArray(tags) ? tags : []).filter(
+    (tag) =>
+      tag !== AI_CLASSIFIED_TAG &&
+      tag !== AI_PENDING_TAG &&
+      tag !== PLAID_FALLBACK_TAG
+  )
+}

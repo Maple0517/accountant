@@ -124,8 +124,8 @@ export type AiClassificationJob = {
   pending_count: number
   completed_count: number
   failed_count: number
-  error_message?: string
-  completed_at?: string
+  error_message: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -137,8 +137,8 @@ export type AiClassificationJobItem = {
   transaction_id: string
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped'
   attempts: number
-  error_message?: string
-  completed_at?: string
+  error_message: string | null
+  completed_at: string | null
   created_at: string
   updated_at: string
 }

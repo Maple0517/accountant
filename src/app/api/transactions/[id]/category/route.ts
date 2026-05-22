@@ -1,22 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
-import {
-  AI_CLASSIFIED_TAG,
-  AI_PENDING_TAG,
-  PLAID_FALLBACK_TAG,
-} from '@/lib/plaid/classification'
+import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
 
 export const dynamic = 'force-dynamic'
 
 type SimilarMode = 'single' | 'similar'
 
-function stripAutomaticClassificationTags(tags: string[] | null | undefined) {
-  return (tags || []).filter(
-    (tag) =>
-      tag !== AI_CLASSIFIED_TAG &&
-      tag !== AI_PENDING_TAG &&
-      tag !== PLAID_FALLBACK_TAG
-  )
-}
 
 function normalizeMatchKey(value: string | null | undefined) {
   return value?.trim().toLocaleLowerCase('en-US') || ''

@@ -291,7 +291,6 @@ export default function BudgetsPage() {
                     onEditChange={(v) => setEditValue(v)}
                     onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
                     onCommit={() => commitEdit(cat.categoryId)}
-                    onCancel={cancelEdit}
                   />
                 ))}
               </div>
@@ -339,7 +338,6 @@ type CategoryRowProps = {
   onEditChange: (v: string) => void
   onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
   onCommit: () => void
-  onCancel: () => void
 }
 
 function CategoryRow({
@@ -352,7 +350,6 @@ function CategoryRow({
   onEditChange,
   onEditKeyDown,
   onCommit,
-  onCancel,
 }: CategoryRowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 

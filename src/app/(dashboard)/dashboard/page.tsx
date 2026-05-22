@@ -33,10 +33,12 @@ export default async function DashboardPage() {
   const now = new Date()
   const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
 
+  // Exclude pending transactions to match budget engine semantics.
   const { data: monthTx } = await supabase
     .from('transactions')
     .select('amount, source')
     .eq('user_id', user.id)
+    .eq('pending', false)
     .gte('date', firstDayOfMonth)
 
   let monthlySpending = 0
@@ -137,19 +139,11 @@ export default async function DashboardPage() {
 
           <div className="card budgets-card">
             <div className="card-header">
-              <h3>Budget Progress (Coming Soon)</h3>
-              <button className="btn btn-ghost text-sm">View All</button>
+              <h3>Budget Progress</h3>
+              <a href="/budgets" className="btn btn-ghost text-sm">View All</a>
             </div>
-            <div className="budget-list">
-              <div className="budget-item">
-                <div className="budget-info">
-                  <span>🍔 Food & Dining</span>
-                  <span className="budget-amounts">$450 / $600</span>
-                </div>
-                <div className="progress-bg">
-                  <div className="progress-fill warning" style={{ width: '75%' }}></div>
-                </div>
-              </div>
+            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              Visit the <a href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</a> to set up monthly spending limits.
             </div>
           </div>
         </div>
