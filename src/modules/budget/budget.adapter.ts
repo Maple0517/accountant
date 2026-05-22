@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { Category, Transaction, Budget, Profile } from '@/types';
+import { getBudgetDate } from '@/lib/transactions/refunds';
 import type {
   BudgetCategoryInput,
   BudgetTransactionInput,
@@ -36,14 +37,9 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
 /**
  * Maps transaction rows to BudgetTransactionInput[].
  *
- * Amount sign is normalised here, not in the engine. Across the current app,
- * the dominant storage convention is:
- * - negative amount = expense
- * - positive amount = income
- *
- * BudgetEngine should not need to know or guess that persistence detail, so
- * expense-like transactions are converted to a negative spend amount and
- * income-like transactions are converted to a positive inflow amount.
+ * Accountant stores Plaid amounts as positive expenses and negative credits.
+ * Refunds remain negative expense-category rows, so the engine can calculate
+ * net spending with a plain SUM(amount).
  *
  * Uses the `categoryMap` to resolve each transaction's type from its linked
  * category. Falls back to `'expense'` when the category is missing or
@@ -61,17 +57,10 @@ export function adaptTransactions(
     const type = category?.type ?? 'expense';
     const rawAmount = Number(row.amount);
 
-    let normalizedAmount = rawAmount;
-    if (type === 'expense') {
-      normalizedAmount = -Math.abs(rawAmount);
-    } else if (type === 'income') {
-      normalizedAmount = Math.abs(rawAmount);
-    }
-
     return {
       id: row.id,
-      amount: normalizedAmount,
-      date: row.date,
+      amount: rawAmount,
+      date: getBudgetDate(row),
       categoryId: row.category_id ?? null,
       type,
       status: row.pending ? ('pending' as const) : ('posted' as const),
@@ -109,6 +98,8 @@ export function adaptBudgetRules(rows: Budget[]): BudgetRuleInput[] {
  * returns safe defaults for phase 1.
  */
 export function adaptSettings(_profile: Profile | null): BudgetSettingsInput {
+  void _profile
+
   return {
     budgetingEnabled: true,
     includePendingTransactions: false,

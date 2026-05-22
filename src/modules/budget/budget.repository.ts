@@ -31,8 +31,8 @@ export async function loadCategoriesForBudget(
 }
 
 /**
- * Loads transactions for a user within a date range (inclusive start,
- * exclusive end).
+ * Loads transactions for a user within a budget-effective date range
+ * (inclusive start, exclusive end).
  *
  * @param monthStart - First day of the month, e.g. `'2026-05-01'`
  * @param monthEnd   - First day of the *next* month, e.g. `'2026-06-01'`
@@ -47,8 +47,9 @@ export async function loadTransactionsForBudgetMonth(
     .from('transactions')
     .select('*')
     .eq('user_id', userId)
-    .gte('date', monthStart)
-    .lt('date', monthEnd);
+    .or(
+      `and(budget_effective_date.gte.${monthStart},budget_effective_date.lt.${monthEnd}),and(budget_effective_date.is.null,date.gte.${monthStart},date.lt.${monthEnd})`,
+    );
 
   if (error) {
     console.error('[budget.repository] loadTransactionsForBudgetMonth failed:', error.message);

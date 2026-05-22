@@ -1,3 +1,5 @@
+export type TransactionKind = 'normal' | 'refund' | 'reimbursement' | 'transfer'
+
 export type Transaction = {
   id: string
   user_id: string
@@ -17,6 +19,11 @@ export type Transaction = {
   notion_page_id?: string
   tags?: string[]
   notes?: string
+  transaction_kind?: TransactionKind
+  linked_transaction_id?: string | null
+  budget_effective_date?: string | null
+  refund_match_confidence?: number | null
+  refund_match_reason?: string | null
   created_at: string
   updated_at: string
 }

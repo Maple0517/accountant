@@ -72,6 +72,11 @@ type SimilarCategorySuggestion = {
   similarCount: number
 }
 
+type RefundLinkCandidate = {
+  id: string
+  label: string
+}
+
 function isActiveAiJob(job: AiClassificationJob | null): job is AiClassificationJob {
   return job?.status === 'queued' || job?.status === 'running'
 }
@@ -112,6 +117,22 @@ function formatAccountSourceLabel(account: TransactionAccountRelation) {
   }
 
   return `${accountName}${mask}`
+}
+
+function formatShortDate(dateStr: string) {
+  const date = new Date(`${dateStr}T00:00:00`)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function formatBudgetApplication(tx: TransactionWithRelations) {
+  if (!tx.budget_effective_date || tx.budget_effective_date === tx.date) {
+    return null
+  }
+
+  return `Posted ${formatShortDate(tx.date)} · Applied to ${formatShortDate(tx.budget_effective_date)} budget`
 }
 
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
@@ -532,6 +553,49 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleRefundMetadataSave = async (
+    transactionId: string,
+    payload: {
+      transaction_kind?: Transaction['transaction_kind']
+      linked_transaction_id?: string | null
+      budget_effective_date?: string | null
+    }
+  ) => {
+    setSavingCategory(true)
+    setCategorySaveStatus(null)
+
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/refund`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update refund metadata')
+      }
+
+      const updated = data.transaction as TransactionWithRelations
+      setTransactions((current) =>
+        current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
+      )
+      setCategorySaveStatus({
+        transactionId,
+        message: 'Refund settings saved.',
+      })
+    } catch (error) {
+      console.error('Failed to update refund metadata:', error)
+      setCategorySaveStatus({
+        transactionId,
+        message:
+          error instanceof Error ? error.message : 'Failed to update refund metadata',
+      })
+    } finally {
+      setSavingCategory(false)
+    }
+  }
+
   const transactionsGroupedByDate = useMemo(
     () =>
       transactions.reduce(
@@ -603,6 +667,23 @@ export default function TransactionsPage() {
     <TransactionItem
       key={tx.id}
       transaction={tx}
+      linkCandidates={transactions
+        .filter((candidate) => {
+          if (candidate.id === tx.id) return false
+          if (Number(candidate.amount) <= 0) return false
+          if (candidate.date > tx.date) return false
+          return true
+        })
+        .slice(0, 30)
+        .map((candidate) => ({
+          id: candidate.id,
+          label: `${formatShortDate(candidate.date)} · ${
+            candidate.merchant_name || candidate.description
+          } · ${formatCurrency(
+            Number(candidate.amount),
+            candidate.iso_currency_code || 'USD'
+          )}`,
+        }))}
       categories={categories}
       categoriesLoading={categoriesLoading}
       isEditing={editingTransactionId === tx.id}
@@ -631,6 +712,9 @@ export default function TransactionsPage() {
       onDismissSimilar={() => setSimilarSuggestion(null)}
       onCreateCategory={(name, icon, color) =>
         handleCreateCategory(tx.id, name, icon, color)
+      }
+      onSaveRefundMetadata={(payload) =>
+        handleRefundMetadataSave(tx.id, payload)
       }
     />
   )
@@ -851,6 +935,7 @@ export default function TransactionsPage() {
 
 function TransactionItem({
   transaction: tx,
+  linkCandidates,
   categories,
   categoriesLoading,
   isEditing,
@@ -862,8 +947,10 @@ function TransactionItem({
   onApplySimilar,
   onDismissSimilar,
   onCreateCategory,
+  onSaveRefundMetadata,
 }: {
   transaction: TransactionWithRelations
+  linkCandidates: RefundLinkCandidate[]
   categories: Category[]
   categoriesLoading: boolean
   isEditing: boolean
@@ -875,6 +962,11 @@ function TransactionItem({
   onApplySimilar: (suggestion: SimilarCategorySuggestion) => void
   onDismissSimilar: () => void
   onCreateCategory: (name: string, icon: string, color: string) => void
+  onSaveRefundMetadata: (payload: {
+    transaction_kind?: Transaction['transaction_kind']
+    linked_transaction_id?: string | null
+    budget_effective_date?: string | null
+  }) => void
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
@@ -888,6 +980,10 @@ function TransactionItem({
   const [newCategoryName, setNewCategoryName] = useState('')
   const [selectedNewIcon, setSelectedNewIcon] = useState(CATEGORY_ICONS[0])
   const [selectedNewColor, setSelectedNewColor] = useState(CATEGORY_COLORS[5])
+  const [selectedLinkId, setSelectedLinkId] = useState(tx.linked_transaction_id || '')
+  const [budgetEffectiveDate, setBudgetEffectiveDate] = useState(
+    tx.budget_effective_date || tx.date
+  )
 
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
@@ -913,6 +1009,15 @@ function TransactionItem({
   }
   if (tx.pending) {
     metaParts.push('Pending')
+  }
+  if (tx.transaction_kind === 'refund') {
+    metaParts.push('Refund')
+  } else if (tx.transaction_kind === 'reimbursement') {
+    metaParts.push('Reimbursement')
+  }
+  const budgetApplication = formatBudgetApplication(tx)
+  if (budgetApplication) {
+    metaParts.push(budgetApplication)
   }
   const metaText = metaParts.join(' · ')
 
@@ -982,6 +1087,105 @@ function TransactionItem({
               })}
             </div>
           )}
+          <div className="refund-tools">
+            <div className="tx-category-popover-header">
+              <span>Refund handling</span>
+              {savingCategory && <span>Saving...</span>}
+            </div>
+            <div className="refund-kind-actions">
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.transaction_kind === 'refund' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() => onSaveRefundMetadata({ transaction_kind: 'refund' })}
+              >
+                Refund
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.transaction_kind === 'reimbursement' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() => onSaveRefundMetadata({ transaction_kind: 'reimbursement' })}
+              >
+                Reimbursement
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${!tx.transaction_kind || tx.transaction_kind === 'normal' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() => onSaveRefundMetadata({ transaction_kind: 'normal' })}
+              >
+                Normal
+              </button>
+            </div>
+            {tx.linked_transaction_id && (
+              <p className="refund-hint">
+                Applied to original purchase budget month
+                {tx.refund_match_confidence != null &&
+                  tx.refund_match_confidence < 0.8 &&
+                  tx.refund_match_reason &&
+                  ` · Possible refund match: ${tx.refund_match_reason}`}
+              </p>
+            )}
+            <div className="refund-link-row">
+              <select
+                className="input"
+                value={selectedLinkId}
+                disabled={savingCategory}
+                onChange={(e) => setSelectedLinkId(e.target.value)}
+              >
+                <option value="">No linked purchase</option>
+                {linkCandidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={!selectedLinkId || savingCategory}
+                onClick={() =>
+                  onSaveRefundMetadata({ linked_transaction_id: selectedLinkId })
+                }
+              >
+                Link
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={!tx.linked_transaction_id || savingCategory}
+                onClick={() => {
+                  setSelectedLinkId('')
+                  setBudgetEffectiveDate(tx.date)
+                  onSaveRefundMetadata({ linked_transaction_id: null })
+                }}
+              >
+                Clear
+              </button>
+            </div>
+            <div className="refund-link-row">
+              <input
+                type="date"
+                className="input"
+                value={budgetEffectiveDate}
+                disabled={savingCategory}
+                onChange={(e) => setBudgetEffectiveDate(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={!budgetEffectiveDate || savingCategory}
+                onClick={() =>
+                  onSaveRefundMetadata({
+                    budget_effective_date: budgetEffectiveDate,
+                  })
+                }
+              >
+                Apply Date
+              </button>
+            </div>
+          </div>
           <div className="new-category-section">
             {showNewCategoryForm ? (
               <div className="new-category-form">

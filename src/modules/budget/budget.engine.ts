@@ -99,7 +99,7 @@ export function calculateMonthlySummary(input: BudgetEngineInput): MonthlyBudget
   for (const tx of transactions) {
     if (isIncludedTransaction(tx, monthStart, nextMonthStart, includePending, expenseCategoryIds)) {
       const current = spendMap.get(tx.categoryId!) ?? 0
-      spendMap.set(tx.categoryId!, current + Math.abs(tx.amount))
+      spendMap.set(tx.categoryId!, current + tx.amount)
     }
   }
 

@@ -1446,6 +1446,31 @@ body {
           border-top: 1px solid var(--glass-border);
           padding-top: 0.65rem;
         }
+        .refund-tools {
+          margin-top: 0.75rem;
+          border-top: 1px solid var(--glass-border);
+          padding-top: 0.75rem;
+        }
+        .refund-kind-actions,
+        .refund-link-row {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .refund-link-row {
+          margin-top: 0.55rem;
+        }
+        .refund-link-row .input {
+          flex: 1 1 220px;
+          min-width: 0;
+        }
+        .refund-hint {
+          margin: 0.55rem 0 0;
+          color: var(--text-secondary);
+          font-size: 0.78rem;
+          line-height: 1.4;
+        }
         .new-category-toggle {
           width: 100%;
           padding: 0.4rem;

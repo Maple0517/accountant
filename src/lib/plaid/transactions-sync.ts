@@ -13,6 +13,10 @@ import {
   ClassifiedTransaction,
   RawTransactionToClassify,
 } from '@/lib/gemini/classifier'
+import {
+  findLikelyOriginalPurchase,
+  isLikelyRefundCandidate,
+} from '@/lib/transactions/refund-matching'
 
 type PlaidSyncTransaction = PlaidCategorySource & {
   account_id: string
@@ -29,6 +33,19 @@ type PlaidSyncTransaction = PlaidCategorySource & {
 
 type PlaidRemovedTransaction = {
   transaction_id: string
+}
+
+type ExistingPlaidTransaction = {
+  id: string
+  plaid_transaction_id: string
+  category_id: string | null
+  merchant_name: string | null
+  tags?: string[] | null
+  transaction_kind?: string | null
+  linked_transaction_id?: string | null
+  budget_effective_date?: string | null
+  refund_match_confidence?: number | null
+  refund_match_reason?: string | null
 }
 
 type SyncPlaidItemTransactionsInput = {
@@ -164,7 +181,18 @@ export async function syncPlaidItemTransactions({
     const existingPlaidIds = upsertList.map((tx) => tx.transaction_id)
     const { data: existingTransactions, error: existingTransactionsError } = await supabase
       .from('transactions')
-      .select('plaid_transaction_id, category_id, merchant_name, tags')
+      .select(`
+        id,
+        plaid_transaction_id,
+        category_id,
+        merchant_name,
+        tags,
+        transaction_kind,
+        linked_transaction_id,
+        budget_effective_date,
+        refund_match_confidence,
+        refund_match_reason
+      `)
       .eq('user_id', itemUserId)
       .in('plaid_transaction_id', existingPlaidIds)
 
@@ -173,7 +201,10 @@ export async function syncPlaidItemTransactions({
     }
 
     const existingTransactionMap = new Map(
-      (existingTransactions || []).map((tx) => [tx.plaid_transaction_id, tx])
+      ((existingTransactions || []) as ExistingPlaidTransaction[]).map((tx) => [
+        tx.plaid_transaction_id,
+        tx,
+      ])
     )
 
     const classMap = new Map(classified.map((c) => [c.id, c]))
@@ -181,6 +212,11 @@ export async function syncPlaidItemTransactions({
 
     for (const tx of upsertList) {
       const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+      const localAccountId = accountMap.get(tx.account_id)
+      if (!localAccountId) {
+        continue
+      }
+
       let classificationForMerge:
         | {
             clean_merchant_name: string
@@ -239,10 +275,52 @@ export async function syncPlaidItemTransactions({
         plaidFallback
       )
 
+      const refundCandidate = isLikelyRefundCandidate(tx)
+      let nextCategoryId = categoryId
+      let transactionKind =
+        existingTransaction?.transaction_kind && existingTransaction.transaction_kind !== 'normal'
+          ? existingTransaction.transaction_kind
+          : refundCandidate
+            ? 'refund'
+            : 'normal'
+      let linkedTransactionId = existingTransaction?.linked_transaction_id ?? null
+      let budgetEffectiveDate = existingTransaction?.budget_effective_date ?? tx.date
+      let refundMatchConfidence = existingTransaction?.refund_match_confidence ?? null
+      let refundMatchReason = existingTransaction?.refund_match_reason ?? null
+
+      if (
+        refundCandidate &&
+        !existingTransaction?.linked_transaction_id &&
+        existingTransaction?.transaction_kind !== 'reimbursement'
+      ) {
+        const match = await findLikelyOriginalPurchase({
+          supabase,
+          userId: itemUserId,
+          accountId: localAccountId,
+          refundAmountAbs: Math.abs(Number(tx.amount)),
+          merchantName: cleanName,
+          refundDate: tx.date,
+        })
+
+        transactionKind = 'refund'
+
+        if (match) {
+          linkedTransactionId = match.original.id
+          budgetEffectiveDate = match.original.date
+          refundMatchConfidence = match.confidence
+          refundMatchReason = match.reason
+          nextCategoryId = match.original.category_id ?? nextCategoryId
+        } else if (!existingTransaction?.budget_effective_date) {
+          budgetEffectiveDate = tx.date
+          refundMatchConfidence = null
+          refundMatchReason = null
+        }
+      }
+
       transactionsToUpsert.push({
         user_id: itemUserId,
-        account_id: accountMap.get(tx.account_id),
-        category_id: categoryId,
+        account_id: localAccountId,
+        category_id: nextCategoryId,
         plaid_transaction_id: tx.transaction_id,
         amount: tx.amount,
         iso_currency_code: tx.iso_currency_code || 'USD',
@@ -254,6 +332,11 @@ export async function syncPlaidItemTransactions({
         pending: tx.pending,
         source: 'plaid',
         tags,
+        transaction_kind: transactionKind,
+        linked_transaction_id: linkedTransactionId,
+        budget_effective_date: budgetEffectiveDate,
+        refund_match_confidence: refundMatchConfidence,
+        refund_match_reason: refundMatchReason,
       })
     }
 
