@@ -1,6 +1,15 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_CATEGORIES } from './categories'
 
+export const REFUNDED_CATEGORY = {
+  name: 'Refunded',
+  name_zh: '已退款',
+  icon: '↩️',
+  color: '#14b8a6',
+  type: 'expense' as const,
+  is_excluded_from_budget: false,
+}
+
 export type CategoryRow = {
   id: string
   user_id: string
@@ -215,4 +224,52 @@ export async function getOrCreateCategory(
   }
 
   return newCategory as CategoryRow
+}
+
+export async function getOrCreateRefundedCategory(
+  supabase: SupabaseClient,
+  userId: string,
+  existingCategories?: CategoryRow[]
+): Promise<CategoryRow | null> {
+  const categories = existingCategories || (await getUserCategories(supabase, userId))
+  const existing = categories.find(
+    (category) =>
+      normalizeCategoryName(category.name) === normalizeCategoryName(REFUNDED_CATEGORY.name) ||
+      category.name_zh === REFUNDED_CATEGORY.name_zh
+  )
+
+  if (existing) {
+    return existing
+  }
+
+  const maxSortOrder = categories.reduce(
+    (max, category) => Math.max(max, Number(category.sort_order ?? 0)),
+    0
+  )
+
+  const { data: inserted, error } = await supabase
+    .from('categories')
+    .insert({
+      user_id: userId,
+      name: REFUNDED_CATEGORY.name,
+      name_zh: REFUNDED_CATEGORY.name_zh,
+      icon: REFUNDED_CATEGORY.icon,
+      color: REFUNDED_CATEGORY.color,
+      type: REFUNDED_CATEGORY.type,
+      sort_order: maxSortOrder + 1,
+      is_excluded_from_budget: REFUNDED_CATEGORY.is_excluded_from_budget,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    console.error('Error ensuring refunded category:', error)
+    return null
+  }
+
+  if (existingCategories) {
+    existingCategories.push(inserted as CategoryRow)
+  }
+
+  return inserted as CategoryRow
 }

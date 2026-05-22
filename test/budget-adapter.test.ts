@@ -105,3 +105,27 @@ test('transaction adapter uses budget_effective_date when present', () => {
 
   assert.equal(refund.date, '2026-01-20')
 })
+
+test('transaction adapter uses original category for linked refund budget math', () => {
+  const shopping = makeCategory({ id: 'cat_shopping', name: 'Shopping' })
+  const refunded = makeCategory({ id: 'cat_refunded', name: 'Refunded', name_zh: '已退款' })
+  const [refund] = adaptTransactions(
+    [
+      makeTransaction({
+        id: 'refund',
+        amount: -100,
+        category_id: 'cat_refunded',
+        transaction_kind: 'refund',
+        linked_transaction_id: 'purchase',
+      }),
+    ],
+    new Map([
+      [shopping.id, shopping],
+      [refunded.id, refunded],
+    ]),
+    new Map([['refund', 'cat_shopping']])
+  )
+
+  assert.equal(refund.categoryId, 'cat_shopping')
+  assert.equal(refund.amount, -100)
+})

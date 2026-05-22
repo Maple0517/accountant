@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getOrCreateRefundedCategory } from '@/lib/categories-db'
 import type { TransactionKind } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -96,9 +97,14 @@ export async function PATCH(
           )
         }
 
+        const refundedCategory = await getOrCreateRefundedCategory(
+          supabase,
+          user.id
+        )
+
         update.transaction_kind = 'refund'
         update.linked_transaction_id = original.id
-        update.category_id = original.category_id
+        update.category_id = refundedCategory?.id ?? original.category_id
         update.budget_effective_date = original.date
         update.refund_match_confidence = null
         update.refund_match_reason = 'manual link'

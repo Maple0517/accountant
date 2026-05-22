@@ -5,6 +5,7 @@ import { adaptCategories, adaptTransactions, adaptBudgetRules, adaptSettings } f
 import {
   loadCategoriesForBudget,
   loadTransactionsForBudgetMonth,
+  loadLinkedOriginalTransactionsForBudget,
   loadBudgetRulesForMonth,
   loadBudgetSettings,
   upsertCategoryBudget,
@@ -63,13 +64,51 @@ export async function getMonthlySummary(
 
   const categories = await loadCategoriesForBudget(supabase, userId)
   const transactions = await loadTransactionsForBudgetMonth(supabase, userId, monthStart, monthEnd)
+  const linkedTransactionIds = Array.from(
+    new Set(
+      transactions
+        .filter(
+          (tx) =>
+            (tx.transaction_kind === 'refund' ||
+              tx.transaction_kind === 'reimbursement') &&
+            tx.linked_transaction_id
+        )
+        .map((tx) => tx.linked_transaction_id!)
+    )
+  )
+  const linkedOriginals = await loadLinkedOriginalTransactionsForBudget(
+    supabase,
+    userId,
+    linkedTransactionIds
+  )
   const budgetRules = await loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear)
   const profile = await loadBudgetSettings(supabase, userId)
 
   const categoryMap = new Map(categories.map((c) => [c.id, c]))
+  const originalCategoryById = new Map(
+    linkedOriginals.map((tx) => [tx.id, tx.category_id ?? null])
+  )
+  const budgetCategoryByTransactionId = new Map(
+    transactions
+      .filter(
+        (tx) =>
+          (tx.transaction_kind === 'refund' ||
+            tx.transaction_kind === 'reimbursement') &&
+          tx.linked_transaction_id &&
+          originalCategoryById.has(tx.linked_transaction_id)
+      )
+      .map((tx) => [
+        tx.id,
+        originalCategoryById.get(tx.linked_transaction_id!) ?? null,
+      ])
+  )
 
   const adaptedCategories = adaptCategories(categories)
-  const adaptedTransactions = adaptTransactions(transactions, categoryMap)
+  const adaptedTransactions = adaptTransactions(
+    transactions,
+    categoryMap,
+    budgetCategoryByTransactionId
+  )
   const adaptedRules = adaptBudgetRules(budgetRules)
   const settings = adaptSettings(profile)
 

@@ -20,6 +20,7 @@ export const DEFAULT_CATEGORIES: AppCategory[] = [
   { name: 'Income', name_zh: '收入', icon: '💰', color: '#4caf50', type: 'income', plaidPrimary: ['INCOME'] },
   { name: 'Transfer', name_zh: '转账', icon: '🔄', color: '#9e9e9e', type: 'transfer', plaidPrimary: ['TRANSFER', 'TRANSFER_IN', 'TRANSFER_OUT'] },
   { name: 'Other', name_zh: '其他', icon: '📦', color: '#607d8b', type: 'expense', plaidPrimary: ['OTHER', 'GENERAL_SERVICES', 'GOVERNMENT_AND_NON_PROFIT'] },
+  { name: 'Refunded', name_zh: '已退款', icon: '↩️', color: '#14b8a6', type: 'expense' },
   { name: 'Excluded', name_zh: '不计入', icon: '🚫', color: '#9e9e9e', type: 'expense', isExcludedFromBudget: true },
 ]
 
