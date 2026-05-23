@@ -5,6 +5,7 @@ import { hashApiKey } from '@/lib/api-keys'
 import {
   parseReceipt,
   ReceiptParsingQuotaError,
+  ReceiptParsingValidationError,
 } from '@/lib/gemini/receipt-parser'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
@@ -15,6 +16,21 @@ export const dynamic = 'force-dynamic'
 type ReceiptAuth = {
   userId: string
   apiKeyId?: string
+}
+
+type ReceiptNotionStatus =
+  | { status: 'not_attempted'; synced: false; notion_page_id: null }
+  | { status: 'disabled' | 'not_configured' | 'failed'; synced: false; notion_page_id: null; error?: string }
+  | { status: 'synced'; synced: true; notion_page_id: string }
+
+class DuplicateReceiptError extends Error {
+  existingTransactionId?: string
+
+  constructor(message: string, existingTransactionId?: string) {
+    super(message)
+    this.name = 'DuplicateReceiptError'
+    this.existingTransactionId = existingTransactionId
+  }
 }
 
 type ReceiptStatus = 'parsed' | 'confirmed' | 'error'
@@ -78,6 +94,7 @@ export async function POST(request: NextRequest) {
     let mimeType: string = 'image/jpeg'
     let currency: string | undefined
     let notes: string | undefined
+    let idempotencyKey: string | undefined
     let auth: ReceiptAuth | undefined
 
     if (contentType.includes('multipart/form-data')) {
@@ -87,9 +104,17 @@ export async function POST(request: NextRequest) {
       const apiKey = formData.get('api_key') as string | null
       currency = (formData.get('currency') as string) || undefined
       notes = (formData.get('notes') as string) || undefined
+      idempotencyKey = normalizeIdempotencyKey(formData.get('idempotency_key'))
 
       if (!imageFile) {
         return Response.json({ error: 'No image file provided' }, { status: 400 })
+      }
+
+      if (!(imageFile instanceof File)) {
+        return Response.json(
+          { error: 'image must be uploaded as a file field' },
+          { status: 400 }
+        )
       }
 
       // Authenticate via API key or session
@@ -115,6 +140,7 @@ export async function POST(request: NextRequest) {
       mimeType = body.mime_type || 'image/jpeg'
       currency = body.currency
       notes = body.notes
+      idempotencyKey = normalizeIdempotencyKey(body.idempotency_key)
 
       if (!imageBase64) {
         return Response.json({ error: 'No image data provided' }, { status: 400 })
@@ -131,8 +157,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Fetch categories for Gemini to reuse if possible
     const supabase = createAdminClient()
+    await markApiKeyUsed(auth.apiKeyId)
+
+    if (idempotencyKey) {
+      const existing = await findExistingReceiptByIdempotencyKey(
+        supabase,
+        auth.userId,
+        idempotencyKey
+      )
+      if (existing) {
+        return Response.json({
+          success: true,
+          duplicate: true,
+          receipt_id: existing.id,
+          transaction_id: existing.transaction_id,
+          notion: {
+            status: 'not_attempted',
+            synced: false,
+            notion_page_id: null,
+          } satisfies ReceiptNotionStatus,
+        })
+      }
+    }
+
+    // Fetch categories for Gemini to reuse if possible
     const userCategories = await getUserCategories(supabase, auth.userId)
 
     // Parse image with Gemini Vision
@@ -145,11 +194,24 @@ export async function POST(request: NextRequest) {
         image_url: `data:${mimeType};base64,${imageBase64.substring(0, 100)}...`, // Store reference, not full image
         parsed_data: parsed,
         status: 'parsed',
+        idempotency_key: idempotencyKey || null,
       })
       .select()
       .single()
 
     if (receiptError) {
+      if (isDuplicateIdempotencyError(receiptError) && idempotencyKey) {
+        const existing = await findExistingReceiptByIdempotencyKey(
+          supabase,
+          auth.userId,
+          idempotencyKey
+        )
+        throw new DuplicateReceiptError(
+          'Receipt was already processed for this idempotency key',
+          existing?.transaction_id || undefined
+        )
+      }
+
       console.error('Failed to store receipt:', receiptError)
     } else {
       receiptId = receipt.id
@@ -254,11 +316,42 @@ export async function POST(request: NextRequest) {
         transaction_id: transaction.id,
         status: 'confirmed',
       })
-
-      await syncSingleTransactionIfEnabled(auth.userId, transaction.id)
     }
 
-    await markApiKeyUsed(auth.apiKeyId)
+    let notion: ReceiptNotionStatus = {
+      status: 'not_attempted',
+      synced: false,
+      notion_page_id: null,
+    }
+
+    if (transactionId) {
+      try {
+        const syncResult = await syncSingleTransactionIfEnabled(
+          auth.userId,
+          transactionId,
+          { supabase }
+        )
+        notion = {
+          status: syncResult.status,
+          synced: syncResult.synced,
+          notion_page_id: syncResult.notionPageId,
+          ...('error' in syncResult && syncResult.error
+            ? { error: syncResult.error }
+            : {}),
+        } as ReceiptNotionStatus
+      } catch (syncError) {
+        console.error('Receipt Notion auto-sync failed:', syncError)
+        notion = {
+          status: 'failed',
+          synced: false,
+          notion_page_id: null,
+          error:
+            syncError instanceof Error
+              ? syncError.message
+              : 'Notion auto-sync failed',
+        }
+      }
+    }
 
     return Response.json({
       success: true,
@@ -275,6 +368,7 @@ export async function POST(request: NextRequest) {
       },
       confidence: parsed.confidence_score,
       transaction_id: transactionId,
+      notion,
     })
   } catch (error) {
     console.error('Receipt processing error:', error)
@@ -283,6 +377,26 @@ export async function POST(request: NextRequest) {
       status: 'error',
       error_message: error instanceof Error ? error.message : String(error),
     })
+
+    if (error instanceof DuplicateReceiptError) {
+      return Response.json({
+        success: true,
+        duplicate: true,
+        transaction_id: error.existingTransactionId,
+        notion: {
+          status: 'not_attempted',
+          synced: false,
+          notion_page_id: null,
+        } satisfies ReceiptNotionStatus,
+      })
+    }
+
+    if (error instanceof ReceiptParsingValidationError) {
+      return Response.json(
+        { error: 'Could not parse a valid receipt transaction', details: error.message },
+        { status: 422 }
+      )
+    }
 
     if (error instanceof ReceiptParsingQuotaError) {
       const retryAfterSeconds = error.retryAfterSeconds ?? 30
@@ -307,6 +421,37 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+
+function normalizeIdempotencyKey(value: unknown) {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed ? trimmed.slice(0, 120) : undefined
+}
+
+function isDuplicateIdempotencyError(error: { code?: string; message?: string }) {
+  return error.code === '23505' || Boolean(error.message?.includes('idempotency'))
+}
+
+async function findExistingReceiptByIdempotencyKey(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  idempotencyKey: string
+): Promise<{ id: string; transaction_id: string | null } | null> {
+  const { data, error } = await supabase
+    .from('receipts')
+    .select('id, transaction_id')
+    .eq('user_id', userId)
+    .eq('idempotency_key', idempotencyKey)
+    .maybeSingle()
+
+  if (error) {
+    console.error('Failed to find receipt by idempotency key:', error)
+    return null
+  }
+
+  return (data as { id: string; transaction_id: string | null } | null) || null
 }
 
 async function getOrCreateIosCaptureAccount(
@@ -344,7 +489,16 @@ async function getOrCreateIosCaptureAccount(
 
   if (error) {
     console.error('Failed to create iOS capture account:', error)
-    return undefined
+
+    const { data: recoveredAccount } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('is_manual', true)
+      .eq('name', 'iOS Capture')
+      .maybeSingle()
+
+    return recoveredAccount?.id
   }
 
   return newAccount?.id

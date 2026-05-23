@@ -470,19 +470,31 @@ export async function syncPlaidItemTransactions({
       .upsert(transactionsToUpsert, { onConflict: 'plaid_transaction_id' })
 
     if (upsertError) {
-      console.error('Error upserting transactions:', upsertError)
-    } else {
-      const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
-      const { data: dbTransactions } = await supabase
-        .from('transactions')
-        .select('id')
-        .eq('user_id', itemUserId)
-        .in('plaid_transaction_id', upsertedPlaidIds)
+      throw new Error(`Failed to persist Plaid transactions: ${upsertError.message}`)
+    }
 
-      await syncTransactionsIfEnabled(
-        itemUserId,
-        (dbTransactions || []).map((transaction) => transaction.id)
+    const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
+    const { data: dbTransactions, error: dbTransactionsError } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('user_id', itemUserId)
+      .in('plaid_transaction_id', upsertedPlaidIds)
+
+    if (dbTransactionsError) {
+      throw new Error(
+        `Failed to load persisted Plaid transactions: ${dbTransactionsError.message}`
       )
+    }
+
+    const notionResults = await syncTransactionsIfEnabled(
+      itemUserId,
+      (dbTransactions || []).map((transaction) => transaction.id)
+    )
+    const failedNotionSyncs = notionResults.filter(
+      (result) => result.status === 'failed'
+    )
+    if (failedNotionSyncs.length > 0) {
+      console.warn('Some Plaid transactions failed to sync to Notion:', failedNotionSyncs)
     }
   }
 
@@ -495,11 +507,11 @@ export async function syncPlaidItemTransactions({
       .in('plaid_transaction_id', removedIds)
 
     if (deleteError) {
-      console.error('Error deleting transactions:', deleteError)
+      throw new Error(`Failed to delete removed Plaid transactions: ${deleteError.message}`)
     }
   }
 
-  await supabase
+  const { error: cursorUpdateError } = await supabase
     .from('plaid_items')
     .update({
       cursor,
@@ -508,6 +520,10 @@ export async function syncPlaidItemTransactions({
     })
     .eq('id', plaidItemId)
     .eq('user_id', itemUserId)
+
+  if (cursorUpdateError) {
+    throw new Error(`Failed to save Plaid sync cursor: ${cursorUpdateError.message}`)
+  }
 
   return {
     success: true,

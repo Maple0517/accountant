@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { batchSyncToNotion, createTransactionDatabase } from '@/lib/notion/sync'
 
 export const dynamic = 'force-dynamic'
@@ -26,8 +27,11 @@ export async function POST(request: Request) {
     const fullSync = body.full_sync ?? false
     const parentPageId = body.parent_page_id
 
-    // Get user profile for Notion config
-    const { data: profile } = await supabase
+    const admin = createAdminClient()
+
+    // Get user profile for Notion config. Use the server admin client so
+    // Notion tokens do not need to be readable by browser clients.
+    const { data: profile } = await admin
       .from('profiles')
       .select('notion_sync_enabled, notion_token, notion_database_id')
       .eq('id', user.id)
@@ -50,7 +54,7 @@ export async function POST(request: Request) {
       )
 
       // Save database ID to profile
-      await supabase
+      await admin
         .from('profiles')
         .update({ notion_database_id: databaseId })
         .eq('id', user.id)
@@ -120,7 +124,7 @@ export async function POST(request: Request) {
 
     if (result.results.length > 0) {
       for (const item of result.results) {
-        await supabase
+        await admin
           .from('transactions')
           .update({ notion_page_id: item.notionPageId })
           .eq('id', item.transactionId)

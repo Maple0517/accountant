@@ -5,6 +5,39 @@ import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
+
+function toMonthStart(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function getMonthlySemanticAmounts(tx: {
+  amount: number | string
+  budget_behavior?: string | null
+}) {
+  const amount = Number(tx.amount)
+
+  if (!Number.isFinite(amount)) {
+    return { spending: 0, income: 0 }
+  }
+
+  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') {
+    return { spending: 0, income: 0 }
+  }
+
+  if (tx.budget_behavior === 'count_as_income') {
+    return { spending: 0, income: Math.abs(amount) }
+  }
+
+  if (tx.budget_behavior === 'count_as_spending') {
+    return { spending: amount, income: 0 }
+  }
+
+  if (amount > 0) return { spending: amount, income: 0 }
+  if (amount < 0) return { spending: 0, income: Math.abs(amount) }
+  return { spending: 0, income: 0 }
+}
+
+
 export default async function DashboardPage() {
   const { supabase, user } = await getCurrentUser()
 
@@ -14,7 +47,7 @@ export default async function DashboardPage() {
 
   // Fetch current month's transactions
   const now = new Date()
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  const firstDayOfMonth = toMonthStart(now)
 
   const [{ data: accounts }, { data: monthTx }, { data: recentTx }] =
     await Promise.all([
@@ -24,10 +57,10 @@ export default async function DashboardPage() {
         .eq('user_id', user.id),
       supabase
         .from('transactions')
-        .select('amount')
+        .select('amount, budget_behavior, budget_effective_date, date')
         .eq('user_id', user.id)
         .eq('pending', false)
-        .gte('date', firstDayOfMonth),
+        .or(`and(budget_effective_date.gte.${firstDayOfMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth})`),
       supabase
         .from('transactions')
         .select('id, merchant_name, description, amount, date, source')
@@ -52,14 +85,9 @@ export default async function DashboardPage() {
 
   if (monthTx) {
     monthTx.forEach(tx => {
-      const amt = Number(tx.amount)
-      // Plaid: positive = expense, negative = income
-      // Manual: positive = expense, negative = income
-      if (amt > 0) {
-        monthlySpending += amt
-      } else if (amt < 0) {
-        monthlyIncome += Math.abs(amt)
-      }
+      const amounts = getMonthlySemanticAmounts(tx)
+      monthlySpending += amounts.spending
+      monthlyIncome += amounts.income
     })
   }
 

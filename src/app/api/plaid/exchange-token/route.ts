@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getPlaidClient } from '@/lib/plaid/client'
 import { CountryCode } from 'plaid'
 
@@ -50,8 +51,11 @@ export async function POST(request: Request) {
       institutionName = instResponse.data.institution.name
     }
 
-    // Save plaid item to Supabase
-    const { data: plaidItem, error: itemError } = await supabase
+    const admin = createAdminClient()
+
+    // Save Plaid item with the service role so the sensitive access token never
+    // needs direct browser/Data API permissions.
+    const { data: plaidItem, error: itemError } = await admin
       .from('plaid_items')
       .upsert({
         user_id: user.id,
@@ -77,7 +81,7 @@ export async function POST(request: Request) {
     const existingAccountsByPlaidId = new Map(
       (
         (
-          await supabase
+          await admin
             .from('accounts')
             .select('id, plaid_account_id')
             .eq('user_id', user.id)
@@ -106,7 +110,7 @@ export async function POST(request: Request) {
     )
 
     const { error: accountsError } = accountsToInsert.length
-      ? await supabase.from('accounts').insert(accountsToInsert)
+      ? await admin.from('accounts').insert(accountsToInsert)
       : { error: null }
 
     if (accountsError) {

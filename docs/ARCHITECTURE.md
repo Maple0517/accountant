@@ -27,7 +27,7 @@ graph TB
     subgraph "外部服务"
         E["🏦 Plaid API<br/>(银行/信用卡数据)"]
         F["📝 Notion API<br/>(数据同步展示)"]
-        G["🤖 Gemini 3.1 Flash Lite<br/>(分类 + Vision OCR)"]
+        G["🤖 Gemini<br/>(分类 + Vision OCR)"]
     end
 
     subgraph "Supabase"
@@ -61,7 +61,7 @@ graph TB
 | `display_name` | text | 显示名 |
 | `default_currency` | text | 默认 'USD' |
 | `notion_sync_enabled` | boolean | 是否开启 Notion 同步 |
-| `notion_token` | text | Notion Integration Token（用户在 Settings 填写） |
+| `notion_token` | text | Notion Integration Token（敏感字段；客户端不可直接读取，Settings 通过 server route 保存/显示 masked 状态） |
 | `notion_database_id` | text | 系统自动写入（首次同步时创建数据库后回写） |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
@@ -228,7 +228,7 @@ graph TB
 | `name` | text | 用户可读名称 |
 | `key_prefix` | text | UI 展示用前缀 |
 | `key_hash` | text | `ak_...` token 的 SHA-256 hash |
-| `last_used_at` | timestamptz | 成功调用 `/api/receipt` 时更新 |
+| `last_used_at` | timestamptz | API Key 认证成功后更新，用于排查手机请求是否到达服务端 |
 | `revoked_at` | timestamptz | 撤销后不再可用 |
 | `created_at` | timestamptz | |
 
@@ -260,7 +260,7 @@ graph TB
 2. 如果交易已有稳定分类，则保留现有分类。
 3. 如果 AI 分类未完成，则用 Plaid primary/detailed 映射到本地分类作为兜底，并写入 `classification:plaid-fallback` + `classification:ai-pending`。
 4. Transactions 页面可触发 AI Refresh：`/api/plaid/ai-classification-jobs` 将所有待刷新交易入队。
-5. `/api/plaid/ai-classification-jobs/process` 每次最多处理 20 笔，调用 Gemini 3.1 Flash Lite，并受默认 `15 RPM / 250k TPM / 500 RPD` 限制保护。
+5. `/api/plaid/ai-classification-jobs/process` 每次最多处理 20 笔，调用配置的 Gemini 模型，并受上游模型配额限制保护。
 6. AI 成功后写入分类、清洗商户名，并将标签切换为 `classification:ai`。
 7. 用户手动点击交易行分类 pill 修改分类时，系统清除自动分类标签；若存在同名交易，页面会询问是否通过 `apply_mode = 'similar'` 批量同步。
 
@@ -268,7 +268,7 @@ graph TB
 
 1. `PLAID_WEBHOOK_URL` 配置后，新 Plaid Link Token 会携带 webhook URL。
 2. 已连接的旧 Item 在下一次手动调用 `/api/plaid/sync-transactions` 时，会通过 Plaid `/item/webhook/update` 补注册同一个 webhook URL。
-3. `/api/plaid/webhook` 用 `PLAID_WEBHOOK_SECRET` 校验 `?secret=...` 或 `x-plaid-webhook-secret`。
+3. `/api/plaid/webhook` 用 `PLAID_WEBHOOK_SECRET` 校验 `x-plaid-webhook-secret` header；未配置 secret 时 fail closed。
 4. 收到 `TRANSACTIONS:SYNC_UPDATES_AVAILABLE`、`DEFAULT_UPDATE` 或 `TRANSACTIONS_REMOVED` 后，按 Plaid `item_id` 查本地 `plaid_items`，再调用 `src/lib/plaid/transactions-sync.ts` 执行 cursor 增量同步。
 5. 收到 `ITEM:ERROR` 时会把本地 Plaid Item 标记为 `error` 或 `login_required`；收到 `ITEM:LOGIN_REPAIRED` 时恢复为 `active`。
 6. Plaid 交易更新不是刷卡实时流；webhook 表示 Plaid 已有可同步更新，不保证消费发生后立即到达。
@@ -294,13 +294,15 @@ graph TB
 | `api_key` | string | `ak_...` 格式的 API Key |
 | `currency` | string | 可选，如 `USD` / `CNY`（默认自动识别） |
 | `notes` | string | 可选备注 |
+| `idempotency_key` | string | 可选但推荐；同一用户同一 key 只会处理一次，用于防止 Shortcut/网络重试重复入账 |
 
 **处理流程**：
 1. 用 SHA-256 hash 验证 `api_key` → 获取 `user_id`
-2. 调用 Gemini 3.1 Flash Lite Vision API 解析图片
+2. 调用配置的 Gemini Vision 模型解析图片
 3. 自动创建/复用 `accounts.name = 'iOS Capture'` 手动账户
 4. 写入 `transactions`（`source = 'receipt'`）
-5. 返回解析结果 JSON
+5. 如 Settings 已启用 Notion Sync，则自动尝试同步到 Notion，并返回 `notion.status`；Notion 失败不会让已创建交易的接口整体失败
+6. 返回解析结果 JSON
 
 ---
 

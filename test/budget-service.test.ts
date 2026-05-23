@@ -253,3 +253,69 @@ test('getMonthlySummary budgets linked refunded-category rows against original c
   assert.equal(shopping?.actualSpend, 0)
   assert.equal(refunded?.actualSpend, 0)
 })
+
+test('updateCategoryBudget rejects income, transfer, and excluded categories', async () => {
+  for (const category of [
+    { id: 'cat_income', user_id: 'user_1', name: 'Income', type: 'income', sort_order: 0 },
+    { id: 'cat_transfer', user_id: 'user_1', name: 'Transfer', type: 'transfer', sort_order: 0 },
+    {
+      id: 'cat_excluded',
+      user_id: 'user_1',
+      name: 'Excluded',
+      type: 'expense',
+      is_excluded_from_budget: true,
+      sort_order: 0,
+    },
+  ]) {
+    const supabase = createSupabaseStub([category])
+
+    await assert.rejects(
+      () => updateCategoryBudget(supabase as never, 'user_1', category.id as string, '2026-05', 50),
+      /Category is not budgetable/
+    )
+  }
+})
+
+test('getMonthlySummary propagates repository database errors', async () => {
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          if (table === 'categories') {
+            return {
+              order() {
+                return Promise.resolve({ data: null, error: { message: 'RLS broke' } })
+              },
+            }
+          }
+          return chain
+        },
+        or() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        gte() {
+          return chain
+        },
+        lt() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        order() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        single() {
+          return Promise.resolve({ data: null, error: null })
+        },
+      }
+
+      return chain
+    },
+  }
+
+  await assert.rejects(
+    () => getMonthlySummary(supabase as never, 'user_1', '2026-05'),
+    /loadCategoriesForBudget failed: RLS broke/
+  )
+})

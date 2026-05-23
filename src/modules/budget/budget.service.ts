@@ -153,10 +153,14 @@ export async function updateCategoryBudget(
 
   const { numericMonth, numericYear } = parseMonth(month)
   const categories = await loadCategoriesForBudget(supabase, userId)
-  const categoryExists = categories.some((category) => category.id === categoryId)
+  const category = categories.find((candidate) => candidate.id === categoryId)
 
-  if (!categoryExists) {
+  if (!category) {
     throw new Error('Category not found for user')
+  }
+
+  if (category.type !== 'expense' || category.is_excluded_from_budget === true) {
+    throw new Error('Category is not budgetable')
   }
 
   await upsertCategoryBudget(supabase, userId, categoryId, numericMonth, numericYear, amount)

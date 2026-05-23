@@ -12,6 +12,13 @@ export class ReceiptParsingQuotaError extends Error {
   }
 }
 
+export class ReceiptParsingValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ReceiptParsingValidationError'
+  }
+}
+
 export interface ParsedReceipt {
   capture_type: 'receipt' | 'payment_screenshot' | 'bank_transaction' | 'other'
   transaction_type: 'expense' | 'income' | 'transfer' | 'unknown'
@@ -164,8 +171,14 @@ export async function parseReceipt(
     if (!parsed.store_name) parsed.store_name = 'Unknown Merchant'
     if (!parsed.description) parsed.description = parsed.store_name
     if (!parsed.date) parsed.date = new Date().toISOString().split('T')[0]
-    if (!parsed.items) parsed.items = []
-    if (!parsed.total_amount || parsed.total_amount <= 0) {
+    if (!Array.isArray(parsed.items)) parsed.items = []
+    parsed.items = parsed.items.map((item) => ({
+      name: typeof item.name === 'string' && item.name ? item.name : 'Item',
+      quantity: Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : 1,
+      price: Number.isFinite(Number(item.price)) ? Number(item.price) : 0,
+    }))
+    parsed.total_amount = Number(parsed.total_amount)
+    if (!Number.isFinite(parsed.total_amount) || parsed.total_amount <= 0) {
       // Try to calculate from items
       parsed.total_amount = parsed.items.reduce(
         (sum, item) => sum + item.price * item.quantity,
@@ -187,11 +200,34 @@ export async function parseReceipt(
       parsed.currency = currencyOverride
     }
 
-    return parsed
+    return assertValidParsedReceipt(parsed)
   } catch (parseError) {
     console.error('Failed to parse Gemini response:', text)
     throw new Error(`Failed to parse receipt data: ${parseError}`)
   }
+}
+
+
+function isValidIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+export function assertValidParsedReceipt(parsed: ParsedReceipt): ParsedReceipt {
+  if (!isValidIsoDate(parsed.date)) {
+    throw new ReceiptParsingValidationError(
+      'Receipt date could not be parsed. Please enter the transaction manually.'
+    )
+  }
+
+  if (!Number.isFinite(parsed.total_amount) || parsed.total_amount <= 0) {
+    throw new ReceiptParsingValidationError(
+      'Receipt total amount could not be parsed. Please enter the transaction manually.'
+    )
+  }
+
+  return parsed
 }
 
 function normalizeGeminiError(error: unknown) {

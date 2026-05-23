@@ -1,5 +1,6 @@
 'use client'
 
+import { useSyncExternalStore } from 'react'
 import { usePathname } from 'next/navigation'
 
 export default function Header() {
@@ -12,18 +13,18 @@ export default function Header() {
     return path.charAt(0).toUpperCase() + path.slice(1)
   }
 
-  const currentDate = new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric'
-  })
+  const currentDate = useSyncExternalStore(
+    () => () => undefined,
+    getFormattedToday,
+    () => ''
+  )
 
   return (
     <header className="header">
       <div className="header-content">
         <div className="page-info">
           <h1>{getPageTitle()}</h1>
-          <span className="date">{currentDate}</span>
+          <span className="date">{currentDate || 'Today'}</span>
         </div>
         
         <div className="header-actions">
@@ -41,4 +42,12 @@ export default function Header() {
       
     </header>
   )
+}
+
+function getFormattedToday() {
+  return new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
 }

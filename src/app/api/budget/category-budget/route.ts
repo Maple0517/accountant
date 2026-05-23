@@ -42,7 +42,8 @@ export async function PATCH(request: Request) {
     if (
       message.includes('Amount must be') ||
       message.includes('Invalid month format') ||
-      message.includes('categoryId is required')
+      message.includes('categoryId is required') ||
+      message.includes('Category is not budgetable')
     ) {
       return NextResponse.json({ error: message }, { status: 400 })
     }

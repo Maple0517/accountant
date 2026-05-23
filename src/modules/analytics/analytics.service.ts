@@ -4,6 +4,9 @@ import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
 type AnalyticsTransactionRow = {
   amount: number | string
   date: string
+  budget_effective_date?: string | null
+  budget_behavior?: string | null
+  transaction_kind?: string | null
   categories?: {
     name?: string | null
     icon?: string | null
@@ -20,12 +23,10 @@ function getDateFrom(period: AnalyticsPeriod): string {
         .toISOString()
         .split('T')[0]
     case 'year':
-      return new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]
+      return `${now.getFullYear()}-01-01`
     case 'month':
     default:
-      return new Date(now.getFullYear(), now.getMonth(), 1)
-        .toISOString()
-        .split('T')[0]
+      return getLocalMonthStart(now)
   }
 }
 
@@ -37,6 +38,39 @@ export function parseAnalyticsPeriod(value: string | null): AnalyticsPeriod {
   return 'month'
 }
 
+
+function getLocalMonthStart(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function getBudgetDate(row: Pick<AnalyticsTransactionRow, 'budget_effective_date' | 'date'>) {
+  return row.budget_effective_date || row.date
+}
+
+function getSemanticAmounts(tx: AnalyticsTransactionRow) {
+  const amount = Number(tx.amount)
+
+  if (!Number.isFinite(amount)) {
+    return { spending: 0, income: 0, categorySpend: 0 }
+  }
+
+  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') {
+    return { spending: 0, income: 0, categorySpend: 0 }
+  }
+
+  if (tx.budget_behavior === 'count_as_income') {
+    return { spending: 0, income: Math.abs(amount), categorySpend: 0 }
+  }
+
+  if (tx.budget_behavior === 'count_as_spending') {
+    return { spending: amount, income: 0, categorySpend: amount }
+  }
+
+  if (amount > 0) return { spending: amount, income: 0, categorySpend: amount }
+  if (amount < 0) return { spending: 0, income: Math.abs(amount), categorySpend: 0 }
+  return { spending: 0, income: 0, categorySpend: 0 }
+}
+
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
@@ -45,7 +79,7 @@ export async function getAnalyticsSummary(
   const dateFrom = getDateFrom(period)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, date, categories ( name, icon, color )')
+    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories ( name, icon, color )')
     .eq('user_id', userId)
     .gte('date', dateFrom)
     .order('date', { ascending: true })
@@ -64,15 +98,12 @@ export async function getAnalyticsSummary(
   const dayMap = new Map<string, number>()
 
   for (const tx of (data || []) as AnalyticsTransactionRow[]) {
-    const amount = Number(tx.amount)
+    const semanticAmounts = getSemanticAmounts(tx)
 
-    if (amount > 0) {
-      totalSpending += amount
-    } else if (amount < 0) {
-      totalIncome += Math.abs(amount)
-    }
+    totalSpending += semanticAmounts.spending
+    totalIncome += semanticAmounts.income
 
-    if (amount > 0) {
+    if (semanticAmounts.categorySpend !== 0) {
       const cat = tx.categories
       const catName = cat?.name || 'Other'
       const existing = categoryMap.get(catName) || {
@@ -81,21 +112,22 @@ export async function getAnalyticsSummary(
         color: cat?.color || '#8888a0',
         total: 0,
       }
-      existing.total += amount
+      existing.total += semanticAmounts.categorySpend
       categoryMap.set(catName, existing)
     }
 
-    const monthKey = tx.date.substring(0, 7)
+    const budgetDate = getBudgetDate(tx)
+    const monthKey = budgetDate.substring(0, 7)
     const monthData = monthMap.get(monthKey) || {
       spending: 0,
       income: 0,
     }
-    if (amount > 0) monthData.spending += amount
-    else if (amount < 0) monthData.income += Math.abs(amount)
+    monthData.spending += semanticAmounts.spending
+    monthData.income += semanticAmounts.income
     monthMap.set(monthKey, monthData)
 
-    const dayData = dayMap.get(tx.date) || 0
-    dayMap.set(tx.date, dayData + (amount > 0 ? amount : 0))
+    const dayData = dayMap.get(budgetDate) || 0
+    dayMap.set(budgetDate, dayData + semanticAmounts.spending)
   }
 
   return {

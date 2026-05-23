@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
-import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
+import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +38,7 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind')
+          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind, budget_behavior, semantic_override_source')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
@@ -65,7 +65,7 @@ export async function PATCH(
     if (mode === 'similar') {
       const { data: candidates, error: candidatesError } = await supabase
         .from('transactions')
-        .select('id, tags, merchant_name, description, transaction_kind')
+        .select('id, tags, merchant_name, description, transaction_kind, budget_behavior, semantic_override_source')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
 
@@ -88,17 +88,22 @@ export async function PATCH(
       const updates = await Promise.all(
         similarTransactions.map(async (candidate) => {
           const tags = stripAutomaticClassificationTags(candidate.tags)
+          const updatePayload: Record<string, unknown> = {
+            category_id: categoryId,
+            tags,
+          }
+
+          if (!shouldPreserveBudgetBehavior(candidate.semantic_override_source)) {
+            updatePayload.budget_behavior = deriveBudgetBehavior({
+              transactionKind: candidate.transaction_kind,
+              category,
+            })
+            updatePayload.semantic_override_source = 'user'
+          }
+
           const { error: updateError } = await supabase
             .from('transactions')
-            .update({
-              category_id: categoryId,
-              budget_behavior: deriveBudgetBehavior({
-                transactionKind: candidate.transaction_kind,
-                category,
-              }),
-              semantic_override_source: 'user',
-              tags,
-            })
+            .update(updatePayload)
             .eq('id', candidate.id)
             .eq('user_id', user.id)
 
@@ -108,17 +113,22 @@ export async function PATCH(
       updatedCount = updates.reduce<number>((sum, value) => sum + value, 0)
     } else {
       const tags = stripAutomaticClassificationTags(transaction.tags)
+      const updatePayload: Record<string, unknown> = {
+        category_id: categoryId,
+        tags,
+      }
+
+      if (!shouldPreserveBudgetBehavior(transaction.semantic_override_source)) {
+        updatePayload.budget_behavior = deriveBudgetBehavior({
+          transactionKind: transaction.transaction_kind,
+          category,
+        })
+        updatePayload.semantic_override_source = 'user'
+      }
+
       const { error: updateError } = await supabase
         .from('transactions')
-        .update({
-          category_id: categoryId,
-          budget_behavior: deriveBudgetBehavior({
-            transactionKind: transaction.transaction_kind,
-            category,
-          }),
-          semantic_override_source: 'user',
-          tags,
-        })
+        .update(updatePayload)
         .eq('id', id)
         .eq('user_id', user.id)
 

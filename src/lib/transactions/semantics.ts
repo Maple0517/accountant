@@ -38,3 +38,9 @@ export function deriveBudgetBehavior({
 
   return 'count_as_spending'
 }
+
+export function shouldPreserveBudgetBehavior(
+  source: string | null | undefined
+) {
+  return source === 'user' || source === 'rule'
+}

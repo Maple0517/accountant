@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatCurrency } from '@/lib/currency'
 import {
   AI_CLASSIFIED_TAG,
@@ -212,11 +212,14 @@ export default function TransactionsPage() {
     ]
   )
 
+  const transactionsRequestIdRef = useRef(0)
+
   const fetchTransactions = useCallback(
-    async (options: { append?: boolean; isMounted?: boolean; offset?: number } = {}) => {
+    async (options: { append?: boolean; offset?: number } = {}) => {
       const append = options.append ?? false
-      const isMounted = options.isMounted ?? true
       const offset = options.offset ?? 0
+      const requestId = transactionsRequestIdRef.current + 1
+      transactionsRequestIdRef.current = requestId
 
       if (append) {
         setLoadingMore(true)
@@ -236,14 +239,17 @@ export default function TransactionsPage() {
       if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
       if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
 
-      const response = await fetch(`/api/transactions?${params.toString()}`)
-      const payload = (await response.json()) as TransactionsApiResponse
+      try {
+        const response = await fetch(`/api/transactions?${params.toString()}`)
+        const payload = (await response.json()) as TransactionsApiResponse
 
-      if (!isMounted) return
+        if (transactionsRequestIdRef.current !== requestId) return
 
-      if (!response.ok) {
-        console.error('Error fetching transactions:', payload.error)
-      } else {
+        if (!response.ok) {
+          console.error('Error fetching transactions:', payload.error)
+          return
+        }
+
         const nextTransactions = payload.transactions || []
         setTransactions((current) =>
           append ? [...current, ...nextTransactions] : nextTransactions
@@ -270,23 +276,23 @@ export default function TransactionsPage() {
               : null
           )
         }
+      } catch (error) {
+        if (transactionsRequestIdRef.current === requestId) {
+          console.error('Error fetching transactions:', error)
+        }
+      } finally {
+        if (transactionsRequestIdRef.current === requestId) {
+          setLoading(false)
+          setLoadingMore(false)
+        }
       }
-
-      setLoading(false)
-      setLoadingMore(false)
     },
     [queryFilters]
   )
 
   useEffect(() => {
-    let isMounted = true
-
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchTransactions({ isMounted })
-
-    return () => {
-      isMounted = false
-    }
+    fetchTransactions()
   }, [fetchTransactions])
 
   const processAiQueue = useCallback(
@@ -840,6 +846,7 @@ export default function TransactionsPage() {
           <input
             type="text"
             className="input"
+            aria-label="Search transactions"
             placeholder="🔍 Search merchant or description..."
             value={filters.search}
             onChange={(e) =>
@@ -850,6 +857,7 @@ export default function TransactionsPage() {
         <div className="filter-row">
           <select
             className="input"
+            aria-label="Filter by account or source"
             value={filters.sourceOrAccount}
             onChange={(e) =>
               setFilters((f) => ({ ...f, sourceOrAccount: e.target.value }))
@@ -866,6 +874,7 @@ export default function TransactionsPage() {
           </select>
           <select
             className="input"
+            aria-label="Filter by category"
             value={filters.category}
             onChange={(e) =>
               setFilters((f) => ({ ...f, category: e.target.value }))
@@ -881,6 +890,7 @@ export default function TransactionsPage() {
           </select>
           <select
             className="input"
+            aria-label="Filter by currency"
             value={filters.currency}
             onChange={(e) =>
               setFilters((f) => ({ ...f, currency: e.target.value }))
@@ -893,6 +903,7 @@ export default function TransactionsPage() {
           <input
             type="date"
             className="input"
+            aria-label="Filter transactions from date"
             value={filters.dateFrom}
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateFrom: e.target.value }))
@@ -902,6 +913,7 @@ export default function TransactionsPage() {
           <input
             type="date"
             className="input"
+            aria-label="Filter transactions to date"
             value={filters.dateTo}
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateTo: e.target.value }))
@@ -1100,10 +1112,36 @@ const TransactionItem = memo(function TransactionItem({
   const [newCategoryName, setNewCategoryName] = useState('')
   const [selectedNewIcon, setSelectedNewIcon] = useState(CATEGORY_ICONS[0])
   const [selectedNewColor, setSelectedNewColor] = useState(CATEGORY_COLORS[5])
-  const [selectedLinkId, setSelectedLinkId] = useState(tx.linked_transaction_id || '')
-  const [budgetEffectiveDate, setBudgetEffectiveDate] = useState(
-    tx.budget_effective_date || tx.date
-  )
+  const serverSelectedLinkId = tx.linked_transaction_id || ''
+  const serverBudgetEffectiveDate = tx.budget_effective_date || tx.date
+  const [refundFormDraft, setRefundFormDraft] = useState(() => ({
+    txId: tx.id,
+    serverSelectedLinkId,
+    serverBudgetEffectiveDate,
+    selectedLinkId: serverSelectedLinkId,
+    budgetEffectiveDate: serverBudgetEffectiveDate,
+  }))
+
+  if (
+    refundFormDraft.txId !== tx.id ||
+    refundFormDraft.serverSelectedLinkId !== serverSelectedLinkId ||
+    refundFormDraft.serverBudgetEffectiveDate !== serverBudgetEffectiveDate
+  ) {
+    setRefundFormDraft({
+      txId: tx.id,
+      serverSelectedLinkId,
+      serverBudgetEffectiveDate,
+      selectedLinkId: serverSelectedLinkId,
+      budgetEffectiveDate: serverBudgetEffectiveDate,
+    })
+  }
+
+  const selectedLinkId = refundFormDraft.selectedLinkId
+  const budgetEffectiveDate = refundFormDraft.budgetEffectiveDate
+  const setSelectedLinkId = (selectedLinkId: string) =>
+    setRefundFormDraft((draft) => ({ ...draft, selectedLinkId }))
+  const setBudgetEffectiveDate = (budgetEffectiveDate: string) =>
+    setRefundFormDraft((draft) => ({ ...draft, budgetEffectiveDate }))
 
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
@@ -1272,6 +1310,7 @@ const TransactionItem = memo(function TransactionItem({
             <div className="refund-link-row">
               <select
                 className="input"
+                aria-label={`Linked purchase for ${merchantName}`}
                 value={selectedLinkId}
                 disabled={isSaving}
                 onChange={(e) => setSelectedLinkId(e.target.value)}
@@ -1310,6 +1349,7 @@ const TransactionItem = memo(function TransactionItem({
               <input
                 type="date"
                 className="input"
+                aria-label={`Budget effective date for ${merchantName}`}
                 value={budgetEffectiveDate}
                 disabled={isSaving}
                 onChange={(e) => setBudgetEffectiveDate(e.target.value)}
@@ -1459,6 +1499,7 @@ const TransactionItem = memo(function TransactionItem({
                       key={icon}
                       type="button"
                       className={`icon-option ${selectedNewIcon === icon ? 'selected' : ''}`}
+                      aria-label={`Use ${icon} as category icon`}
                       onClick={() => setSelectedNewIcon(icon)}
                     >
                       {icon}
@@ -1472,6 +1513,7 @@ const TransactionItem = memo(function TransactionItem({
                       type="button"
                       className={`color-option ${selectedNewColor === color ? 'selected' : ''}`}
                       style={{ backgroundColor: color }}
+                      aria-label={`Use ${color} as category color`}
                       onClick={() => setSelectedNewColor(color)}
                     />
                   ))}

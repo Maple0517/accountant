@@ -46,7 +46,11 @@ export default function BudgetsPage() {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  const summaryRequestIdRef = useRef(0)
+
   const fetchSummary = useCallback(async (targetMonth: string) => {
+    const requestId = summaryRequestIdRef.current + 1
+    summaryRequestIdRef.current = requestId
     setLoading(true)
     setError(null)
     setSaveError(null)
@@ -56,11 +60,17 @@ export default function BudgetsPage() {
         throw new Error(`Failed to load budget data (${res.status})`)
       }
       const data: MonthlyBudgetSummary = await res.json()
-      setSummary(data)
+      if (summaryRequestIdRef.current === requestId) {
+        setSummary(data)
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      if (summaryRequestIdRef.current === requestId) {
+        setError(err instanceof Error ? err.message : 'Unknown error')
+      }
     } finally {
-      setLoading(false)
+      if (summaryRequestIdRef.current === requestId) {
+        setLoading(false)
+      }
     }
   }, [])
 
@@ -125,7 +135,8 @@ export default function BudgetsPage() {
 
       setEditingId(null)
       setEditValue('')
-      await fetchSummary(month)
+      const savedMonth = month
+      await fetchSummary(savedMonth)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update budget'
       setSaveError(message)
@@ -149,10 +160,7 @@ export default function BudgetsPage() {
 
   // ── Derived data ───────────────────────────────────────────────────────────
 
-  const visibleCategories =
-    summary?.categories.filter(
-      (c) => c.baseBudget > 0 || c.actualSpend > 0
-    ) ?? []
+  const visibleCategories = summary?.categories ?? []
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -248,9 +256,9 @@ export default function BudgetsPage() {
           {visibleCategories.length === 0 ? (
             <div className="card empty-state">
               <span className="empty-icon">🎯</span>
-              <h3>No budgets set up yet</h3>
+              <h3>No budgetable categories yet</h3>
               <p className="text-secondary">
-                Click any category&apos;s budget amount below to set a spending limit for{' '}
+                Add an expense category first, then return here to set a spending limit for{' '}
                 {formatMonthLabel(month)}.
               </p>
             </div>
@@ -361,7 +369,7 @@ function CategoryRow({
     }
   }, [isEditing])
 
-  const barWidth = `${Math.min((cat.percentUsed ?? 0) * 100, 100)}%`
+  const barWidth = `${Math.max(0, Math.min((cat.percentUsed ?? 0) * 100, 100))}%`
   const barColor = STATUS_COLORS[cat.status]
   const isNegativeRemaining = cat.remaining < 0
 
@@ -440,6 +448,7 @@ function CategoryRow({
               id={`budget-edit-${cat.categoryId}`}
               onClick={onStartEdit}
               title="Click to edit budget"
+              aria-label={`Edit monthly budget for ${cat.categoryName}`}
               style={{
                 background: 'rgba(108, 92, 231, 0.1)',
                 border: '1px solid rgba(108, 92, 231, 0.25)',
@@ -497,6 +506,7 @@ function CategoryRow({
             }}
           >
             {formatCurrency(cat.actualSpend)}
+            {cat.actualSpend < 0 ? ' credit' : ''}
           </span>
         </div>
 
@@ -572,6 +582,7 @@ const EditInput = forwardRef<HTMLInputElement, {
       step="0.01"
       value={value}
       disabled={disabled}
+      aria-label="Budget amount"
       onChange={onChange}
       onKeyDown={onKeyDown}
       onBlur={onBlur}

@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState, useCallback } from 'react'
 import type { Account } from '@/types'
 import AccountCard from '@/components/accounts/AccountCard'
 import PlaidLinkButton from '@/components/accounts/PlaidLinkButton'
@@ -18,51 +17,24 @@ type AccountRow = Account & {
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(true)
-  
-  const supabase = useMemo(() => createClient(), [])
 
   const fetchAccounts = useCallback(async () => {
     setLoading(true)
     try {
-      let { data, error } = await supabase
-        .from('accounts')
-        .select('*, plaid_items(last_synced_at, last_sync_error)')
-        .order('created_at', { ascending: false })
+      const response = await fetch('/api/plaid/accounts')
+      const payload = (await response.json()) as { accounts?: AccountRow[]; error?: string }
 
-      if (error) {
-        console.warn('Failed to fetch account sync metadata, falling back to accounts only:', error)
-        const fallback = await supabase
-          .from('accounts')
-          .select('id, user_id, plaid_item_id, plaid_account_id, name, official_name, type, subtype, mask, current_balance, available_balance, iso_currency_code, is_manual, created_at, updated_at')
-          .order('created_at', { ascending: false })
-
-        data = fallback.data
-        error = fallback.error
-      }
-
-      if (error) {
-        console.error('Failed to fetch accounts:', error)
+      if (!response.ok) {
+        console.error('Failed to fetch accounts:', payload.error)
         setAccounts([])
         return
       }
 
-      const accountsWithSyncMetadata = ((data || []) as AccountRow[]).map((account) => {
-        const plaidItem = Array.isArray(account.plaid_items)
-          ? account.plaid_items[0]
-          : account.plaid_items
-
-        return {
-          ...account,
-          last_synced_at: plaidItem?.last_synced_at || null,
-          last_sync_error: plaidItem?.last_sync_error || null,
-        }
-      })
-
-      setAccounts(accountsWithSyncMetadata)
+      setAccounts(payload.accounts || [])
     } finally {
       setLoading(false)
     }
-  }, [supabase])
+  }, [])
 
   useEffect(() => {
     void Promise.resolve().then(fetchAccounts)

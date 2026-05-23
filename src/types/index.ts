@@ -118,6 +118,8 @@ export type Profile = {
   default_currency: string
   notion_sync_enabled: boolean
   notion_token?: string
+  notion_token_configured?: boolean
+  notion_token_masked?: string | null
   notion_database_id?: string
   created_at: string
   updated_at: string
@@ -137,6 +139,7 @@ export type Receipt = {
   id: string
   user_id: string
   parsed_data?: Record<string, unknown>
+  idempotency_key?: string | null
   status: 'pending' | 'parsed' | 'confirmed' | 'error'
   transaction_id?: string
   created_at: string

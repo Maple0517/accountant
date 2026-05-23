@@ -27,6 +27,34 @@ function normalizeCategoryName(value: string) {
   return value.trim().toLocaleLowerCase('en-US')
 }
 
+function isUniqueCategoryNameError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === '23505' ||
+    Boolean(error?.message?.includes('categories_user_lower_name_uidx'))
+  )
+}
+
+async function findCategoryByName(
+  supabase: SupabaseClient,
+  userId: string,
+  name: string
+): Promise<CategoryRow | null> {
+  const { data, error } = await supabase
+    .from('categories')
+    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
+    .eq('user_id', userId)
+    .ilike('name', name.trim())
+
+  if (error) {
+    console.error('Error finding category by name:', error)
+    return null
+  }
+
+  return ((data || []).find(
+    (c) => normalizeCategoryName(c.name) === normalizeCategoryName(name)
+  ) as CategoryRow | undefined) ?? null
+}
+
 async function ensureExcludedCategory(
   supabase: SupabaseClient,
   userId: string,
@@ -83,6 +111,11 @@ async function ensureExcludedCategory(
     .single()
 
   if (error) {
+    if (isUniqueCategoryNameError(error)) {
+      const recovered = await findCategoryByName(supabase, userId, 'Excluded')
+      return recovered ? [...categories, recovered] : categories
+    }
+
     console.error('Error ensuring excluded category:', error)
     return categories
   }
@@ -161,19 +194,11 @@ export async function getOrCreateCategory(
     return existing
   }
 
-  const { data: concurrentMatch, error: concurrentMatchError } = await supabase
-    .from('categories')
-    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
-    .eq('user_id', userId)
-    .ilike('name', categoryInfo.name.trim())
-
-  if (concurrentMatchError) {
-    console.error('Error checking for concurrent category creation:', concurrentMatchError)
-  }
-
-  const exactConcurrentMatch = (concurrentMatch || []).find(
-    (c) => normalizeCategoryName(c.name) === normalizeCategoryName(categoryInfo.name)
-  ) as CategoryRow | undefined
+  const exactConcurrentMatch = await findCategoryByName(
+    supabase,
+    userId,
+    categoryInfo.name
+  )
 
   if (exactConcurrentMatch) {
     if (existingCategories) {
@@ -197,17 +222,15 @@ export async function getOrCreateCategory(
     .single()
 
   if (error) {
-    console.error('Error creating new category:', error)
+    if (!isUniqueCategoryNameError(error)) {
+      console.error('Error creating new category:', error)
+    }
 
-    const { data: retryMatch } = await supabase
-      .from('categories')
-      .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
-      .eq('user_id', userId)
-      .ilike('name', categoryInfo.name.trim())
-
-    const recoveredMatch = (retryMatch || []).find(
-      (c) => normalizeCategoryName(c.name) === normalizeCategoryName(categoryInfo.name)
-    ) as CategoryRow | undefined
+    const recoveredMatch = await findCategoryByName(
+      supabase,
+      userId,
+      categoryInfo.name
+    )
 
     if (recoveredMatch) {
       if (existingCategories) {
@@ -263,7 +286,23 @@ export async function getOrCreateRefundedCategory(
     .single()
 
   if (error) {
-    console.error('Error ensuring refunded category:', error)
+    if (!isUniqueCategoryNameError(error)) {
+      console.error('Error ensuring refunded category:', error)
+    }
+
+    const recovered = await findCategoryByName(
+      supabase,
+      userId,
+      REFUNDED_CATEGORY.name
+    )
+
+    if (recovered) {
+      if (existingCategories) {
+        existingCategories.push(recovered)
+      }
+      return recovered
+    }
+
     return null
   }
 

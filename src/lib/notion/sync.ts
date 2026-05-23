@@ -1,12 +1,25 @@
 import { getNotionClient } from './client'
 import { Sema } from 'async-sema'
 import type { Transaction } from '@/types'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { UpdateDataSourceParameters } from '@notionhq/client'
 
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
 const semanticsPropertiesEnsured = new Set<string>()
+
+export type NotionSyncStatus =
+  | { status: 'disabled' | 'not_configured'; synced: false; notionPageId: null; error?: string }
+  | { status: 'synced'; synced: true; notionPageId: string }
+  | { status: 'failed'; synced: false; notionPageId: null; error: string }
+
+export type NotionProfileConfig = {
+  notion_sync_enabled?: boolean | null
+  notion_token?: string | null
+  notion_database_id?: string | null
+}
+
 
 const semanticPropertySchema: NonNullable<UpdateDataSourceParameters['properties']> = {
   Kind: {
@@ -272,35 +285,67 @@ async function ensureTransactionSemanticsProperties(
  */
 export async function syncSingleTransactionIfEnabled(
   userId: string,
-  transactionId: string
-): Promise<string | null> {
-  const results = await syncTransactionsIfEnabled(userId, [transactionId])
-  return results[0]?.notionPageId ?? null
+  transactionId: string,
+  options: { supabase?: SupabaseClient; profile?: NotionProfileConfig | null } = {}
+): Promise<NotionSyncStatus> {
+  const results = await syncTransactionsIfEnabled(userId, [transactionId], options)
+  return results[0] ?? {
+    status: 'not_configured',
+    synced: false,
+    notionPageId: null,
+    error: 'Transaction was not found for Notion sync',
+  }
 }
 
 export async function syncTransactionsIfEnabled(
   userId: string,
-  transactionIds: string[]
-): Promise<Array<{ transactionId: string; notionPageId: string }>> {
+  transactionIds: string[],
+  options: { supabase?: SupabaseClient; profile?: NotionProfileConfig | null } = {}
+): Promise<Array<NotionSyncStatus & { transactionId: string }>> {
   if (transactionIds.length === 0) {
     return []
   }
 
-  const supabase = createAdminClient()
+  const supabase = options.supabase ?? createAdminClient()
+  let profile = options.profile ?? null
 
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('notion_sync_enabled, notion_token, notion_database_id')
-    .eq('id', userId)
-    .single()
+  if (!profile) {
+    const { data, error: profileError } = await supabase
+      .from('profiles')
+      .select('notion_sync_enabled, notion_token, notion_database_id')
+      .eq('id', userId)
+      .single()
 
-  if (
-    profileError ||
-    !profile?.notion_sync_enabled ||
-    !profile?.notion_token ||
-    !profile?.notion_database_id
-  ) {
-    return []
+    if (profileError) {
+      return transactionIds.map((transactionId) => ({
+        transactionId,
+        status: 'failed',
+        synced: false,
+        notionPageId: null,
+        error: `Failed to load Notion profile: ${profileError.message}`,
+      }))
+    }
+
+    profile = data as NotionProfileConfig | null
+  }
+
+  if (!profile?.notion_sync_enabled) {
+    return transactionIds.map((transactionId) => ({
+      transactionId,
+      status: 'disabled',
+      synced: false,
+      notionPageId: null,
+    }))
+  }
+
+  if (!profile.notion_token || !profile.notion_database_id) {
+    return transactionIds.map((transactionId) => ({
+      transactionId,
+      status: 'not_configured',
+      synced: false,
+      notionPageId: null,
+      error: 'Notion sync is enabled but token or database ID is missing',
+    }))
   }
 
   const { data: transactions, error: transactionError } = await supabase
@@ -316,12 +361,20 @@ export async function syncTransactionsIfEnabled(
     .in('id', transactionIds)
 
   if (transactionError || !transactions) {
-    return []
+    return transactionIds.map((transactionId) => ({
+      transactionId,
+      status: 'failed',
+      synced: false,
+      notionPageId: null,
+      error: transactionError?.message || 'Failed to load transaction for Notion sync',
+    }))
   }
 
-  const results: Array<{ transactionId: string; notionPageId: string }> = []
+  const foundTransactionIds = new Set<string>()
+  const results: Array<NotionSyncStatus & { transactionId: string }> = []
 
   for (const transaction of transactions) {
+    foundTransactionIds.add(transaction.id)
     const category = transaction.categories as {
       name?: string | null
       name_zh?: string | null
@@ -346,16 +399,51 @@ export async function syncTransactionsIfEnabled(
     )
 
     if (!notionPageId) {
+      results.push({
+        transactionId: transaction.id,
+        status: 'failed',
+        synced: false,
+        notionPageId: null,
+        error: 'Notion API did not return a page ID',
+      })
       continue
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from('transactions')
       .update({ notion_page_id: notionPageId })
       .eq('id', transaction.id)
       .eq('user_id', userId)
 
-    results.push({ transactionId: transaction.id, notionPageId })
+    if (updateError) {
+      results.push({
+        transactionId: transaction.id,
+        status: 'failed',
+        synced: false,
+        notionPageId: null,
+        error: `Failed to persist Notion page ID: ${updateError.message}`,
+      })
+      continue
+    }
+
+    results.push({
+      transactionId: transaction.id,
+      status: 'synced',
+      synced: true,
+      notionPageId,
+    })
+  }
+
+  for (const transactionId of transactionIds) {
+    if (!foundTransactionIds.has(transactionId)) {
+      results.push({
+        transactionId,
+        status: 'failed',
+        synced: false,
+        notionPageId: null,
+        error: 'Transaction was not found for Notion sync',
+      })
+    }
   }
 
   return results

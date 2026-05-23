@@ -23,8 +23,7 @@ export async function loadCategoriesForBudget(
     .order('sort_order');
 
   if (error) {
-    console.error('[budget.repository] loadCategoriesForBudget failed:', error.message);
-    return [];
+    throw new Error(`[budget.repository] loadCategoriesForBudget failed: ${error.message}`);
   }
 
   return data ?? [];
@@ -52,8 +51,7 @@ export async function loadTransactionsForBudgetMonth(
     );
 
   if (error) {
-    console.error('[budget.repository] loadTransactionsForBudgetMonth failed:', error.message);
-    return [];
+    throw new Error(`[budget.repository] loadTransactionsForBudgetMonth failed: ${error.message}`);
   }
 
   return data ?? [];
@@ -75,8 +73,7 @@ export async function loadLinkedOriginalTransactionsForBudget(
     .in('id', linkedTransactionIds);
 
   if (error) {
-    console.error('[budget.repository] loadLinkedOriginalTransactionsForBudget failed:', error.message);
-    return [];
+    throw new Error(`[budget.repository] loadLinkedOriginalTransactionsForBudget failed: ${error.message}`);
   }
 
   return data ?? [];
@@ -100,8 +97,7 @@ export async function loadBudgetRulesForMonth(
     .eq('period', 'monthly');
 
   if (error) {
-    console.error('[budget.repository] loadBudgetRulesForMonth failed:', error.message);
-    return [];
+    throw new Error(`[budget.repository] loadBudgetRulesForMonth failed: ${error.message}`);
   }
 
   return data ?? [];
@@ -122,8 +118,7 @@ export async function loadBudgetSettings(
     .single();
 
   if (error) {
-    console.error('[budget.repository] loadBudgetSettings failed:', error.message);
-    return null;
+    throw new Error(`[budget.repository] loadBudgetSettings failed: ${error.message}`);
   }
 
   return data ?? null;

@@ -122,7 +122,13 @@ export async function PATCH(
           user.id
         )
 
-        update.transaction_kind = 'refund'
+        const linkedKind =
+          requestedKind ??
+          (transaction.transaction_kind === 'reimbursement'
+            ? 'reimbursement'
+            : 'refund')
+
+        update.transaction_kind = linkedKind
         update.budget_behavior = 'count_as_spending'
         update.linked_transaction_id = original.id
         update.category_id = refundedCategory?.id ?? original.category_id

@@ -25,6 +25,7 @@ type TransactionRow = {
   budget_effective_date: string | null
   refund_match_confidence: number | null
   refund_match_reason: string | null
+  semantic_override_source: string | null
 }
 
 type CategoryRow = {
@@ -152,6 +153,11 @@ async function applyScan(supabase: SupabaseClient, scan: UserScan) {
       .from('transactions')
       .update({
         category_id: refundedCategory.id,
+        budget_behavior: 'count_as_spending',
+        semantic_override_source:
+          refund.semantic_override_source === 'user' || refund.semantic_override_source === 'rule'
+            ? refund.semantic_override_source
+            : 'system',
       })
       .eq('id', refund.id)
       .eq('user_id', scan.userId)
@@ -174,6 +180,11 @@ async function applyScan(supabase: SupabaseClient, scan: UserScan) {
         budget_effective_date: original.date,
         refund_match_confidence: confidence,
         refund_match_reason: reason,
+        budget_behavior: 'count_as_spending',
+        semantic_override_source:
+          refund.semantic_override_source === 'user' || refund.semantic_override_source === 'rule'
+            ? refund.semantic_override_source
+            : 'system',
       })
       .eq('id', refund.id)
       .eq('user_id', scan.userId)
@@ -342,6 +353,7 @@ async function scanUser(
         budget_effective_date: null,
         refund_match_confidence: null,
         refund_match_reason: null,
+        semantic_override_source: null,
       },
       confidence: match.confidence,
       reason: match.reason,
@@ -526,7 +538,8 @@ async function main() {
     linked_transaction_id,
     budget_effective_date,
     refund_match_confidence,
-    refund_match_reason
+    refund_match_reason,
+    semantic_override_source
   `
 
   const allTransactions = (
