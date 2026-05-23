@@ -105,7 +105,8 @@ export async function getAnalyticsSummary(
     totalIncome += semanticAmounts.income
 
     if (semanticAmounts.categorySpend !== 0) {
-      const cat = tx.categories
+      const rawCat = tx.categories
+      const cat = Array.isArray(rawCat) ? rawCat[0] : rawCat
       const catName = cat?.name_zh || cat?.name || 'Other'
       const existing = categoryMap.get(catName) || {
         name: catName,

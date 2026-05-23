@@ -42,7 +42,10 @@ export async function GET() {
       data: {
         accounts,
         monthTx,
-        recentTx
+        recentTx: recentTx?.map(tx => ({
+          ...tx,
+          categories: Array.isArray(tx.categories) ? tx.categories[0] : tx.categories
+        }))
       }
     })
   } catch (error) {
