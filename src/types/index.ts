@@ -1,3 +1,19 @@
+export type TransactionKind = 'normal' | 'refund' | 'reimbursement' | 'transfer'
+export type BudgetBehavior =
+  | 'count_as_spending'
+  | 'count_as_income'
+  | 'exclude_as_transfer'
+  | 'exclude_manual'
+
+export type TransferMatchStatus =
+  | 'unmatched'
+  | 'auto_matched'
+  | 'suggested'
+  | 'manually_matched'
+  | 'ignored'
+
+export type SemanticOverrideSource = 'system' | 'user' | 'rule' | 'ai'
+
 export type Transaction = {
   id: string
   user_id: string
@@ -17,6 +33,17 @@ export type Transaction = {
   notion_page_id?: string
   tags?: string[]
   notes?: string
+  transaction_kind?: TransactionKind
+  budget_behavior?: BudgetBehavior | null
+  linked_transaction_id?: string | null
+  budget_effective_date?: string | null
+  refund_match_confidence?: number | null
+  refund_match_reason?: string | null
+  transfer_group_id?: string | null
+  transfer_match_status?: TransferMatchStatus | null
+  transfer_match_confidence?: number | null
+  transfer_match_reason?: string | null
+  semantic_override_source?: SemanticOverrideSource | null
   created_at: string
   updated_at: string
 }
@@ -51,6 +78,7 @@ export type Category = {
   plaid_primary?: string
   plaid_detailed?: string
   type: 'income' | 'expense' | 'transfer'
+  is_excluded_from_budget?: boolean
   sort_order: number
   created_at: string
 }
@@ -90,6 +118,8 @@ export type Profile = {
   default_currency: string
   notion_sync_enabled: boolean
   notion_token?: string
+  notion_token_configured?: boolean
+  notion_token_masked?: string | null
   notion_database_id?: string
   created_at: string
   updated_at: string
@@ -103,4 +133,42 @@ export type ReceiptApiKey = {
   last_used_at?: string
   revoked_at?: string
   created_at: string
+}
+
+export type Receipt = {
+  id: string
+  user_id: string
+  parsed_data?: Record<string, unknown>
+  idempotency_key?: string | null
+  status: 'pending' | 'parsed' | 'confirmed' | 'error'
+  transaction_id?: string
+  created_at: string
+  updated_at: string
+}
+
+export type AiClassificationJob = {
+  id: string
+  user_id: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
+  total_count: number
+  pending_count: number
+  completed_count: number
+  failed_count: number
+  error_message: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type AiClassificationJobItem = {
+  id: string
+  job_id: string
+  user_id: string
+  transaction_id: string
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'skipped'
+  attempts: number
+  error_message: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
 }

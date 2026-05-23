@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { Category, Transaction, Budget, Profile } from '@/types';
+import { getBudgetDate } from '@/lib/transactions/refunds';
 import type {
   BudgetCategoryInput,
   BudgetTransactionInput,
@@ -17,7 +18,8 @@ import type {
  * Maps category rows to BudgetCategoryInput[].
  *
  * - `type` is passed through directly (DB uses 'income' | 'expense' | 'transfer').
- * - Non-expense categories are excluded from budgeting.
+ * - Non-expense categories and explicitly excluded categories are excluded
+ *   from budgeting.
  * - `groupId` is always null (no group concept in the DB yet).
  */
 export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
@@ -26,7 +28,8 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
     name: row.name,
     groupId: null,
     type: row.type,
-    isExcludedFromBudget: row.type !== 'expense',
+    isExcludedFromBudget:
+      row.type !== 'expense' || row.is_excluded_from_budget === true,
     sortOrder: row.sort_order,
   }));
 }
@@ -34,14 +37,9 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
 /**
  * Maps transaction rows to BudgetTransactionInput[].
  *
- * Amount sign is normalised here, not in the engine. Across the current app,
- * the dominant storage convention is:
- * - negative amount = expense
- * - positive amount = income
- *
- * BudgetEngine should not need to know or guess that persistence detail, so
- * expense-like transactions are converted to a negative spend amount and
- * income-like transactions are converted to a positive inflow amount.
+ * Accountant stores Plaid amounts as positive expenses and negative credits.
+ * Refunds remain negative expense-category rows, so the engine can calculate
+ * net spending with a plain SUM(amount).
  *
  * Uses the `categoryMap` to resolve each transaction's type from its linked
  * category. Falls back to `'expense'` when the category is missing or
@@ -50,28 +48,26 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
 export function adaptTransactions(
   rows: Transaction[],
   categoryMap: Map<string, Category>,
+  budgetCategoryByTransactionId: Map<string, string | null> = new Map(),
 ): BudgetTransactionInput[] {
   return rows.map((row) => {
-    const category = row.category_id
-      ? categoryMap.get(row.category_id)
+    const budgetCategoryId = budgetCategoryByTransactionId.has(row.id)
+      ? budgetCategoryByTransactionId.get(row.id) ?? null
+      : row.category_id ?? null
+    const category = budgetCategoryId
+      ? categoryMap.get(budgetCategoryId)
       : undefined;
 
     const type = category?.type ?? 'expense';
     const rawAmount = Number(row.amount);
 
-    let normalizedAmount = rawAmount;
-    if (type === 'expense') {
-      normalizedAmount = -Math.abs(rawAmount);
-    } else if (type === 'income') {
-      normalizedAmount = Math.abs(rawAmount);
-    }
-
     return {
       id: row.id,
-      amount: normalizedAmount,
-      date: row.date,
-      categoryId: row.category_id ?? null,
+      amount: rawAmount,
+      date: getBudgetDate(row),
+      categoryId: budgetCategoryId,
       type,
+      budgetBehavior: row.budget_behavior ?? null,
       status: row.pending ? ('pending' as const) : ('posted' as const),
       isHidden: false,
       isDeleted: false,
@@ -107,6 +103,8 @@ export function adaptBudgetRules(rows: Budget[]): BudgetRuleInput[] {
  * returns safe defaults for phase 1.
  */
 export function adaptSettings(_profile: Profile | null): BudgetSettingsInput {
+  void _profile
+
   return {
     budgetingEnabled: true,
     includePendingTransactions: false,

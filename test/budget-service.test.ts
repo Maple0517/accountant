@@ -11,6 +11,7 @@ function createSupabaseStub(categories: Array<Record<string, unknown>> = []) {
           return chain
         },
         eq(column: string, value: unknown) {
+          void value
           if (table === 'categories' && column === 'user_id') {
             return {
               order() {
@@ -143,4 +144,178 @@ test('updateCategoryBudget accepts valid category owned by current user', async 
     amount: 125,
     period: 'monthly',
   })
+})
+
+test('getMonthlySummary budgets linked refunded-category rows against original category', async () => {
+  const categories = [
+    {
+      id: 'cat_shopping',
+      user_id: 'user_1',
+      name: 'Shopping',
+      type: 'expense',
+      sort_order: 0,
+      is_excluded_from_budget: false,
+    },
+    {
+      id: 'cat_refunded',
+      user_id: 'user_1',
+      name: 'Refunded',
+      name_zh: '已退款',
+      type: 'expense',
+      sort_order: 1,
+      is_excluded_from_budget: false,
+    },
+  ]
+  const monthlyTransactions = [
+    {
+      id: 'purchase',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_shopping',
+      amount: 100,
+      date: '2026-01-20',
+      budget_effective_date: '2026-01-20',
+      description: 'Amazon purchase',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'normal',
+      linked_transaction_id: null,
+    },
+    {
+      id: 'refund',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_refunded',
+      amount: -100,
+      date: '2026-02-05',
+      budget_effective_date: '2026-01-20',
+      description: 'Amazon refund',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'refund',
+      linked_transaction_id: 'purchase',
+    },
+  ]
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq(column: string, value: unknown) {
+          void value
+          if (table === 'categories' && column === 'user_id') {
+            return {
+              order() {
+                return Promise.resolve({ data: categories, error: null })
+              },
+            }
+          }
+
+          if (table === 'profiles' && column === 'id') {
+            return {
+              single() {
+                return Promise.resolve({ data: null, error: null })
+              },
+            }
+          }
+
+          return chain
+        },
+        or() {
+          return Promise.resolve({ data: monthlyTransactions, error: null })
+        },
+        in(column: string, ids: string[]) {
+          assert.equal(table, 'transactions')
+          assert.equal(column, 'id')
+          assert.deepEqual(ids, ['purchase'])
+          return Promise.resolve({
+            data: [{ id: 'purchase', category_id: 'cat_shopping' }],
+            error: null,
+          })
+        },
+        order() {
+          return Promise.resolve({ data: categories, error: null })
+        },
+        single() {
+          return Promise.resolve({ data: null, error: null })
+        },
+      }
+
+      return chain
+    },
+  }
+
+  const summary = await getMonthlySummary(supabase as never, 'user_1', '2026-01')
+  const shopping = summary.categories.find((category) => category.categoryId === 'cat_shopping')
+  const refunded = summary.categories.find((category) => category.categoryId === 'cat_refunded')
+
+  assert.equal(shopping?.actualSpend, 0)
+  assert.equal(refunded?.actualSpend, 0)
+})
+
+test('updateCategoryBudget rejects income, transfer, and excluded categories', async () => {
+  for (const category of [
+    { id: 'cat_income', user_id: 'user_1', name: 'Income', type: 'income', sort_order: 0 },
+    { id: 'cat_transfer', user_id: 'user_1', name: 'Transfer', type: 'transfer', sort_order: 0 },
+    {
+      id: 'cat_excluded',
+      user_id: 'user_1',
+      name: 'Excluded',
+      type: 'expense',
+      is_excluded_from_budget: true,
+      sort_order: 0,
+    },
+  ]) {
+    const supabase = createSupabaseStub([category])
+
+    await assert.rejects(
+      () => updateCategoryBudget(supabase as never, 'user_1', category.id as string, '2026-05', 50),
+      /Category is not budgetable/
+    )
+  }
+})
+
+test('getMonthlySummary propagates repository database errors', async () => {
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          if (table === 'categories') {
+            return {
+              order() {
+                return Promise.resolve({ data: null, error: { message: 'RLS broke' } })
+              },
+            }
+          }
+          return chain
+        },
+        or() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        gte() {
+          return chain
+        },
+        lt() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        order() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        single() {
+          return Promise.resolve({ data: null, error: null })
+        },
+      }
+
+      return chain
+    },
+  }
+
+  await assert.rejects(
+    () => getMonthlySummary(supabase as never, 'user_1', '2026-05'),
+    /loadCategoriesForBudget failed: RLS broke/
+  )
 })

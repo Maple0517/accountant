@@ -15,6 +15,7 @@
 2. 用 Gemini Vision 识别商户、金额、币种、日期、支付方式，以及这笔交易是支出、收入还是转账。
 3. 自动创建或复用一个名为 **iOS Capture** 的手动账户。
 4. 把交易写进应用，`source = receipt`，并附带一些识别标签，比如 `payment_screenshot`、`expense`。
+5. 如果你已在 Settings 开启 Notion Sync 并配置好数据库，交易创建后会自动尝试同步到 Notion；即使 Notion 临时失败，入账也会保持成功，返回结果里会显示 Notion 状态。
 
 这个流程不依赖 Plaid，所以你现在可以先完整用起来。
 
@@ -62,6 +63,7 @@ https://accountant-rose.vercel.app/api/receipt
 1. `image`
 - 类型：`文件`
 - 值：上一步调整后的图片
+- 注意：这里必须选择“文件”，不要把图片转成文本或 Base64
 
 2. `api_key`
 - 类型：`文本`
@@ -76,6 +78,11 @@ https://accountant-rose.vercel.app/api/receipt
 4. `notes`
 - 类型：`文本`
 - 值：可选，可以先留空
+
+5. `idempotency_key`
+- 类型：`文本`
+- 值：建议使用快捷指令里的“UUID”动作生成的值
+- 作用：网络超时或你重复运行同一次上传时，服务端会用它避免重复创建交易
 
 #### 动作 4：显示结果
 添加 **显示结果**，内容选择“获取 URL 内容”的返回结果。

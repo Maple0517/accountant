@@ -13,6 +13,8 @@
 # testing
 /coverage
 /.tmp-tests
+/.tmp-scripts
+/.tmp-refund-backfill
 
 # next.js
 /.next/

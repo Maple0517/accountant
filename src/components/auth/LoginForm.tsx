@@ -40,8 +40,12 @@ export default function LoginForm() {
         router.push('/dashboard')
         router.refresh()
       }
-    } catch (error: any) {
-      setError(error.message || 'An error occurred during authentication.')
+    } catch (error: unknown) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'An error occurred during authentication.'
+      )
     } finally {
       setLoading(false)
     }

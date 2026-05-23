@@ -5,6 +5,7 @@ import { adaptCategories, adaptTransactions, adaptBudgetRules, adaptSettings } f
 import {
   loadCategoriesForBudget,
   loadTransactionsForBudgetMonth,
+  loadLinkedOriginalTransactionsForBudget,
   loadBudgetRulesForMonth,
   loadBudgetSettings,
   upsertCategoryBudget,
@@ -61,15 +62,55 @@ export async function getMonthlySummary(
 
   const { numericYear, numericMonth, monthStart, monthEnd } = parseMonth(month)
 
-  const categories = await loadCategoriesForBudget(supabase, userId)
-  const transactions = await loadTransactionsForBudgetMonth(supabase, userId, monthStart, monthEnd)
-  const budgetRules = await loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear)
-  const profile = await loadBudgetSettings(supabase, userId)
+  const [categories, transactions, budgetRules, profile] = await Promise.all([
+    loadCategoriesForBudget(supabase, userId),
+    loadTransactionsForBudgetMonth(supabase, userId, monthStart, monthEnd),
+    loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear),
+    loadBudgetSettings(supabase, userId),
+  ])
+  const linkedTransactionIds = Array.from(
+    new Set(
+      transactions
+        .filter(
+          (tx) =>
+            (tx.transaction_kind === 'refund' ||
+              tx.transaction_kind === 'reimbursement') &&
+            tx.linked_transaction_id
+        )
+        .map((tx) => tx.linked_transaction_id!)
+    )
+  )
+  const linkedOriginals = await loadLinkedOriginalTransactionsForBudget(
+    supabase,
+    userId,
+    linkedTransactionIds
+  )
 
   const categoryMap = new Map(categories.map((c) => [c.id, c]))
+  const originalCategoryById = new Map(
+    linkedOriginals.map((tx) => [tx.id, tx.category_id ?? null])
+  )
+  const budgetCategoryByTransactionId = new Map(
+    transactions
+      .filter(
+        (tx) =>
+          (tx.transaction_kind === 'refund' ||
+            tx.transaction_kind === 'reimbursement') &&
+          tx.linked_transaction_id &&
+          originalCategoryById.has(tx.linked_transaction_id)
+      )
+      .map((tx) => [
+        tx.id,
+        originalCategoryById.get(tx.linked_transaction_id!) ?? null,
+      ])
+  )
 
   const adaptedCategories = adaptCategories(categories)
-  const adaptedTransactions = adaptTransactions(transactions, categoryMap)
+  const adaptedTransactions = adaptTransactions(
+    transactions,
+    categoryMap,
+    budgetCategoryByTransactionId
+  )
   const adaptedRules = adaptBudgetRules(budgetRules)
   const settings = adaptSettings(profile)
 
@@ -112,10 +153,14 @@ export async function updateCategoryBudget(
 
   const { numericMonth, numericYear } = parseMonth(month)
   const categories = await loadCategoriesForBudget(supabase, userId)
-  const categoryExists = categories.some((category) => category.id === categoryId)
+  const category = categories.find((candidate) => candidate.id === categoryId)
 
-  if (!categoryExists) {
+  if (!category) {
     throw new Error('Category not found for user')
+  }
+
+  if (category.type !== 'expense' || category.is_excluded_from_budget === true) {
+    throw new Error('Category is not budgetable')
   }
 
   await upsertCategoryBudget(supabase, userId, categoryId, numericMonth, numericYear, amount)

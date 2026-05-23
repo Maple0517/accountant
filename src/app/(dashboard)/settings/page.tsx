@@ -1,11 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
 import type { Profile, ReceiptApiKey } from '@/types'
 
+type SafeProfile = Omit<Profile, 'notion_token'> & {
+  notion_token?: never
+  notion_token_configured?: boolean
+  notion_token_masked?: string | null
+}
+
 export default function SettingsPage() {
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [profile, setProfile] = useState<SafeProfile | null>(null)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [apiKeyBusy, setApiKeyBusy] = useState(false)
@@ -16,22 +21,17 @@ export default function SettingsPage() {
   const [receiptEndpoint, setReceiptEndpoint] = useState('')
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [parentPageId, setParentPageId] = useState('')
-
-  const supabase = useMemo(() => createClient(), [])
+  const [notionTokenInput, setNotionTokenInput] = useState('')
 
   useEffect(() => {
     async function loadProfile() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
-        
-        if (data) {
-          setProfile(data)
-        }
+      const response = await fetch('/api/settings/notion')
+      const data = await response.json()
+
+      if (response.ok) {
+        setProfile(data.profile)
+      } else {
+        setMessage({ text: data.error || 'Failed to load settings.', type: 'error' })
       }
     }
     async function loadInitialApiKeys() {
@@ -51,7 +51,7 @@ export default function SettingsPage() {
     loadInitialApiKeys()
 
     return () => window.cancelAnimationFrame(frameId)
-  }, [supabase])
+  }, [])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -60,23 +60,36 @@ export default function SettingsPage() {
     setSaving(true)
     setMessage(null)
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
+    try {
+      const payload: Record<string, unknown> = {
         display_name: profile.display_name,
         default_currency: profile.default_currency,
         notion_sync_enabled: profile.notion_sync_enabled,
-        notion_token: profile.notion_token,
         notion_database_id: profile.notion_database_id,
+      }
+
+      if (notionTokenInput.trim()) {
+        payload.notion_token = notionTokenInput.trim()
+      }
+
+      const response = await fetch('/api/settings/notion', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       })
-      .eq('id', profile.id)
+      const data = await response.json()
 
-    setSaving(false)
-
-    if (error) {
+      if (!response.ok) {
+        setMessage({ text: data.error || 'Failed to save settings.', type: 'error' })
+      } else {
+        setProfile(data.profile)
+        setNotionTokenInput('')
+        setMessage({ text: 'Settings saved successfully.', type: 'success' })
+      }
+    } catch {
       setMessage({ text: 'Failed to save settings.', type: 'error' })
-    } else {
-      setMessage({ text: 'Settings saved successfully.', type: 'success' })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -85,6 +98,29 @@ export default function SettingsPage() {
     setMessage(null)
 
     try {
+      if (!profile?.notion_token_configured && notionTokenInput.trim()) {
+        const saveResponse = await fetch('/api/settings/notion', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            display_name: profile?.display_name,
+            default_currency: profile?.default_currency,
+            notion_sync_enabled: profile?.notion_sync_enabled,
+            notion_database_id: profile?.notion_database_id,
+            notion_token: notionTokenInput.trim(),
+          }),
+        })
+        const saveData = await saveResponse.json()
+
+        if (!saveResponse.ok) {
+          setMessage({ text: saveData.error || 'Failed to save Notion token.', type: 'error' })
+          return
+        }
+
+        setProfile(saveData.profile)
+        setNotionTokenInput('')
+      }
+
       const response = await fetch('/api/notion/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -102,12 +138,9 @@ export default function SettingsPage() {
         })
         
         // Reload profile in case DB ID was set
-        const { data: newProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', profile!.id)
-          .single()
-        if (newProfile) setProfile(newProfile)
+        const profileResponse = await fetch('/api/settings/notion')
+        const profileData = await profileResponse.json()
+        if (profileResponse.ok) setProfile(profileData.profile)
       }
     } catch {
       setMessage({ text: 'An unexpected error occurred.', type: 'error' })
@@ -212,8 +245,9 @@ export default function SettingsPage() {
         <div className="card settings-card">
           <h2>Profile</h2>
           <div className="input-group">
-            <label className="input-label">Display Name</label>
+            <label className="input-label" htmlFor="settings-display-name">Display Name</label>
             <input
+              id="settings-display-name"
               type="text"
               className="input"
               value={profile?.display_name || ''}
@@ -222,8 +256,9 @@ export default function SettingsPage() {
           </div>
           
           <div className="input-group">
-            <label className="input-label">Default Currency</label>
+            <label className="input-label" htmlFor="settings-default-currency">Default Currency</label>
             <select
+              id="settings-default-currency"
               className="input"
               value={profile?.default_currency || 'USD'}
               onChange={(e) => setProfile(p => p ? { ...p, default_currency: e.target.value } : null)}
@@ -255,24 +290,31 @@ export default function SettingsPage() {
           {profile?.notion_sync_enabled && (
             <>
               <div className="input-group">
-                <label className="input-label">Notion Internal Integration Token</label>
+                <label className="input-label" htmlFor="settings-notion-token">Notion Internal Integration Token</label>
                 <input
+                  id="settings-notion-token"
                   type="password"
                   className="input"
-                  placeholder="secret_..."
-                  value={profile?.notion_token || ''}
-                  onChange={(e) => setProfile(p => p ? { ...p, notion_token: e.target.value } : null)}
+                  placeholder={profile.notion_token_configured ? 'Leave blank to keep existing token' : 'secret_...'}
+                  value={notionTokenInput}
+                  onChange={(e) => setNotionTokenInput(e.target.value)}
                 />
+                {profile.notion_token_configured && (
+                  <p className="text-muted text-xs mt-1">
+                    Token saved: {profile.notion_token_masked || 'configured'}. Leave this blank to keep it unchanged.
+                  </p>
+                )}
               </div>
 
               {!profile?.notion_database_id ? (
                 <div className="input-group">
-                  <label className="input-label">Initial Setup: Parent Page ID</label>
+                  <label className="input-label" htmlFor="settings-notion-parent-page">Initial Setup: Parent Page ID</label>
                   <p className="text-muted text-xs mb-2">
                     To create the database, share a Notion page with your Integration and paste its ID here.
                   </p>
                   <input
                     type="text"
+                    id="settings-notion-parent-page"
                     className="input"
                     placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j"
                     value={parentPageId}
@@ -281,8 +323,9 @@ export default function SettingsPage() {
                 </div>
               ) : (
                 <div className="input-group">
-                  <label className="input-label">Database ID (Configured)</label>
+                  <label className="input-label" htmlFor="settings-notion-database-id">Database ID (Configured)</label>
                   <input
+                    id="settings-notion-database-id"
                     type="text"
                     className="input"
                     value={profile?.notion_database_id || ''}
@@ -297,7 +340,7 @@ export default function SettingsPage() {
                   type="button"
                   className="btn btn-primary"
                   onClick={handleManualSync}
-                  disabled={syncing || !profile.notion_token || (!profile.notion_database_id && !parentPageId)}
+                  disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}
                 >
                   {syncing ? 'Syncing...' : 'Force Sync to Notion'}
                 </button>
@@ -351,8 +394,9 @@ export default function SettingsPage() {
 
           <div className="api-key-actions">
             <div className="input-group api-key-name">
-              <label className="input-label">Key Name</label>
+              <label className="input-label" htmlFor="settings-api-key-name">Key Name</label>
               <input
+                id="settings-api-key-name"
                 type="text"
                 className="input"
                 value={apiKeyName}

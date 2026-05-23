@@ -1,5 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { plaidClient } from '@/lib/plaid/client'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getPlaidClient } from '@/lib/plaid/client'
+import { CountryCode } from 'plaid'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +31,7 @@ export async function POST(request: Request) {
     }
 
     // Exchange public token for access token
-    const tokenResponse = await plaidClient.itemPublicTokenExchange({
+    const tokenResponse = await getPlaidClient().itemPublicTokenExchange({
       public_token,
     })
 
@@ -37,20 +39,23 @@ export async function POST(request: Request) {
     const item_id = tokenResponse.data.item_id
 
     // Fetch item details to get institution info
-    const itemResponse = await plaidClient.itemGet({ access_token })
+    const itemResponse = await getPlaidClient().itemGet({ access_token })
     const institutionId = itemResponse.data.item.institution_id
 
     let institutionName = 'Unknown Institution'
     if (institutionId) {
-      const instResponse = await plaidClient.institutionsGetById({
+      const instResponse = await getPlaidClient().institutionsGetById({
         institution_id: institutionId,
-        country_codes: ['US' as any],
+        country_codes: [CountryCode.Us],
       })
       institutionName = instResponse.data.institution.name
     }
 
-    // Save plaid item to Supabase
-    const { data: plaidItem, error: itemError } = await supabase
+    const admin = createAdminClient()
+
+    // Save Plaid item with the service role so the sensitive access token never
+    // needs direct browser/Data API permissions.
+    const { data: plaidItem, error: itemError } = await admin
       .from('plaid_items')
       .upsert({
         user_id: user.id,
@@ -71,12 +76,12 @@ export async function POST(request: Request) {
     }
 
     // Fetch accounts
-    const accountsResponse = await plaidClient.accountsGet({ access_token })
+    const accountsResponse = await getPlaidClient().accountsGet({ access_token })
     
     const existingAccountsByPlaidId = new Map(
       (
         (
-          await supabase
+          await admin
             .from('accounts')
             .select('id, plaid_account_id')
             .eq('user_id', user.id)
@@ -105,7 +110,7 @@ export async function POST(request: Request) {
     )
 
     const { error: accountsError } = accountsToInsert.length
-      ? await supabase.from('accounts').insert(accountsToInsert)
+      ? await admin.from('accounts').insert(accountsToInsert)
       : { error: null }
 
     if (accountsError) {
@@ -114,10 +119,12 @@ export async function POST(request: Request) {
     }
 
     return Response.json({ success: true, item_id: plaidItem.id })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error exchanging token:', error)
+    const errorMessage =
+      error instanceof Error ? error.message : 'Failed to exchange token'
     return Response.json(
-      { error: error.message || 'Failed to exchange token' },
+      { error: errorMessage },
       { status: 500 }
     )
   }

@@ -1,22 +1,73 @@
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/auth/server'
 import { formatCurrency } from '@/lib/currency'
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
 
+
+function toMonthStart(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+function getMonthlySemanticAmounts(tx: {
+  amount: number | string
+  budget_behavior?: string | null
+}) {
+  const amount = Number(tx.amount)
+
+  if (!Number.isFinite(amount)) {
+    return { spending: 0, income: 0 }
+  }
+
+  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') {
+    return { spending: 0, income: 0 }
+  }
+
+  if (tx.budget_behavior === 'count_as_income') {
+    return { spending: 0, income: Math.abs(amount) }
+  }
+
+  if (tx.budget_behavior === 'count_as_spending') {
+    return { spending: amount, income: 0 }
+  }
+
+  if (amount > 0) return { spending: amount, income: 0 }
+  if (amount < 0) return { spending: 0, income: Math.abs(amount) }
+  return { spending: 0, income: 0 }
+}
+
+
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { supabase, user } = await getCurrentUser()
 
   if (!user) {
     redirect('/auth/login')
   }
 
-  // Fetch accounts
-  const { data: accounts } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', user.id)
+  // Fetch current month's transactions
+  const now = new Date()
+  const firstDayOfMonth = toMonthStart(now)
+
+  const [{ data: accounts }, { data: monthTx }, { data: recentTx }] =
+    await Promise.all([
+      supabase
+        .from('accounts')
+        .select('type, current_balance')
+        .eq('user_id', user.id),
+      supabase
+        .from('transactions')
+        .select('amount, budget_behavior, budget_effective_date, date')
+        .eq('user_id', user.id)
+        .eq('pending', false)
+        .or(`and(budget_effective_date.gte.${firstDayOfMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth})`),
+      supabase
+        .from('transactions')
+        .select('id, merchant_name, description, amount, date, source')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
+        .limit(5),
+    ])
 
   let totalBalance = 0
   if (accounts) {
@@ -29,29 +80,14 @@ export default async function DashboardPage() {
     })
   }
 
-  // Fetch current month's transactions
-  const now = new Date()
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-
-  const { data: monthTx } = await supabase
-    .from('transactions')
-    .select('amount, source')
-    .eq('user_id', user.id)
-    .gte('date', firstDayOfMonth)
-
   let monthlySpending = 0
   let monthlyIncome = 0
 
   if (monthTx) {
     monthTx.forEach(tx => {
-      const amt = Number(tx.amount)
-      // Plaid: positive = expense, negative = income
-      // Manual: positive = expense, negative = income
-      if (amt > 0) {
-        monthlySpending += amt
-      } else if (amt < 0) {
-        monthlyIncome += Math.abs(amt)
-      }
+      const amounts = getMonthlySemanticAmounts(tx)
+      monthlySpending += amounts.spending
+      monthlyIncome += amounts.income
     })
   }
 
@@ -63,14 +99,6 @@ export default async function DashboardPage() {
     { label: 'Monthly Income', value: monthlyIncome, change: 'This Month', trend: 'neutral' },
     { label: 'Savings Rate', value: Math.max(0, savingsRate), isPercentage: true, change: 'This Month', trend: 'neutral' },
   ]
-
-  // Fetch recent transactions
-  const { data: recentTx } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('date', { ascending: false })
-    .limit(5)
 
   // Mapping categories to icons roughly
   const getIcon = (category: string | null) => {
@@ -137,19 +165,11 @@ export default async function DashboardPage() {
 
           <div className="card budgets-card">
             <div className="card-header">
-              <h3>Budget Progress (Coming Soon)</h3>
-              <button className="btn btn-ghost text-sm">View All</button>
+              <h3>Budget Progress</h3>
+              <Link href="/budgets" className="btn btn-ghost text-sm">View All</Link>
             </div>
-            <div className="budget-list">
-              <div className="budget-item">
-                <div className="budget-info">
-                  <span>🍔 Food & Dining</span>
-                  <span className="budget-amounts">$450 / $600</span>
-                </div>
-                <div className="progress-bg">
-                  <div className="progress-fill warning" style={{ width: '75%' }}></div>
-                </div>
-              </div>
+            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              Visit the <Link href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</Link> to set up monthly spending limits.
             </div>
           </div>
         </div>
@@ -158,7 +178,7 @@ export default async function DashboardPage() {
           <div className="card transactions-card">
             <div className="card-header">
               <h3>Recent Transactions</h3>
-              <button className="btn btn-ghost text-sm">View All</button>
+              <Link href="/transactions" className="btn btn-ghost text-sm">View All</Link>
             </div>
             <div className="transaction-list">
               {recentTransactions.length > 0 ? (

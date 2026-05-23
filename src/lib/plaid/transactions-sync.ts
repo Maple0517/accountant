@@ -1,8 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
-import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
+import { syncTransactionsIfEnabled } from '@/lib/notion/sync'
+import {
+  getUserCategories,
+  getOrCreateCategory,
+  getOrCreateRefundedCategory,
+} from '@/lib/categories-db'
 import { getCategoryFromPlaid } from '@/lib/categories'
-import { plaidClient } from '@/lib/plaid/client'
+import { getPlaidClient } from '@/lib/plaid/client'
 import {
   getPlaidPrimaryCategory,
   mergeTransactionClassification,
@@ -13,6 +17,16 @@ import {
   ClassifiedTransaction,
   RawTransactionToClassify,
 } from '@/lib/gemini/classifier'
+import {
+  findLikelyOriginalPurchase,
+  isLikelyRefundCandidate,
+} from '@/lib/transactions/refund-matching'
+import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
+import {
+  detectTransferSemantics,
+  type TransferAccountContext,
+} from '@/lib/transactions/transfer-matching'
+import type { BudgetBehavior, SemanticOverrideSource } from '@/types'
 
 type PlaidSyncTransaction = PlaidCategorySource & {
   account_id: string
@@ -29,6 +43,29 @@ type PlaidSyncTransaction = PlaidCategorySource & {
 
 type PlaidRemovedTransaction = {
   transaction_id: string
+}
+
+type ExistingPlaidTransaction = {
+  id: string
+  plaid_transaction_id: string
+  category_id: string | null
+  merchant_name: string | null
+  tags?: string[] | null
+  transaction_kind?: string | null
+  budget_behavior?: BudgetBehavior | null
+  linked_transaction_id?: string | null
+  budget_effective_date?: string | null
+  refund_match_confidence?: number | null
+  refund_match_reason?: string | null
+  transfer_group_id?: string | null
+  transfer_match_status?: string | null
+  transfer_match_confidence?: number | null
+  transfer_match_reason?: string | null
+  semantic_override_source?: SemanticOverrideSource | null
+}
+
+type PlaidSyncAccount = TransferAccountContext & {
+  plaid_account_id: string
 }
 
 type SyncPlaidItemTransactionsInput = {
@@ -54,6 +91,10 @@ export function getSafePlaidSyncError(error: unknown) {
   }
 
   return 'Failed to sync available Plaid updates'
+}
+
+function shouldPreserveSemanticTreatment(source: SemanticOverrideSource | null | undefined) {
+  return source === 'user' || source === 'rule'
 }
 
 export async function syncPlaidItemTransactions({
@@ -82,7 +123,7 @@ export async function syncPlaidItemTransactions({
 
   if (ensureWebhook && process.env.PLAID_WEBHOOK_URL) {
     try {
-      await plaidClient.itemWebhookUpdate({
+      await getPlaidClient().itemWebhookUpdate({
         access_token: item.access_token,
         webhook: process.env.PLAID_WEBHOOK_URL,
       })
@@ -93,11 +134,13 @@ export async function syncPlaidItemTransactions({
 
   const { data: accounts } = await supabase
     .from('accounts')
-    .select('id, plaid_account_id')
+    .select('id, plaid_account_id, name, type, subtype')
     .eq('user_id', itemUserId)
     .eq('plaid_item_id', plaidItemId)
 
-  const accountMap = new Map(accounts?.map(a => [a.plaid_account_id, a.id]) || [])
+  const accountRows = (accounts || []) as PlaidSyncAccount[]
+  const accountMap = new Map(accountRows.map((a) => [a.plaid_account_id, a.id]))
+  const accountByLocalId = new Map(accountRows.map((a) => [a.id, a]))
   const accountIds = Array.from(accountMap.values())
 
   let uncategorizedCount = 0
@@ -129,7 +172,7 @@ export async function syncPlaidItemTransactions({
   let hasMore = true
 
   while (hasMore) {
-    const response = await plaidClient.transactionsSync({
+    const response = await getPlaidClient().transactionsSync({
       access_token: item.access_token,
       cursor,
     })
@@ -146,6 +189,28 @@ export async function syncPlaidItemTransactions({
 
   if (upsertList.length > 0) {
     const userCategories = await getUserCategories(supabase, itemUserId)
+    const transferTreatments = detectTransferSemantics(
+      upsertList
+        .map((tx) => {
+          const localAccountId = accountMap.get(tx.account_id)
+          const account = localAccountId ? accountByLocalId.get(localAccountId) : undefined
+
+          if (!localAccountId || !account) {
+            return null
+          }
+
+          return {
+            id: tx.transaction_id,
+            accountId: localAccountId,
+            amount: Number(tx.amount),
+            date: tx.date,
+            name: tx.name,
+            merchantName: tx.merchant_name || null,
+            account,
+          }
+        })
+        .filter((tx): tx is NonNullable<typeof tx> => tx !== null)
+    )
 
     const rawTxs: RawTransactionToClassify[] = upsertList.map((tx) => ({
       id: tx.transaction_id,
@@ -164,7 +229,24 @@ export async function syncPlaidItemTransactions({
     const existingPlaidIds = upsertList.map((tx) => tx.transaction_id)
     const { data: existingTransactions, error: existingTransactionsError } = await supabase
       .from('transactions')
-      .select('plaid_transaction_id, category_id, merchant_name, tags')
+      .select(`
+        id,
+        plaid_transaction_id,
+        category_id,
+        merchant_name,
+        tags,
+        transaction_kind,
+        budget_behavior,
+        linked_transaction_id,
+        budget_effective_date,
+        refund_match_confidence,
+        refund_match_reason,
+        transfer_group_id,
+        transfer_match_status,
+        transfer_match_confidence,
+        transfer_match_reason,
+        semantic_override_source
+      `)
       .eq('user_id', itemUserId)
       .in('plaid_transaction_id', existingPlaidIds)
 
@@ -173,7 +255,10 @@ export async function syncPlaidItemTransactions({
     }
 
     const existingTransactionMap = new Map(
-      (existingTransactions || []).map((tx) => [tx.plaid_transaction_id, tx])
+      ((existingTransactions || []) as ExistingPlaidTransaction[]).map((tx) => [
+        tx.plaid_transaction_id,
+        tx,
+      ])
     )
 
     const classMap = new Map(classified.map((c) => [c.id, c]))
@@ -181,6 +266,21 @@ export async function syncPlaidItemTransactions({
 
     for (const tx of upsertList) {
       const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+      const preserveSemanticTreatment = shouldPreserveSemanticTreatment(
+        existingTransaction?.semantic_override_source
+      )
+      const transferTreatment =
+        !preserveSemanticTreatment &&
+        existingTransaction?.transfer_match_status !== 'ignored'
+          ? transferTreatments.get(tx.transaction_id)
+          : undefined
+      const shouldApplyTransferExclusion =
+        transferTreatment?.budgetBehavior === 'exclude_as_transfer'
+      const localAccountId = accountMap.get(tx.account_id)
+      if (!localAccountId) {
+        continue
+      }
+
       let classificationForMerge:
         | {
             clean_merchant_name: string
@@ -239,10 +339,107 @@ export async function syncPlaidItemTransactions({
         plaidFallback
       )
 
+      const refundCandidate = isLikelyRefundCandidate(tx)
+      let nextCategoryId = categoryId
+      let transactionKind =
+        existingTransaction?.transaction_kind && existingTransaction.transaction_kind !== 'normal'
+          ? existingTransaction.transaction_kind
+          : refundCandidate
+            ? 'refund'
+            : 'normal'
+      let linkedTransactionId = existingTransaction?.linked_transaction_id ?? null
+      let budgetEffectiveDate = existingTransaction?.budget_effective_date ?? tx.date
+      let refundMatchConfidence = existingTransaction?.refund_match_confidence ?? null
+      let refundMatchReason = existingTransaction?.refund_match_reason ?? null
+      let transferGroupId = existingTransaction?.transfer_group_id ?? null
+      let transferMatchStatus = existingTransaction?.transfer_match_status ?? null
+      let transferMatchConfidence = existingTransaction?.transfer_match_confidence ?? null
+      let transferMatchReason = existingTransaction?.transfer_match_reason ?? null
+
+      if (
+        !shouldApplyTransferExclusion &&
+        refundCandidate &&
+        !existingTransaction?.linked_transaction_id &&
+        existingTransaction?.transaction_kind !== 'reimbursement'
+      ) {
+        const match = await findLikelyOriginalPurchase({
+          supabase,
+          userId: itemUserId,
+          accountId: localAccountId,
+          refundAmountAbs: Math.abs(Number(tx.amount)),
+          merchantName: cleanName,
+          refundDate: tx.date,
+        })
+
+        transactionKind = 'refund'
+
+        if (match) {
+          const refundedCategory = await getOrCreateRefundedCategory(
+            supabase,
+            itemUserId,
+            userCategories
+          )
+
+          linkedTransactionId = match.original.id
+          budgetEffectiveDate = match.original.date
+          refundMatchConfidence = match.confidence
+          refundMatchReason = match.reason
+          nextCategoryId =
+            refundedCategory?.id ?? match.original.category_id ?? nextCategoryId
+        } else if (!existingTransaction?.budget_effective_date) {
+          budgetEffectiveDate = tx.date
+          refundMatchConfidence = null
+          refundMatchReason = null
+        }
+      }
+
+      if (transferTreatment) {
+        if (shouldApplyTransferExclusion) {
+          const transferCategory = await getOrCreateCategory(
+            supabase,
+            itemUserId,
+            {
+              name: 'Transfer',
+              name_zh: '转账',
+              icon: '🔄',
+              type: 'transfer',
+            },
+            userCategories
+          )
+
+          transactionKind = transferTreatment.transactionKind ?? 'transfer'
+          nextCategoryId = transferCategory?.id ?? nextCategoryId
+          linkedTransactionId = null
+          budgetEffectiveDate = tx.date
+          refundMatchConfidence = null
+          refundMatchReason = null
+        }
+
+        transferGroupId = transferTreatment.transferGroupId
+        transferMatchStatus = transferTreatment.transferMatchStatus
+        transferMatchConfidence = transferTreatment.transferMatchConfidence
+        transferMatchReason = transferTreatment.transferMatchReason
+      }
+
+      const categoryForBudgetBehavior = nextCategoryId
+        ? userCategories.find((category) => category.id === nextCategoryId)
+        : null
+      const budgetBehavior =
+        preserveSemanticTreatment && existingTransaction?.budget_behavior
+          ? existingTransaction.budget_behavior
+          : transferTreatment?.budgetBehavior ??
+            deriveBudgetBehavior({
+              transactionKind,
+              category: categoryForBudgetBehavior,
+            })
+      const semanticOverrideSource =
+        existingTransaction?.semantic_override_source ??
+        (transferTreatment ? 'system' : 'system')
+
       transactionsToUpsert.push({
         user_id: itemUserId,
-        account_id: accountMap.get(tx.account_id),
-        category_id: categoryId,
+        account_id: localAccountId,
+        category_id: nextCategoryId,
         plaid_transaction_id: tx.transaction_id,
         amount: tx.amount,
         iso_currency_code: tx.iso_currency_code || 'USD',
@@ -254,6 +451,17 @@ export async function syncPlaidItemTransactions({
         pending: tx.pending,
         source: 'plaid',
         tags,
+        transaction_kind: transactionKind,
+        budget_behavior: budgetBehavior,
+        linked_transaction_id: linkedTransactionId,
+        budget_effective_date: budgetEffectiveDate,
+        refund_match_confidence: refundMatchConfidence,
+        refund_match_reason: refundMatchReason,
+        transfer_group_id: transferGroupId,
+        transfer_match_status: transferMatchStatus,
+        transfer_match_confidence: transferMatchConfidence,
+        transfer_match_reason: transferMatchReason,
+        semantic_override_source: semanticOverrideSource,
       })
     }
 
@@ -262,18 +470,31 @@ export async function syncPlaidItemTransactions({
       .upsert(transactionsToUpsert, { onConflict: 'plaid_transaction_id' })
 
     if (upsertError) {
-      console.error('Error upserting transactions:', upsertError)
-    } else {
-      const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
-      const { data: dbTransactions } = await supabase
-        .from('transactions')
-        .select('id')
-        .eq('user_id', itemUserId)
-        .in('plaid_transaction_id', upsertedPlaidIds)
+      throw new Error(`Failed to persist Plaid transactions: ${upsertError.message}`)
+    }
 
-      for (const transaction of dbTransactions || []) {
-        await syncSingleTransactionIfEnabled(itemUserId, transaction.id)
-      }
+    const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
+    const { data: dbTransactions, error: dbTransactionsError } = await supabase
+      .from('transactions')
+      .select('id')
+      .eq('user_id', itemUserId)
+      .in('plaid_transaction_id', upsertedPlaidIds)
+
+    if (dbTransactionsError) {
+      throw new Error(
+        `Failed to load persisted Plaid transactions: ${dbTransactionsError.message}`
+      )
+    }
+
+    const notionResults = await syncTransactionsIfEnabled(
+      itemUserId,
+      (dbTransactions || []).map((transaction) => transaction.id)
+    )
+    const failedNotionSyncs = notionResults.filter(
+      (result) => result.status === 'failed'
+    )
+    if (failedNotionSyncs.length > 0) {
+      console.warn('Some Plaid transactions failed to sync to Notion:', failedNotionSyncs)
     }
   }
 
@@ -286,11 +507,11 @@ export async function syncPlaidItemTransactions({
       .in('plaid_transaction_id', removedIds)
 
     if (deleteError) {
-      console.error('Error deleting transactions:', deleteError)
+      throw new Error(`Failed to delete removed Plaid transactions: ${deleteError.message}`)
     }
   }
 
-  await supabase
+  const { error: cursorUpdateError } = await supabase
     .from('plaid_items')
     .update({
       cursor,
@@ -299,6 +520,10 @@ export async function syncPlaidItemTransactions({
     })
     .eq('id', plaidItemId)
     .eq('user_id', itemUserId)
+
+  if (cursorUpdateError) {
+    throw new Error(`Failed to save Plaid sync cursor: ${cursorUpdateError.message}`)
+  }
 
   return {
     success: true,

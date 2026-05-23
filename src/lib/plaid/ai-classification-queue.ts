@@ -1,19 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { AiClassificationJob } from '@/types'
 import { shouldRefreshAiClassification } from './classification'
-
-export type AiClassificationJob = {
-  id: string
-  user_id: string
-  status: 'queued' | 'running' | 'completed' | 'failed' | 'canceled'
-  total_count: number
-  pending_count: number
-  completed_count: number
-  failed_count: number
-  error_message: string | null
-  created_at: string
-  updated_at: string
-  completed_at: string | null
-}
 
 type RefreshCandidateRow = {
   id: string

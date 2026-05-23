@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateCategory, getUserCategories } from '@/lib/categories-db'
 import { classifyTransactionsBatch, RawTransactionToClassify } from '@/lib/gemini/classifier'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
@@ -7,6 +8,7 @@ import {
   mergeTransactionClassification,
   shouldRefreshAiClassification,
 } from '@/lib/plaid/classification'
+import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,6 +24,9 @@ type QueueTransaction = {
   description: string
   amount: number
   tags: string[] | null
+  transaction_kind?: string | null
+  budget_behavior?: string | null
+  semantic_override_source?: string | null
 }
 
 const DEFAULT_PROCESS_LIMIT = 20
@@ -38,13 +43,14 @@ function parseProcessLimit(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    const authClient = await createClient()
+    const { data: { user } } = await authClient.auth.getUser()
 
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = createAdminClient()
     const body = await request.json().catch(() => ({}))
     const jobId = body.job_id
     const limit = parseProcessLimit(body.limit)
@@ -104,9 +110,7 @@ export async function POST(request: Request) {
     }
 
     const itemIds = queueItems.map((item) => item.id)
-    const transactionIds = queueItems.map((item) => item.transaction_id)
-
-    await supabase
+    const { data: claimedItems, error: claimError } = await supabase
       .from('ai_classification_job_items')
       .update({
         status: 'processing',
@@ -115,6 +119,30 @@ export async function POST(request: Request) {
       })
       .in('id', itemIds)
       .eq('user_id', user.id)
+      .eq('status', 'queued')
+      .select('id, transaction_id')
+
+    if (claimError) {
+      return Response.json(
+        { error: 'Failed to claim AI classification queue items' },
+        { status: 500 }
+      )
+    }
+
+    const actuallyClaimedItems = (claimedItems || []) as QueueItem[]
+    if (actuallyClaimedItems.length === 0) {
+      const refreshedJob = await refreshJobCounts(supabase, jobId, user.id)
+      return Response.json({
+        success: true,
+        claimed: 0,
+        updated: 0,
+        failed: 0,
+        job: refreshedJob,
+      })
+    }
+
+    const claimedItemIds = actuallyClaimedItems.map((item) => item.id)
+    const claimedTransactionIds = actuallyClaimedItems.map((item) => item.transaction_id)
 
     await supabase
       .from('ai_classification_jobs')
@@ -124,10 +152,10 @@ export async function POST(request: Request) {
 
     const { data: transactions, error: transactionError } = await supabase
       .from('transactions')
-      .select('id, category_id, merchant_name, description, amount, tags')
+      .select('id, category_id, merchant_name, description, amount, tags, transaction_kind, budget_behavior, semantic_override_source')
       .eq('user_id', user.id)
       .eq('source', 'plaid')
-      .in('id', transactionIds)
+      .in('id', claimedTransactionIds)
 
     if (transactionError) {
       await supabase
@@ -137,7 +165,7 @@ export async function POST(request: Request) {
           error_message: transactionError.message,
           updated_at: new Date().toISOString(),
         })
-        .in('id', itemIds)
+        .in('id', claimedItemIds)
         .eq('user_id', user.id)
 
       const refreshedJob = await refreshJobCounts(supabase, jobId, user.id)
@@ -153,11 +181,11 @@ export async function POST(request: Request) {
     const transactionMap = new Map(
       ((transactions || []) as QueueTransaction[]).map((tx) => [tx.id, tx])
     )
-    const refreshableItems = queueItems.filter((item) => {
+    const refreshableItems = actuallyClaimedItems.filter((item) => {
       const transaction = transactionMap.get(item.transaction_id)
       return transaction && shouldRefreshAiClassification(transaction)
     })
-    const skippedItems = queueItems.filter(
+    const skippedItems = actuallyClaimedItems.filter(
       (item) => !refreshableItems.includes(item)
     )
 
@@ -177,7 +205,7 @@ export async function POST(request: Request) {
       const refreshedJob = await refreshJobCounts(supabase, jobId, user.id)
       return Response.json({
         success: true,
-        claimed: queueItems.length,
+        claimed: actuallyClaimedItems.length,
         updated: 0,
         failed: 0,
         skipped: skippedItems.length,
@@ -285,13 +313,23 @@ export async function POST(request: Request) {
         }
       )
 
+      const updatePayload: Record<string, unknown> = {
+        category_id: categoryId,
+        merchant_name: cleanName,
+        tags,
+      }
+
+      if (!shouldPreserveBudgetBehavior(tx.semantic_override_source)) {
+        updatePayload.budget_behavior = deriveBudgetBehavior({
+          transactionKind: tx.transaction_kind,
+          category,
+        })
+        updatePayload.semantic_override_source = 'ai'
+      }
+
       const { error: updateError } = await supabase
         .from('transactions')
-        .update({
-          category_id: categoryId,
-          merchant_name: cleanName,
-          tags,
-        })
+        .update(updatePayload)
         .eq('user_id', user.id)
         .eq('id', tx.id)
 
@@ -322,14 +360,17 @@ export async function POST(request: Request) {
         .eq('id', item.id)
         .eq('user_id', user.id)
 
-      await syncSingleTransactionIfEnabled(user.id, tx.id)
+      const notionResult = await syncSingleTransactionIfEnabled(user.id, tx.id)
+      if (notionResult.status === 'failed') {
+        console.warn('AI-classified transaction failed to sync to Notion:', notionResult)
+      }
     }
 
     const refreshedJob = await refreshJobCounts(supabase, jobId, user.id)
 
     return Response.json({
       success: true,
-      claimed: queueItems.length,
+      claimed: actuallyClaimedItems.length,
       updated,
       failed,
       skipped: skippedItems.length,

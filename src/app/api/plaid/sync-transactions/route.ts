@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+
 import {
   getSafePlaidSyncError,
   syncPlaidItemTransactions,
@@ -45,8 +46,8 @@ export async function POST(request: Request) {
 
     if (plaidItemId && userId) {
       try {
-        const supabase = await createClient()
-        await supabase
+        const authClient = await createClient()
+        await authClient
           .from('plaid_items')
           .update({ last_sync_error: errorMessage })
           .eq('id', plaidItemId)

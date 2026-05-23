@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -196,6 +194,17 @@ body {
 
 .animate-slide-up {
   animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Custom Scrollbar */
@@ -1152,6 +1161,45 @@ body {
           grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
           gap: 0.5rem;
         }
+        .view-toggle-row {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+          font-size: 0.84rem;
+        }
+        .segmented-control {
+          display: inline-flex;
+          align-items: center;
+          padding: 0.2rem;
+          border: 1px solid var(--glass-border);
+          border-radius: 999px;
+          background: rgba(0, 0, 0, 0.18);
+        }
+        .segmented-control button {
+          appearance: none;
+          -webkit-appearance: none;
+          min-width: 4.6rem;
+          border: 0;
+          border-radius: 999px;
+          background: transparent;
+          color: var(--text-secondary);
+          font: inherit;
+          font-size: 0.8rem;
+          font-weight: 600;
+          line-height: 1;
+          padding: 0.45rem 0.75rem;
+          cursor: pointer;
+          transition: color var(--transition-fast), background var(--transition-fast);
+        }
+        .segmented-control button.active {
+          background: rgba(255, 255, 255, 0.1);
+          color: var(--text-primary);
+        }
+        .segmented-control button:focus-visible {
+          outline: 2px solid var(--accent-primary);
+          outline-offset: 2px;
+        }
         .transaction-groups {
           display: flex;
           flex-direction: column;
@@ -1169,6 +1217,14 @@ body {
           color: var(--text-secondary);
           text-transform: uppercase;
           letter-spacing: 0.05em;
+        }
+        .group-category-icon {
+          text-transform: none;
+        }
+        .group-count {
+          color: var(--text-muted);
+          font-weight: 500;
+          text-transform: none;
         }
         .group-total {
           font-family: var(--font-mono);
@@ -1378,14 +1434,51 @@ body {
           flex-shrink: 0;
         }
         .category-chip-label {
+          min-width: 0;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+        }
+        .category-chip-badge {
+          margin-left: auto;
+          flex-shrink: 0;
+          padding: 0.12rem 0.35rem;
+          border-radius: 999px;
+          background: rgba(255, 255, 255, 0.12);
+          color: var(--text-secondary);
+          font-size: 0.64rem;
+          font-weight: 700;
+          line-height: 1.2;
         }
         .new-category-section {
           margin-top: 0.65rem;
           border-top: 1px solid var(--glass-border);
           padding-top: 0.65rem;
+        }
+        .refund-tools {
+          margin-top: 0.75rem;
+          border-top: 1px solid var(--glass-border);
+          padding-top: 0.75rem;
+        }
+        .refund-kind-actions,
+        .refund-link-row {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+        .refund-link-row {
+          margin-top: 0.55rem;
+        }
+        .refund-link-row .input {
+          flex: 1 1 220px;
+          min-width: 0;
+        }
+        .refund-hint {
+          margin: 0.55rem 0 0;
+          color: var(--text-secondary);
+          font-size: 0.78rem;
+          line-height: 1.4;
         }
         .new-category-toggle {
           width: 100%;

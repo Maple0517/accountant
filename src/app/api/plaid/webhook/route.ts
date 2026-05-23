@@ -1,4 +1,5 @@
 import { after } from 'next/server'
+import { timingSafeEqual } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   getSafePlaidSyncError,
@@ -22,18 +23,22 @@ const TRANSACTION_SYNC_CODES = new Set([
   'TRANSACTIONS_REMOVED',
 ])
 
-function isWebhookSecretValid(request: Request) {
+export function isWebhookSecretValid(request: Request) {
   const expectedSecret = process.env.PLAID_WEBHOOK_SECRET
+  const providedSecret = request.headers.get('x-plaid-webhook-secret')
 
-  if (!expectedSecret) {
-    return true
+  if (!expectedSecret || !providedSecret) {
+    return false
   }
 
-  const url = new URL(request.url)
-  return (
-    request.headers.get('x-plaid-webhook-secret') === expectedSecret ||
-    url.searchParams.get('secret') === expectedSecret
-  )
+  const expected = Buffer.from(expectedSecret)
+  const provided = Buffer.from(providedSecret)
+
+  if (expected.length !== provided.length) {
+    return false
+  }
+
+  return timingSafeEqual(expected, provided)
 }
 
 export async function POST(request: Request) {
