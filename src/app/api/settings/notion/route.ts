@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,8 +33,8 @@ export async function GET() {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
+    const adminClient = createAdminClient()
+    const { data, error } = await adminClient
       .from('profiles')
       .select(
         'id, display_name, default_currency, notion_sync_enabled, notion_database_id, notion_token, created_at, updated_at'
@@ -42,7 +43,39 @@ export async function GET() {
       .single()
 
     if (error || !data) {
-      return Response.json({ error: 'Failed to load settings' }, { status: 500 })
+      // If the profile doesn't exist, we can try to insert a default one, or at least return an empty state
+      // instead of failing completely, so the user can save their settings.
+      const defaultProfile = {
+        id: userId,
+        display_name: '',
+        default_currency: 'USD',
+        notion_sync_enabled: false,
+        notion_database_id: null,
+      }
+      
+      const { data: insertedData, error: insertError } = await adminClient
+        .from('profiles')
+        .insert(defaultProfile)
+        .select()
+        .single()
+
+      if (insertError || !insertedData) {
+        return Response.json({ error: 'Failed to load settings (Profile not found)' }, { status: 500 })
+      }
+
+      return Response.json({
+        profile: {
+          id: insertedData.id,
+          display_name: insertedData.display_name,
+          default_currency: insertedData.default_currency,
+          notion_sync_enabled: insertedData.notion_sync_enabled,
+          notion_database_id: insertedData.notion_database_id,
+          notion_token_configured: false,
+          notion_token_masked: null,
+          created_at: insertedData.created_at,
+          updated_at: insertedData.updated_at,
+        },
+      })
     }
 
     return Response.json({
@@ -108,8 +141,8 @@ export async function PATCH(request: Request) {
       return Response.json({ error: 'No settings provided' }, { status: 400 })
     }
 
-    const supabase = await createClient()
-    const { data, error } = await supabase
+    const adminClient = createAdminClient()
+    const { data, error } = await adminClient
       .from('profiles')
       .update(update)
       .eq('id', userId)

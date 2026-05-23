@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback } from 'react'
+import useSWR from 'swr'
 import type { Account } from '@/types'
 import AccountCard from '@/components/accounts/AccountCard'
 import PlaidLinkButton from '@/components/accounts/PlaidLinkButton'
@@ -14,31 +15,13 @@ type AccountRow = Account & {
   plaid_items?: PlaidSyncMetadata | PlaidSyncMetadata[] | null
 }
 
+const fetcher = (url: string) => fetch(url).then(r => r.json())
+
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const fetchAccounts = useCallback(async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('/api/plaid/accounts')
-      const payload = (await response.json()) as { accounts?: AccountRow[]; error?: string }
-
-      if (!response.ok) {
-        console.error('Failed to fetch accounts:', payload.error)
-        setAccounts([])
-        return
-      }
-
-      setAccounts(payload.accounts || [])
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void Promise.resolve().then(fetchAccounts)
-  }, [fetchAccounts])
+  const { data: payload, error, mutate, isValidating } = useSWR<{ accounts?: AccountRow[]; error?: string }>('/api/plaid/accounts', fetcher)
+  
+  const accounts = payload?.accounts || []
+  const loading = !payload && !error && isValidating
 
   const handleRefresh = async (plaidItemId: string) => {
     try {
@@ -47,7 +30,7 @@ export default function AccountsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaid_item_id: plaidItemId }),
       })
-      fetchAccounts()
+      mutate()
     } catch (e) {
       console.error('Failed to check for Plaid updates', e)
     }
@@ -63,7 +46,7 @@ export default function AccountsPage() {
     <div className="accounts-page">
       <div className="page-header">
         <h1>Accounts</h1>
-        <PlaidLinkButton onSuccess={fetchAccounts} />
+        <PlaidLinkButton onSuccess={() => mutate()} />
       </div>
 
       {loading ? (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import useSWR from 'swr'
 import type { Profile, ReceiptApiKey } from '@/types'
 
 type SafeProfile = Omit<Profile, 'notion_token'> & {
@@ -9,7 +10,19 @@ type SafeProfile = Omit<Profile, 'notion_token'> & {
   notion_token_masked?: string | null
 }
 
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to load')
+  }
+  return data
+}
+
 export default function SettingsPage() {
+  const { data: profileData, error: profileError } = useSWR('/api/settings/notion', fetcher)
+  const { data: apiKeysData } = useSWR('/api/settings/api-keys', fetcher)
+
   const [profile, setProfile] = useState<SafeProfile | null>(null)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -24,32 +37,24 @@ export default function SettingsPage() {
   const [notionTokenInput, setNotionTokenInput] = useState('')
 
   useEffect(() => {
-    async function loadProfile() {
-      const response = await fetch('/api/settings/notion')
-      const data = await response.json()
-
-      if (response.ok) {
-        setProfile(data.profile)
-      } else {
-        setMessage({ text: data.error || 'Failed to load settings.', type: 'error' })
-      }
+    if (profileError) {
+      setMessage({ text: profileError.message || 'Failed to load settings.', type: 'error' })
+    } else if (profileData?.profile) {
+      setProfile(profileData.profile)
     }
-    async function loadInitialApiKeys() {
-      const response = await fetch('/api/settings/api-keys')
-      const data = await response.json()
+  }, [profileData, profileError])
 
-      if (response.ok) {
-        setApiKeys(data.api_keys || [])
-        setApiKeyMigrationRequired(Boolean(data.migration_required))
-      }
+  useEffect(() => {
+    if (apiKeysData) {
+      setApiKeys(apiKeysData.api_keys || [])
+      setApiKeyMigrationRequired(Boolean(apiKeysData.migration_required))
     }
+  }, [apiKeysData])
 
+  useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
       setReceiptEndpoint(`${window.location.origin}/api/receipt`)
     })
-    loadProfile()
-    loadInitialApiKeys()
-
     return () => window.cancelAnimationFrame(frameId)
   }, [])
 

@@ -1,14 +1,8 @@
-import { getCurrentUser } from '@/lib/auth/server'
+'use client'
+
 import { formatCurrency } from '@/lib/currency'
-import { redirect } from 'next/navigation'
 import Link from 'next/link'
-
-export const dynamic = 'force-dynamic'
-
-
-function toMonthStart(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
-}
+import useSWR from 'swr'
 
 function getMonthlySemanticAmounts(tx: {
   amount: number | string
@@ -37,60 +31,38 @@ function getMonthlySemanticAmounts(tx: {
   return { spending: 0, income: 0 }
 }
 
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch')
+  return json.data
+}
 
-export default async function DashboardPage() {
-  const { supabase, user } = await getCurrentUser()
-
-  if (!user) {
-    redirect('/auth/login')
-  }
-
-  // Fetch current month's transactions
-  const now = new Date()
-  const firstDayOfMonth = toMonthStart(now)
-  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-  const firstDayOfNextMonth = toMonthStart(nextMonthDate)
-
-  const [{ data: accounts }, { data: monthTx }, { data: recentTx }] =
-    await Promise.all([
-      supabase
-        .from('accounts')
-        .select('type, current_balance')
-        .eq('user_id', user.id),
-      supabase
-        .from('transactions')
-        .select('amount, budget_behavior, budget_effective_date, date')
-        .eq('user_id', user.id)
-        .eq('pending', false)
-        .or(`and(budget_effective_date.gte.${firstDayOfMonth},budget_effective_date.lt.${firstDayOfNextMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth},date.lt.${firstDayOfNextMonth})`),
-      supabase
-        .from('transactions')
-        .select('id, merchant_name, description, amount, date, source')
-        .eq('user_id', user.id)
-        .order('date', { ascending: false })
-        .limit(5),
-    ])
+export default function DashboardPage() {
+  const { data, error, isLoading } = useSWR('/api/dashboard', fetcher)
 
   let totalBalance = 0
-  if (accounts) {
-    accounts.forEach(acc => {
-      if (acc.type === 'credit' || acc.type === 'loan') {
-        totalBalance -= Number(acc.current_balance || 0)
-      } else {
-        totalBalance += Number(acc.current_balance || 0)
-      }
-    })
-  }
-
   let monthlySpending = 0
   let monthlyIncome = 0
 
-  if (monthTx) {
-    monthTx.forEach(tx => {
-      const amounts = getMonthlySemanticAmounts(tx)
-      monthlySpending += amounts.spending
-      monthlyIncome += amounts.income
-    })
+  if (data) {
+    if (data.accounts) {
+      data.accounts.forEach((acc: any) => {
+        if (acc.type === 'credit' || acc.type === 'loan') {
+          totalBalance -= Number(acc.current_balance || 0)
+        } else {
+          totalBalance += Number(acc.current_balance || 0)
+        }
+      })
+    }
+
+    if (data.monthTx) {
+      data.monthTx.forEach((tx: any) => {
+        const amounts = getMonthlySemanticAmounts(tx)
+        monthlySpending += amounts.spending
+        monthlyIncome += amounts.income
+      })
+    }
   }
 
   const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlySpending) / monthlyIncome) * 100 : 0
@@ -102,7 +74,6 @@ export default async function DashboardPage() {
     { label: 'Savings Rate', value: Math.max(0, savingsRate), isPercentage: true, change: 'This Month', trend: 'neutral' },
   ]
 
-  // Mapping categories to icons roughly
   const getIcon = (category: string | null) => {
     const c = (category || '').toLowerCase()
     if (c.includes('food') || c.includes('groceries')) return '🛒'
@@ -113,11 +84,11 @@ export default async function DashboardPage() {
     return '💳'
   }
 
-  const recentTransactions = recentTx?.map(tx => ({
+  const recentTransactions = data?.recentTx?.map((tx: any) => ({
     id: tx.id,
     merchant: tx.merchant_name || tx.description || 'Unknown',
     category: tx.source === 'plaid' ? 'Bank Sync' : 'Manual',
-    amount: -Number(tx.amount), // negate because DB positive = expense. We want expense to show as negative in UI.
+    amount: -Number(tx.amount),
     date: tx.date,
     icon: getIcon(tx.description)
   })) || []
@@ -129,82 +100,98 @@ export default async function DashboardPage() {
         <p className="text-secondary">Here&apos;s your financial overview.</p>
       </div>
 
-      <div className="stats-grid">
-        {stats.map((stat, i) => (
-          <div key={i} className="card stat-card">
-            <span className="stat-label">{stat.label}</span>
-            <div className="stat-value-row">
-              <span className="stat-value">
-                {stat.isPercentage ? `${stat.value.toFixed(1)}%` : formatCurrency(stat.value)}
-              </span>
-              <span className={`stat-change ${stat.trend}`}>
-                {stat.change}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
+      {isLoading && !data && (
+        <div className="loading-state animate-fade-in" style={{ marginBottom: '2rem' }}>
+          <div className="card skeleton-card" style={{ height: '120px' }} />
+        </div>
+      )}
 
-      <div className="dashboard-content">
-        <div className="main-col">
-          <div className="card chart-card">
-            <div className="card-header">
-              <h3>Spending Overview</h3>
-              <select className="input select-small" defaultValue="This Month">
-                <option>This Month</option>
-                <option>Last Month</option>
-                <option>This Year</option>
-              </select>
+      {error && !data && (
+         <div className="card alert alert-error" style={{ marginBottom: '2rem', padding: '1.5rem' }}>
+           ⚠️ {error.message}
+         </div>
+      )}
+
+      {data && (
+        <>
+          <div className="stats-grid">
+            {stats.map((stat, i) => (
+              <div key={i} className="card stat-card">
+                <span className="stat-label">{stat.label}</span>
+                <div className="stat-value-row">
+                  <span className="stat-value">
+                    {stat.isPercentage ? `${stat.value.toFixed(1)}%` : formatCurrency(stat.value)}
+                  </span>
+                  <span className={`stat-change ${stat.trend}`}>
+                    {stat.change}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="dashboard-content">
+            <div className="main-col">
+              <div className="card chart-card">
+                <div className="card-header">
+                  <h3>Spending Overview</h3>
+                  <select className="input select-small" defaultValue="This Month">
+                    <option>This Month</option>
+                    <option>Last Month</option>
+                    <option>This Year</option>
+                  </select>
+                </div>
+                <div className="chart-placeholder">
+                  <div className="placeholder-bars">
+                    {[40, 60, 30, 80, 50, 90, 70].map((h, i) => (
+                      <div key={i} className="bar" style={{ height: `${h}%` }}></div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card budgets-card">
+                <div className="card-header">
+                  <h3>Budget Progress</h3>
+                  <Link href="/budgets" className="btn btn-ghost text-sm">View All</Link>
+                </div>
+                <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  Visit the <Link href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</Link> to set up monthly spending limits.
+                </div>
+              </div>
             </div>
-            <div className="chart-placeholder">
-              <div className="placeholder-bars">
-                {[40, 60, 30, 80, 50, 90, 70].map((h, i) => (
-                  <div key={i} className="bar" style={{ height: `${h}%` }}></div>
-                ))}
+
+            <div className="side-col">
+              <div className="card transactions-card">
+                <div className="card-header">
+                  <h3>Recent Transactions</h3>
+                  <Link href="/transactions" className="btn btn-ghost text-sm">View All</Link>
+                </div>
+                <div className="transaction-list">
+                  {recentTransactions.length > 0 ? (
+                    recentTransactions.map((tx: any) => (
+                      <div key={tx.id} className="tx-item">
+                        <div className="tx-icon">{tx.icon}</div>
+                        <div className="tx-details">
+                          <span className="tx-merchant">{tx.merchant}</span>
+                          <span className="tx-category">{tx.category} • {tx.date}</span>
+                        </div>
+                        <span className={`tx-amount ${tx.amount > 0 ? 'income' : 'expense'}`}>
+                          {formatCurrency(tx.amount)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      No recent transactions
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
-
-          <div className="card budgets-card">
-            <div className="card-header">
-              <h3>Budget Progress</h3>
-              <Link href="/budgets" className="btn btn-ghost text-sm">View All</Link>
-            </div>
-            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              Visit the <Link href="/budgets" style={{ color: 'var(--accent-primary)' }}>Budgets page</Link> to set up monthly spending limits.
-            </div>
-          </div>
-        </div>
-
-        <div className="side-col">
-          <div className="card transactions-card">
-            <div className="card-header">
-              <h3>Recent Transactions</h3>
-              <Link href="/transactions" className="btn btn-ghost text-sm">View All</Link>
-            </div>
-            <div className="transaction-list">
-              {recentTransactions.length > 0 ? (
-                recentTransactions.map((tx) => (
-                  <div key={tx.id} className="tx-item">
-                    <div className="tx-icon">{tx.icon}</div>
-                    <div className="tx-details">
-                      <span className="tx-merchant">{tx.merchant}</span>
-                      <span className="tx-category">{tx.category} • {tx.date}</span>
-                    </div>
-                    <span className={`tx-amount ${tx.amount > 0 ? 'income' : 'expense'}`}>
-                      {formatCurrency(tx.amount)}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                  No recent transactions
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   )
 }

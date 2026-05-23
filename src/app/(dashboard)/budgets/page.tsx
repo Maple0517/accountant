@@ -4,6 +4,8 @@ import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
 import { formatCurrency } from '@/lib/currency'
 import type { CategoryBudgetSummary, MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 
+import useSWR from 'swr'
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function toMonthParam(date: Date): string {
@@ -32,52 +34,28 @@ const STATUS_COLORS: Record<CategoryBudgetSummary['status'], string> = {
   no_budget: '#6b7280',
 }
 
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Failed to load budget data (${res.status})`)
+  return res.json()
+}
+
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function BudgetsPage() {
   const [month, setMonth] = useState<string>(() => toMonthParam(new Date()))
-  const [summary, setSummary] = useState<MonthlyBudgetSummary | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+
+  const { data: summary, error: swrError, isLoading: loading, mutate } = useSWR<MonthlyBudgetSummary>(
+    `/api/budget/monthly-summary?month=${month}`,
+    fetcher
+  )
+  const error = swrError?.message || null
 
   // Inline editing state
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-
-  const summaryRequestIdRef = useRef(0)
-
-  const fetchSummary = useCallback(async (targetMonth: string) => {
-    const requestId = summaryRequestIdRef.current + 1
-    summaryRequestIdRef.current = requestId
-    setLoading(true)
-    setError(null)
-    setSaveError(null)
-    try {
-      const res = await fetch(`/api/budget/monthly-summary?month=${targetMonth}`)
-      if (!res.ok) {
-        throw new Error(`Failed to load budget data (${res.status})`)
-      }
-      const data: MonthlyBudgetSummary = await res.json()
-      if (summaryRequestIdRef.current === requestId) {
-        setSummary(data)
-      }
-    } catch (err) {
-      if (summaryRequestIdRef.current === requestId) {
-        setError(err instanceof Error ? err.message : 'Unknown error')
-      }
-    } finally {
-      if (summaryRequestIdRef.current === requestId) {
-        setLoading(false)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchSummary(month)
-  }, [month, fetchSummary])
 
   // ── Month navigation ───────────────────────────────────────────────────────
 
@@ -135,8 +113,7 @@ export default function BudgetsPage() {
 
       setEditingId(null)
       setEditValue('')
-      const savedMonth = month
-      await fetchSummary(savedMonth)
+      mutate()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to update budget'
       setSaveError(message)

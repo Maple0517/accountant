@@ -1,6 +1,7 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import useSWR from 'swr'
 import { formatCurrency } from '@/lib/currency'
 import {
   AI_CLASSIFIED_TAG,
@@ -290,10 +291,40 @@ export default function TransactionsPage() {
     [queryFilters]
   )
 
+  const initialParams = new URLSearchParams({
+    limit: String(TRANSACTIONS_PAGE_SIZE),
+    offset: '0',
+    sourceOrAccount: queryFilters.sourceOrAccount,
+    category: queryFilters.category,
+    currency: queryFilters.currency,
+  })
+  if (queryFilters.search) initialParams.set('search', queryFilters.search)
+  if (queryFilters.dateFrom) initialParams.set('dateFrom', queryFilters.dateFrom)
+  if (queryFilters.dateTo) initialParams.set('dateTo', queryFilters.dateTo)
+
+  const { data: initialData } = useSWR<TransactionsApiResponse>(`/api/transactions?${initialParams.toString()}`, (url: string) => fetch(url).then(r => r.json()), { revalidateOnFocus: false })
+
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchTransactions()
-  }, [fetchTransactions])
+    if (initialData) {
+      setTransactions(initialData.transactions || [])
+      setTotalCount(initialData.totalCount || 0)
+      setCategories(initialData.categories || [])
+      setCategoriesLoading(false)
+      setAccountOptions(
+        (initialData.accounts || [])
+          .map((account) => ({
+            id: account.id || '',
+            label: formatAccountSourceLabel(account),
+            institutionName: account.plaid_items?.institution_name ?? null,
+            accountName: account.name ?? account.official_name ?? null,
+            mask: account.mask ?? null,
+            type: account.type ?? null,
+          }))
+          .filter((account) => account.id)
+      )
+      setLoading(false)
+    }
+  }, [initialData])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {

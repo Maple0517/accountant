@@ -25,7 +25,8 @@
     "react": "19.2.4",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.2.4",
-    "react-plaid-link": "^4.1.1"
+    "react-plaid-link": "^4.1.1",
+    "swr": "^2.4.1"
   },
   "devDependencies": {
     "@types/node": "^20",

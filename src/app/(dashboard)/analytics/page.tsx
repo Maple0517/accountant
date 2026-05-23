@@ -1,19 +1,11 @@
-import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import AnalyticsCharts from '@/components/analytics/AnalyticsCharts'
-import { getCurrentUser } from '@/lib/auth/server'
-import { formatCurrency } from '@/lib/currency'
-import {
-  getAnalyticsSummary,
-  parseAnalyticsPeriod,
-} from '@/modules/analytics/analytics.service'
-import type { AnalyticsPeriod } from '@/modules/analytics/analytics.types'
+'use client'
 
-type AnalyticsPageProps = {
-  searchParams: Promise<{
-    period?: string
-  }>
-}
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import useSWR from 'swr'
+import AnalyticsCharts from '@/components/analytics/AnalyticsCharts'
+import { formatCurrency } from '@/lib/currency'
+import type { AnalyticsPeriod } from '@/modules/analytics/analytics.types'
 
 const PERIOD_LABELS: Record<AnalyticsPeriod, string> = {
   week: 'Week',
@@ -25,19 +17,24 @@ function periodHref(period: AnalyticsPeriod) {
   return period === 'month' ? '/analytics' : `/analytics?period=${period}`
 }
 
-export default async function AnalyticsPage({
-  searchParams,
-}: AnalyticsPageProps) {
-  const { supabase, user } = await getCurrentUser()
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || 'Failed to fetch')
+  return json.data
+}
 
-  if (!user) {
-    redirect('/auth/login')
-  }
+export default function AnalyticsPage() {
+  const searchParams = useSearchParams()
+  const periodParam = searchParams.get('period')
+  
+  // parseAnalyticsPeriod logic on client:
+  const period: AnalyticsPeriod = 
+    periodParam === 'week' || periodParam === 'year' ? periodParam : 'month'
 
-  const params = await searchParams
-  const period = parseAnalyticsPeriod(params.period ?? null)
-  const data = await getAnalyticsSummary(supabase, user.id, period)
-  const hasData = data.totalSpending > 0 || data.totalIncome > 0
+  const { data, error, isLoading } = useSWR(`/api/analytics?period=${period}`, fetcher)
+
+  const hasData = data && (data.totalSpending > 0 || data.totalIncome > 0)
 
   return (
     <div className="analytics-page">
@@ -56,7 +53,19 @@ export default async function AnalyticsPage({
         </div>
       </div>
 
-      {!hasData ? (
+      {isLoading && !data && (
+        <div className="loading-state animate-fade-in">
+          <div className="card skeleton-card" style={{ height: '300px' }} />
+        </div>
+      )}
+
+      {error && !data && (
+         <div className="card alert alert-error" style={{ padding: '1.5rem' }}>
+           ⚠️ {error.message}
+         </div>
+      )}
+
+      {data && !hasData && (
         <div className="card empty-state">
           <span style={{ fontSize: '3rem' }}>📊</span>
           <h3>No data yet</h3>
@@ -64,7 +73,9 @@ export default async function AnalyticsPage({
             Connect a bank account to see your spending analytics.
           </p>
         </div>
-      ) : (
+      )}
+
+      {data && hasData && (
         <>
           <div className="summary-grid">
             <div className="card summary-card expense">
@@ -96,7 +107,7 @@ export default async function AnalyticsPage({
           <div className="card">
             <h3 style={{ padding: '1.25rem 1.25rem 0' }}>Top Categories</h3>
             <div className="category-list">
-              {data.byCategory.slice(0, 8).map((cat) => {
+              {data.byCategory.slice(0, 8).map((cat: any) => {
                 const percentage =
                   data.totalSpending > 0
                     ? (cat.total / data.totalSpending) * 100
