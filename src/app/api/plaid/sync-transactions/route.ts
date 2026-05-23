@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+
 import {
   getSafePlaidSyncError,
   syncPlaidItemTransactions,
@@ -27,9 +27,8 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Missing plaid_item_id' }, { status: 400 })
     }
 
-    const admin = createAdminClient()
     const result = await syncPlaidItemTransactions({
-      supabase: admin,
+      supabase,
       plaidItemId: plaid_item_id,
       userId: user.id,
       backfillUncategorized: backfill_uncategorized,
@@ -47,8 +46,8 @@ export async function POST(request: Request) {
 
     if (plaidItemId && userId) {
       try {
-        const admin = createAdminClient()
-        await admin
+        const authClient = await createClient()
+        await authClient
           .from('plaid_items')
           .update({ last_sync_error: errorMessage })
           .eq('id', plaidItemId)

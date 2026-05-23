@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+
 import type { Category, Transaction } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -64,9 +64,8 @@ export async function GET(request: Request) {
     const dateFrom = searchParams.get('dateFrom') || ''
     const dateTo = searchParams.get('dateTo') || ''
 
-    const admin = createAdminClient()
 
-    let transactionsQuery = admin
+    let transactionsQuery = supabase
       .from('transactions')
       .select(
         `
@@ -159,7 +158,7 @@ export async function GET(request: Request) {
           .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
           .eq('user_id', user.id)
           .order('sort_order', { ascending: true }),
-        admin
+        supabase
           .from('accounts')
           .select(
             `
