@@ -1,358 +1,43 @@
-'use client'
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
+import AnalyticsCharts from '@/components/analytics/AnalyticsCharts'
+import { getCurrentUser } from '@/lib/auth/server'
 import { formatCurrency } from '@/lib/currency'
+import {
+  getAnalyticsSummary,
+  parseAnalyticsPeriod,
+} from '@/modules/analytics/analytics.service'
+import type { AnalyticsPeriod } from '@/modules/analytics/analytics.types'
 
-import type { Chart as ChartType } from 'chart.js'
-
-type ChartConstructor = typeof import('chart.js').Chart
-
-type AnalyticsData = {
-  totalSpending: number
-  totalIncome: number
-  byCategory: Array<{ name: string; icon: string; color: string; total: number }>
-  byMonth: Array<{ month: string; spending: number; income: number }>
-  byDay: Array<{ date: string; total: number }>
+type AnalyticsPageProps = {
+  searchParams: Promise<{
+    period?: string
+  }>
 }
 
-export default function AnalyticsPage() {
-  const [data, setData] = useState<AnalyticsData | null>(null)
-  const [period, setPeriod] = useState<'week' | 'month' | 'year'>('month')
-  const [loading, setLoading] = useState(true)
+const PERIOD_LABELS: Record<AnalyticsPeriod, string> = {
+  week: 'Week',
+  month: 'Month',
+  year: 'Year',
+}
 
-  const pieChartRef = useRef<HTMLCanvasElement>(null)
-  const lineChartRef = useRef<HTMLCanvasElement>(null)
-  const barChartRef = useRef<HTMLCanvasElement>(null)
-  const pieChartInstance = useRef<ChartType | null>(null)
-  const lineChartInstance = useRef<ChartType | null>(null)
-  const barChartInstance = useRef<ChartType | null>(null)
-  const chartConstructor = useRef<ChartConstructor | null>(null)
-  const analyticsRequestId = useRef(0)
+function periodHref(period: AnalyticsPeriod) {
+  return period === 'month' ? '/analytics' : `/analytics?period=${period}`
+}
 
-  const supabase = useMemo(() => createClient(), [])
+export default async function AnalyticsPage({
+  searchParams,
+}: AnalyticsPageProps) {
+  const { supabase, user } = await getCurrentUser()
 
-  const fetchAnalytics = useCallback(async () => {
-    const requestId = analyticsRequestId.current + 1
-    analyticsRequestId.current = requestId
-    setLoading(true)
+  if (!user) {
+    redirect('/auth/login')
+  }
 
-    const now = new Date()
-    let dateFrom: string
-
-    switch (period) {
-      case 'week':
-        dateFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-          .toISOString()
-          .split('T')[0]
-        break
-      case 'month':
-        dateFrom = new Date(now.getFullYear(), now.getMonth(), 1)
-          .toISOString()
-          .split('T')[0]
-        break
-      case 'year':
-        dateFrom = new Date(now.getFullYear(), 0, 1)
-          .toISOString()
-          .split('T')[0]
-        break
-    }
-
-    const { data: transactions } = await supabase
-      .from('transactions')
-      .select('amount, date, categories ( name, icon, color )')
-      .gte('date', dateFrom)
-      .order('date', { ascending: true })
-
-    if (requestId !== analyticsRequestId.current) {
-      return
-    }
-
-    if (!transactions) {
-      setLoading(false)
-      return
-    }
-
-    // Calculate analytics
-    let totalSpending = 0
-    let totalIncome = 0
-    const categoryMap = new Map<
-      string,
-      { name: string; icon: string; color: string; total: number }
-    >()
-    const monthMap = new Map<string, { spending: number; income: number }>()
-    const dayMap = new Map<string, number>()
-
-    for (const tx of transactions) {
-      const amount = Number(tx.amount)
-
-      if (amount < 0) {
-        totalSpending += Math.abs(amount)
-      } else {
-        totalIncome += amount
-      }
-
-      // By category (expenses only)
-      if (amount < 0) {
-        /* eslint-disable @typescript-eslint/no-explicit-any */
-        const cat = tx.categories as any
-        const catName = cat?.name || 'Other'
-        const existing = categoryMap.get(catName) || {
-          name: catName,
-          icon: cat?.icon || '📦',
-          color: cat?.color || '#8888a0',
-          total: 0,
-        }
-        existing.total += Math.abs(amount)
-        categoryMap.set(catName, existing)
-      }
-
-      // By month
-      const monthKey = tx.date.substring(0, 7)
-      const monthData = monthMap.get(monthKey) || {
-        spending: 0,
-        income: 0,
-      }
-      if (amount < 0) monthData.spending += Math.abs(amount)
-      else monthData.income += amount
-      monthMap.set(monthKey, monthData)
-
-      // By day
-      const dayData = dayMap.get(tx.date) || 0
-      dayMap.set(tx.date, dayData + Math.abs(amount))
-    }
-
-    setData({
-      totalSpending,
-      totalIncome,
-      byCategory: Array.from(categoryMap.values()).sort(
-        (a, b) => b.total - a.total
-      ),
-      byMonth: Array.from(monthMap.entries()).map(([month, d]) => ({
-        month,
-        ...d,
-      })),
-      byDay: Array.from(dayMap.entries()).map(([date, total]) => ({
-        date,
-        total,
-      })),
-    })
-
-    setLoading(false)
-  }, [supabase, period])
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAnalytics()
-  }, [fetchAnalytics])
-
-  // Render charts
-  useEffect(() => {
-    const chartData = data
-    if (!chartData) return
-
-    let canceled = false
-
-    async function renderCharts(nextData: AnalyticsData) {
-      if (!chartConstructor.current) {
-        const chartJs = await import('chart.js')
-        chartJs.Chart.register(...chartJs.registerables)
-        chartConstructor.current = chartJs.Chart
-      }
-
-      if (canceled) return
-
-      const Chart = chartConstructor.current
-      if (!Chart) return
-
-      // Pie Chart - Spending by Category
-      if (pieChartRef.current) {
-        pieChartInstance.current?.destroy()
-        const ctx = pieChartRef.current.getContext('2d')
-        if (ctx) {
-          pieChartInstance.current = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-              labels: nextData.byCategory.map((c) => `${c.icon} ${c.name}`),
-              datasets: [
-                {
-                  data: nextData.byCategory.map((c) => c.total),
-                  backgroundColor: [
-                    '#6c5ce7',
-                    '#ff5252',
-                    '#448aff',
-                    '#ffab40',
-                    '#00e676',
-                    '#ff6e40',
-                    '#7c4dff',
-                    '#64ffda',
-                    '#ffd740',
-                    '#e040fb',
-                  ],
-                  borderWidth: 0,
-                  borderRadius: 4,
-                  spacing: 2,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              cutout: '70%',
-              plugins: {
-                legend: {
-                  position: 'right',
-                  labels: {
-                    color: '#8888a0',
-                    padding: 12,
-                    font: { family: 'Inter', size: 12 },
-                    usePointStyle: true,
-                    pointStyleWidth: 10,
-                  },
-                },
-              },
-            },
-          })
-        }
-      }
-
-      // Line Chart - Daily Spending Trend
-      if (lineChartRef.current) {
-        lineChartInstance.current?.destroy()
-        const ctx = lineChartRef.current.getContext('2d')
-        if (ctx) {
-          const gradient = ctx.createLinearGradient(0, 0, 0, 200)
-          gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)')
-          gradient.addColorStop(1, 'rgba(108, 92, 231, 0)')
-
-          lineChartInstance.current = new Chart(ctx, {
-            type: 'line',
-            data: {
-              labels: nextData.byDay.map((d) => {
-                const date = new Date(d.date + 'T00:00:00')
-                return date.toLocaleDateString('en-US', {
-                  month: 'short',
-                  day: 'numeric',
-                })
-              }),
-              datasets: [
-                {
-                  label: 'Daily Spending',
-                  data: nextData.byDay.map((d) => d.total),
-                  borderColor: '#6c5ce7',
-                  backgroundColor: gradient,
-                  fill: true,
-                  tension: 0.4,
-                  pointRadius: 3,
-                  pointBackgroundColor: '#6c5ce7',
-                  pointBorderWidth: 0,
-                  borderWidth: 2,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                x: {
-                  grid: { color: 'rgba(255,255,255,0.03)' },
-                  ticks: {
-                    color: '#555570',
-                    font: { size: 11 },
-                    maxTicksLimit: 10,
-                  },
-                },
-                y: {
-                  grid: { color: 'rgba(255,255,255,0.03)' },
-                  ticks: {
-                    color: '#555570',
-                    font: { family: 'JetBrains Mono', size: 11 },
-                    callback: (v) => `$${v}`,
-                  },
-                },
-              },
-              plugins: {
-                legend: { display: false },
-              },
-            },
-          })
-        }
-      }
-
-      // Bar Chart - Monthly Income vs Spending
-      if (barChartRef.current) {
-        barChartInstance.current?.destroy()
-        const ctx = barChartRef.current.getContext('2d')
-        if (ctx) {
-          barChartInstance.current = new Chart(ctx, {
-            type: 'bar',
-            data: {
-              labels: nextData.byMonth.map((m) => {
-                const [y, mo] = m.month.split('-')
-                return new Date(Number(y), Number(mo) - 1).toLocaleDateString(
-                  'en-US',
-                  { month: 'short', year: '2-digit' }
-                )
-              }),
-              datasets: [
-                {
-                  label: 'Income',
-                  data: nextData.byMonth.map((m) => m.income),
-                  backgroundColor: 'rgba(0, 230, 118, 0.7)',
-                  borderRadius: 6,
-                  borderSkipped: false,
-                },
-                {
-                  label: 'Spending',
-                  data: nextData.byMonth.map((m) => m.spending),
-                  backgroundColor: 'rgba(255, 82, 82, 0.7)',
-                  borderRadius: 6,
-                  borderSkipped: false,
-                },
-              ],
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              scales: {
-                x: {
-                  grid: { display: false },
-                  ticks: { color: '#555570', font: { size: 11 } },
-                },
-                y: {
-                  grid: { color: 'rgba(255,255,255,0.03)' },
-                  ticks: {
-                    color: '#555570',
-                    font: { family: 'JetBrains Mono', size: 11 },
-                    callback: (v) => `$${v}`,
-                  },
-                },
-              },
-              plugins: {
-                legend: {
-                  labels: {
-                    color: '#8888a0',
-                    font: { family: 'Inter', size: 12 },
-                    usePointStyle: true,
-                    pointStyleWidth: 10,
-                  },
-                },
-              },
-            },
-          })
-        }
-      }
-    }
-
-    renderCharts(chartData)
-
-    return () => {
-      canceled = true
-      pieChartInstance.current?.destroy()
-      lineChartInstance.current?.destroy()
-      barChartInstance.current?.destroy()
-    }
-  }, [data])
+  const params = await searchParams
+  const period = parseAnalyticsPeriod(params.period ?? null)
+  const data = await getAnalyticsSummary(supabase, user.id, period)
+  const hasData = data.totalSpending > 0 || data.totalIncome > 0
 
   return (
     <div className="analytics-page">
@@ -360,30 +45,18 @@ export default function AnalyticsPage() {
         <h1>Analytics</h1>
         <div className="period-toggle">
           {(['week', 'month', 'year'] as const).map((p) => (
-            <button
+            <Link
               key={p}
               className={`btn btn-ghost ${period === p ? 'active' : ''}`}
-              onClick={() => setPeriod(p)}
+              href={periodHref(p)}
             >
-              {p === 'week' ? 'Week' : p === 'month' ? 'Month' : 'Year'}
-            </button>
+              {PERIOD_LABELS[p]}
+            </Link>
           ))}
         </div>
       </div>
 
-      {loading ? (
-        <div className="loading-grid">
-          {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="card skeleton-chart">
-              <div className="skeleton skeleton-line" style={{ width: '40%' }} />
-              <div
-                className="skeleton"
-                style={{ height: '200px', width: '100%', marginTop: '1rem' }}
-              />
-            </div>
-          ))}
-        </div>
-      ) : !data ? (
+      {!hasData ? (
         <div className="card empty-state">
           <span style={{ fontSize: '3rem' }}>📊</span>
           <h3>No data yet</h3>
@@ -393,7 +66,6 @@ export default function AnalyticsPage() {
         </div>
       ) : (
         <>
-          {/* Summary Cards */}
           <div className="summary-grid">
             <div className="card summary-card expense">
               <span className="summary-label">Total Spending</span>
@@ -410,10 +82,7 @@ export default function AnalyticsPage() {
             <div className="card summary-card net">
               <span className="summary-label">Net</span>
               <span className="summary-value">
-                {formatCurrency(
-                  data.totalIncome - data.totalSpending,
-                  'USD'
-                )}
+                {formatCurrency(data.totalIncome - data.totalSpending, 'USD')}
               </span>
             </div>
             <div className="card summary-card categories">
@@ -422,43 +91,18 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Charts Grid */}
-          <div className="charts-grid">
-            <div className="card chart-card">
-              <h3>Spending by Category</h3>
-              <div className="chart-container pie-container">
-                <canvas ref={pieChartRef} role="img" aria-label="Spending by category chart" />
-              </div>
-            </div>
+          <AnalyticsCharts data={data} />
 
-            <div className="card chart-card">
-              <h3>Daily Spending Trend</h3>
-              <div className="chart-container">
-                <canvas ref={lineChartRef} role="img" aria-label="Daily spending trend chart" />
-              </div>
-            </div>
-
-            <div className="card chart-card full-width">
-              <h3>Income vs Spending</h3>
-              <div className="chart-container">
-                <canvas ref={barChartRef} role="img" aria-label="Income versus spending chart" />
-              </div>
-            </div>
-          </div>
-
-          {/* Top Categories Breakdown */}
           <div className="card">
-            <h3 style={{ padding: '1.25rem 1.25rem 0' }}>
-              Top Categories
-            </h3>
+            <h3 style={{ padding: '1.25rem 1.25rem 0' }}>Top Categories</h3>
             <div className="category-list">
-              {data.byCategory.slice(0, 8).map((cat, i) => {
+              {data.byCategory.slice(0, 8).map((cat) => {
                 const percentage =
                   data.totalSpending > 0
                     ? (cat.total / data.totalSpending) * 100
                     : 0
                 return (
-                  <div key={i} className="category-item">
+                  <div key={cat.name} className="category-item">
                     <div className="cat-info">
                       <span className="cat-icon">{cat.icon}</span>
                       <span className="cat-name">{cat.name}</span>
@@ -485,8 +129,6 @@ export default function AnalyticsPage() {
           </div>
         </>
       )}
-
-      
     </div>
   )
 }

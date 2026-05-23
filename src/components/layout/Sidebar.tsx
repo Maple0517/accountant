@@ -2,9 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useMemo } from 'react'
 
 const NAV_ITEMS = [
   { name: 'Dashboard', href: '/dashboard', icon: '📊' },
@@ -18,9 +16,10 @@ const NAV_ITEMS = [
 export default function Sidebar({ userEmail }: { userEmail: string | null }) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
 
   const handleSignOut = async () => {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/auth/login')
   }

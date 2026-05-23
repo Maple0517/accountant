@@ -1,7 +1,6 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/currency'
 import {
   AI_CLASSIFIED_TAG,
@@ -152,10 +151,23 @@ function formatBudgetApplication(tx: TransactionWithRelations) {
 
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
+const TRANSACTIONS_PAGE_SIZE = 50
+
+type TransactionsApiResponse = {
+  transactions: TransactionWithRelations[]
+  totalCount: number
+  categories: Category[]
+  accounts: TransactionAccountRelation[]
+  limit: number
+  offset: number
+  error?: string
+}
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
+  const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [refreshingAi, setRefreshingAi] = useState(false)
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
   const [aiJob, setAiJob] = useState<AiClassificationJob | null>(null)
@@ -180,7 +192,6 @@ export default function TransactionsPage() {
     dateTo: '',
   })
 
-  const supabase = useMemo(() => createClient(), [])
   const debouncedSearch = useDebouncedValue(filters.search, 300)
   const queryFilters = useMemo(
     () => ({
@@ -202,189 +213,81 @@ export default function TransactionsPage() {
   )
 
   const fetchTransactions = useCallback(
-    async (isMounted = true) => {
-      let query = supabase
-        .from('transactions')
-        .select(`
-          id,
-          user_id,
-          account_id,
-          amount,
-          iso_currency_code,
-          date,
-          merchant_name,
-          description,
-          pending,
-          source,
-          category_id,
-          tags,
-          transaction_kind,
-          budget_behavior,
-          linked_transaction_id,
-          budget_effective_date,
-          refund_match_confidence,
-          refund_match_reason,
-          transfer_match_status,
-          transfer_match_reason,
-          created_at,
-          updated_at,
-          accounts (
-            id,
-            name,
-            official_name,
-            type,
-            subtype,
-            mask,
-            is_manual,
-            plaid_items (
-              institution_name,
-              institution_id
-            )
-          ),
-          categories (
-            id,
-            name,
-            name_zh,
-            icon,
-            color,
-            is_excluded_from_budget
-          )
-        `)
-        .order('date', { ascending: false })
-        .limit(200)
+    async (options: { append?: boolean; isMounted?: boolean; offset?: number } = {}) => {
+      const append = options.append ?? false
+      const isMounted = options.isMounted ?? true
+      const offset = options.offset ?? 0
 
-      if (queryFilters.search) {
-        const escapedSearch = queryFilters.search.replace(/[%,]/g, '')
-        query = query.or(
-          `merchant_name.ilike.%${escapedSearch}%,description.ilike.%${escapedSearch}%`
-        )
-      }
-      if (queryFilters.sourceOrAccount === 'manual') {
-        query = query.eq('source', 'manual')
-      } else if (queryFilters.sourceOrAccount === 'receipt') {
-        query = query.eq('source', 'receipt')
-      } else if (queryFilters.sourceOrAccount.startsWith('account:')) {
-        query = query.eq(
-          'account_id',
-          queryFilters.sourceOrAccount.slice('account:'.length)
-        )
-      }
-      if (queryFilters.category === 'uncategorized') {
-        query = query.is('category_id', null)
-      } else if (queryFilters.category !== 'all') {
-        query = query.eq('category_id', queryFilters.category)
-      }
-      if (queryFilters.currency !== 'all') {
-        query = query.eq('iso_currency_code', queryFilters.currency)
-      }
-      if (queryFilters.dateFrom) {
-        query = query.gte('date', queryFilters.dateFrom)
-      }
-      if (queryFilters.dateTo) {
-        query = query.lte('date', queryFilters.dateTo)
+      if (append) {
+        setLoadingMore(true)
+      } else {
+        setLoading(true)
       }
 
-      const { data, error } = await query
+      const params = new URLSearchParams({
+        limit: String(TRANSACTIONS_PAGE_SIZE),
+        offset: String(offset),
+        sourceOrAccount: queryFilters.sourceOrAccount,
+        category: queryFilters.category,
+        currency: queryFilters.currency,
+      })
+
+      if (queryFilters.search) params.set('search', queryFilters.search)
+      if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
+      if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
+
+      const response = await fetch(`/api/transactions?${params.toString()}`)
+      const payload = (await response.json()) as TransactionsApiResponse
 
       if (!isMounted) return
 
-      if (error) {
-        console.error('Error fetching transactions:', error)
+      if (!response.ok) {
+        console.error('Error fetching transactions:', payload.error)
       } else {
-        const nextTransactions = ((data || []) as Array<{
-          accounts?: TransactionAccountRelation | TransactionAccountRelation[] | null
-          categories?:
-            | Pick<
-                Category,
-                'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
-              >
-            | Array<
-                Pick<
-                  Category,
-                  'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
-                >
-              >
-            | null
-        }>).map((tx) => ({
-          ...(tx as unknown as Transaction),
-          accounts: Array.isArray(tx.accounts) ? tx.accounts[0] ?? null : tx.accounts ?? null,
-          categories: Array.isArray(tx.categories) ? tx.categories[0] ?? null : tx.categories ?? null,
-        })) as TransactionWithRelations[]
-        setTransactions(nextTransactions)
-        setEditingTransactionId((current) =>
-          current && nextTransactions.some((tx) => tx.id === current)
-            ? current
-            : null
+        const nextTransactions = payload.transactions || []
+        setTransactions((current) =>
+          append ? [...current, ...nextTransactions] : nextTransactions
         )
+        setTotalCount(payload.totalCount || 0)
+        setCategories(payload.categories || [])
+        setCategoriesLoading(false)
+        setAccountOptions(
+          (payload.accounts || [])
+            .map((account) => ({
+              id: account.id || '',
+              label: formatAccountSourceLabel(account),
+              institutionName: account.plaid_items?.institution_name ?? null,
+              accountName: account.name ?? account.official_name ?? null,
+              mask: account.mask ?? null,
+              type: account.type ?? null,
+            }))
+            .filter((account) => account.id)
+        )
+        if (!append) {
+          setEditingTransactionId((current) =>
+            current && nextTransactions.some((tx) => tx.id === current)
+              ? current
+              : null
+          )
+        }
       }
 
       setLoading(false)
+      setLoadingMore(false)
     },
-    [queryFilters, supabase]
+    [queryFilters]
   )
-
-  const fetchCategories = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('categories')
-      .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
-      .order('sort_order', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching categories:', error)
-    } else {
-      setCategories((data || []) as Category[])
-    }
-
-    setCategoriesLoading(false)
-  }, [supabase])
-
-  const fetchAccountFilters = useCallback(async () => {
-    const { data, error } = await supabase
-      .from('accounts')
-      .select(`
-        id,
-        name,
-        official_name,
-        type,
-        subtype,
-        mask,
-        is_manual,
-        plaid_items (
-          institution_name,
-          institution_id
-        )
-      `)
-      .order('created_at', { ascending: true })
-
-    if (error) {
-      console.error('Error fetching account filters:', error)
-      return
-    }
-
-    setAccountOptions(
-      ((data || []) as TransactionAccountRelation[]).map((account) => ({
-        id: account.id || '',
-        label: formatAccountSourceLabel(account),
-        institutionName: account.plaid_items?.institution_name ?? null,
-        accountName: account.name ?? account.official_name ?? null,
-        mask: account.mask ?? null,
-        type: account.type ?? null,
-      })).filter((account) => account.id)
-    )
-  }, [supabase])
 
   useEffect(() => {
     let isMounted = true
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchTransactions(isMounted)
-    fetchCategories()
-    fetchAccountFilters()
+    fetchTransactions({ isMounted })
 
     return () => {
       isMounted = false
     }
-  }, [fetchAccountFilters, fetchCategories, fetchTransactions])
+  }, [fetchTransactions])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
@@ -780,6 +683,14 @@ export default function TransactionsPage() {
   }, [transactions, categories])
 
   const hasTransactions = transactions.length > 0
+  const hasMoreTransactions = transactions.length < totalCount
+
+  const handleLoadMore = useCallback(() => {
+    fetchTransactions({
+      append: true,
+      offset: transactions.length,
+    })
+  }, [fetchTransactions, transactions.length])
 
   const linkCandidatesByTransactionId = useMemo(() => {
     if (!editingTransactionId) {
@@ -894,7 +805,9 @@ export default function TransactionsPage() {
         <div>
           <h1>Transactions</h1>
           <p className="text-secondary">
-            {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+            Showing {transactions.length}
+            {totalCount > transactions.length ? ` of ${totalCount}` : ''}{' '}
+            transaction{totalCount !== 1 ? 's' : ''}
           </p>
         </div>
         <button
@@ -1096,6 +1009,18 @@ export default function TransactionsPage() {
                   </div>
                 </div>
               ))}
+          {hasMoreTransactions && (
+            <div style={{ display: 'flex', justifyContent: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading...' : 'Load more'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
