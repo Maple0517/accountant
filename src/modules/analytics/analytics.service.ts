@@ -9,6 +9,7 @@ type AnalyticsTransactionRow = {
   transaction_kind?: string | null
   categories?: {
     name?: string | null
+    name_zh?: string | null
     icon?: string | null
     color?: string | null
   } | null
@@ -79,7 +80,7 @@ export async function getAnalyticsSummary(
   const dateFrom = getDateFrom(period)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, icon, color )')
+    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
     .eq('user_id', userId)
     .gte('date', dateFrom)
     .order('date', { ascending: true })
@@ -105,7 +106,7 @@ export async function getAnalyticsSummary(
 
     if (semanticAmounts.categorySpend !== 0) {
       const cat = tx.categories
-      const catName = cat?.name || 'Other'
+      const catName = cat?.name_zh || cat?.name || 'Other'
       const existing = categoryMap.get(catName) || {
         name: catName,
         icon: cat?.icon || '📦',

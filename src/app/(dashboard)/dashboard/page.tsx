@@ -87,10 +87,10 @@ export default function DashboardPage() {
   const recentTransactions = data?.recentTx?.map((tx: any) => ({
     id: tx.id,
     merchant: tx.merchant_name || tx.description || 'Unknown',
-    category: tx.source === 'plaid' ? 'Bank Sync' : 'Manual',
+    category: tx.categories?.name_zh || tx.categories?.name || 'Uncategorized',
     amount: -Number(tx.amount),
     date: tx.date,
-    icon: getIcon(tx.description)
+    icon: tx.categories?.icon || getIcon(tx.description)
   })) || []
 
   return (

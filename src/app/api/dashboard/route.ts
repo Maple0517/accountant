@@ -32,7 +32,7 @@ export async function GET() {
           .or(`and(budget_effective_date.gte.${firstDayOfMonth},budget_effective_date.lt.${firstDayOfNextMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth},date.lt.${firstDayOfNextMonth})`),
         supabase
           .from('transactions')
-          .select('id, merchant_name, description, amount, date, source')
+          .select('id, merchant_name, description, amount, date, source, categories(name, name_zh, icon)')
           .eq('user_id', user.id)
           .order('date', { ascending: false })
           .limit(5),
