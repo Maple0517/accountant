@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+
 import { getOrCreateCategory, getUserCategories } from '@/lib/categories-db'
 import { classifyTransactionsBatch, RawTransactionToClassify } from '@/lib/gemini/classifier'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = createAdminClient()
+    const supabase = authClient
     const body = await request.json().catch(() => ({}))
     const jobId = body.job_id
     const limit = parseProcessLimit(body.limit)

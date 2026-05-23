@@ -91,7 +91,7 @@ export async function GET(request: Request) {
           transfer_match_reason,
           created_at,
           updated_at,
-          accounts (
+          accounts!transactions_account_id_fkey (
             id,
             name,
             official_name,
@@ -104,7 +104,7 @@ export async function GET(request: Request) {
               institution_id
             )
           ),
-          categories (
+          categories!transactions_category_id_fkey (
             id,
             name,
             name_zh,

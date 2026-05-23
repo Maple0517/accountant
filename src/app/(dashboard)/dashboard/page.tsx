@@ -48,6 +48,8 @@ export default async function DashboardPage() {
   // Fetch current month's transactions
   const now = new Date()
   const firstDayOfMonth = toMonthStart(now)
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  const firstDayOfNextMonth = toMonthStart(nextMonthDate)
 
   const [{ data: accounts }, { data: monthTx }, { data: recentTx }] =
     await Promise.all([
@@ -60,7 +62,7 @@ export default async function DashboardPage() {
         .select('amount, budget_behavior, budget_effective_date, date')
         .eq('user_id', user.id)
         .eq('pending', false)
-        .or(`and(budget_effective_date.gte.${firstDayOfMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth})`),
+        .or(`and(budget_effective_date.gte.${firstDayOfMonth},budget_effective_date.lt.${firstDayOfNextMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth},date.lt.${firstDayOfNextMonth})`),
       supabase
         .from('transactions')
         .select('id, merchant_name, description, amount, date, source')

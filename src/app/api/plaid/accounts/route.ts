@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+
 
 export const dynamic = 'force-dynamic'
 
@@ -36,8 +36,7 @@ export async function GET() {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const admin = createAdminClient()
-    const { data: accounts, error } = await admin
+    const { data: accounts, error } = await supabase
       .from('accounts')
       .select(`
         id,

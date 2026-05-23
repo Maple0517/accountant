@@ -76,8 +76,8 @@ export async function POST(request: Request) {
       .select(
         `
         *,
-        categories ( name ),
-        accounts ( name )
+        categories!transactions_category_id_fkey ( name ),
+        accounts!transactions_account_id_fkey ( name )
       `
       )
       .eq('user_id', user.id)

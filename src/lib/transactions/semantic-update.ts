@@ -149,7 +149,7 @@ export async function updateTransactionSemantics({
       category_id,
       transaction_kind,
       transfer_group_id,
-      categories (
+      categories!transactions_category_id_fkey (
         type,
         is_excluded_from_budget
       )
@@ -255,7 +255,7 @@ export async function updateTransactionSemantics({
     .eq('user_id', userId)
     .select(`
       *,
-      categories (
+      categories!transactions_category_id_fkey (
         id,
         name,
         name_zh,

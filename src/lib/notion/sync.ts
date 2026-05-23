@@ -353,8 +353,8 @@ export async function syncTransactionsIfEnabled(
     .select(
       `
       *,
-      categories ( name, name_zh, icon ),
-      accounts ( name )
+      categories!transactions_category_id_fkey ( name, name_zh, icon ),
+      accounts!transactions_account_id_fkey ( name )
     `
     )
     .eq('user_id', userId)

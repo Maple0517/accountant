@@ -1,4 +1,3 @@
-import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
@@ -33,8 +32,8 @@ export async function GET() {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const admin = createAdminClient()
-    const { data, error } = await admin
+    const supabase = await createClient()
+    const { data, error } = await supabase
       .from('profiles')
       .select(
         'id, display_name, default_currency, notion_sync_enabled, notion_database_id, notion_token, created_at, updated_at'
@@ -109,8 +108,8 @@ export async function PATCH(request: Request) {
       return Response.json({ error: 'No settings provided' }, { status: 400 })
     }
 
-    const admin = createAdminClient()
-    const { data, error } = await admin
+    const supabase = await createClient()
+    const { data, error } = await supabase
       .from('profiles')
       .update(update)
       .eq('id', userId)

@@ -79,7 +79,7 @@ export async function getAnalyticsSummary(
   const dateFrom = getDateFrom(period)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories ( name, icon, color )')
+    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, icon, color )')
     .eq('user_id', userId)
     .gte('date', dateFrom)
     .order('date', { ascending: true })

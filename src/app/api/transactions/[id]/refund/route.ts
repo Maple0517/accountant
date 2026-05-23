@@ -64,7 +64,7 @@ export async function PATCH(
         date,
         category_id,
         transaction_kind,
-        categories (
+        categories!transactions_category_id_fkey (
           type,
           is_excluded_from_budget
         )
@@ -169,7 +169,7 @@ export async function PATCH(
       .eq('user_id', user.id)
       .select(`
         *,
-        categories (
+        categories!transactions_category_id_fkey (
           id,
           name,
           name_zh,

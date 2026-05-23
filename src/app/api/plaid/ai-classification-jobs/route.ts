@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
+
 import type { AiClassificationJob } from '@/types'
 import {
   loadRefreshCandidateIds,
@@ -77,9 +77,7 @@ export async function POST() {
     }
 
     const candidateIds = await loadRefreshCandidateIds(supabase, user.id)
-    const admin = createAdminClient()
-
-    const { data: job, error: jobError } = await admin
+    const { data: job, error: jobError } = await supabase
       .from('ai_classification_jobs')
       .insert({
         user_id: user.id,
@@ -113,7 +111,7 @@ export async function POST() {
 
     for (let index = 0; index < candidateIds.length; index += INSERT_CHUNK_SIZE) {
       const chunk = candidateIds.slice(index, index + INSERT_CHUNK_SIZE)
-      const { error: itemError } = await admin
+      const { error: itemError } = await supabase
         .from('ai_classification_job_items')
         .insert(
           chunk.map((transactionId) => ({
@@ -134,7 +132,7 @@ export async function POST() {
           )
         }
 
-        await admin
+        await supabase
           .from('ai_classification_jobs')
           .update({
             status: 'failed',
