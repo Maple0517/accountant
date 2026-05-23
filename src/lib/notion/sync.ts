@@ -274,6 +274,18 @@ export async function syncSingleTransactionIfEnabled(
   userId: string,
   transactionId: string
 ): Promise<string | null> {
+  const results = await syncTransactionsIfEnabled(userId, [transactionId])
+  return results[0]?.notionPageId ?? null
+}
+
+export async function syncTransactionsIfEnabled(
+  userId: string,
+  transactionIds: string[]
+): Promise<Array<{ transactionId: string; notionPageId: string }>> {
+  if (transactionIds.length === 0) {
+    return []
+  }
+
   const supabase = createAdminClient()
 
   const { data: profile, error: profileError } = await supabase
@@ -288,10 +300,10 @@ export async function syncSingleTransactionIfEnabled(
     !profile?.notion_token ||
     !profile?.notion_database_id
   ) {
-    return null
+    return []
   }
 
-  const { data: transaction, error: transactionError } = await supabase
+  const { data: transactions, error: transactionError } = await supabase
     .from('transactions')
     .select(
       `
@@ -300,48 +312,53 @@ export async function syncSingleTransactionIfEnabled(
       accounts ( name )
     `
     )
-    .eq('id', transactionId)
     .eq('user_id', userId)
-    .single()
+    .in('id', transactionIds)
 
-  if (transactionError || !transaction) {
-    return null
+  if (transactionError || !transactions) {
+    return []
   }
 
-  const category = transaction.categories as {
-    name?: string | null
-    name_zh?: string | null
-    icon?: string | null
-  } | null
-  const categoryName = category
-    ? `${category.icon ? category.icon + ' ' : ''}${category.name_zh || category.name}`.trim()
-    : undefined
+  const results: Array<{ transactionId: string; notionPageId: string }> = []
 
-  const mappedTransaction = {
-    ...transaction,
-    category_name: categoryName,
-    account_name:
-      (transaction.accounts as { name?: string | null } | null)?.name ||
-      undefined,
+  for (const transaction of transactions) {
+    const category = transaction.categories as {
+      name?: string | null
+      name_zh?: string | null
+      icon?: string | null
+    } | null
+    const categoryName = category
+      ? `${category.icon ? category.icon + ' ' : ''}${category.name_zh || category.name}`.trim()
+      : undefined
+
+    const mappedTransaction = {
+      ...transaction,
+      category_name: categoryName,
+      account_name:
+        (transaction.accounts as { name?: string | null } | null)?.name ||
+        undefined,
+    }
+
+    const notionPageId = await syncTransactionToNotion(
+      mappedTransaction,
+      profile.notion_database_id,
+      profile.notion_token
+    )
+
+    if (!notionPageId) {
+      continue
+    }
+
+    await supabase
+      .from('transactions')
+      .update({ notion_page_id: notionPageId })
+      .eq('id', transaction.id)
+      .eq('user_id', userId)
+
+    results.push({ transactionId: transaction.id, notionPageId })
   }
 
-  const notionPageId = await syncTransactionToNotion(
-    mappedTransaction,
-    profile.notion_database_id,
-    profile.notion_token
-  )
-
-  if (!notionPageId) {
-    return null
-  }
-
-  await supabase
-    .from('transactions')
-    .update({ notion_page_id: notionPageId })
-    .eq('id', transactionId)
-    .eq('user_id', userId)
-
-  return notionPageId
+  return results
 }
 
 /**

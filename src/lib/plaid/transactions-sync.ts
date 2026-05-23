@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
+import { syncTransactionsIfEnabled } from '@/lib/notion/sync'
 import {
   getUserCategories,
   getOrCreateCategory,
@@ -479,9 +479,10 @@ export async function syncPlaidItemTransactions({
         .eq('user_id', itemUserId)
         .in('plaid_transaction_id', upsertedPlaidIds)
 
-      for (const transaction of dbTransactions || []) {
-        await syncSingleTransactionIfEnabled(itemUserId, transaction.id)
-      }
+      await syncTransactionsIfEnabled(
+        itemUserId,
+        (dbTransactions || []).map((transaction) => transaction.id)
+      )
     }
   }
 

@@ -62,8 +62,12 @@ export async function getMonthlySummary(
 
   const { numericYear, numericMonth, monthStart, monthEnd } = parseMonth(month)
 
-  const categories = await loadCategoriesForBudget(supabase, userId)
-  const transactions = await loadTransactionsForBudgetMonth(supabase, userId, monthStart, monthEnd)
+  const [categories, transactions, budgetRules, profile] = await Promise.all([
+    loadCategoriesForBudget(supabase, userId),
+    loadTransactionsForBudgetMonth(supabase, userId, monthStart, monthEnd),
+    loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear),
+    loadBudgetSettings(supabase, userId),
+  ])
   const linkedTransactionIds = Array.from(
     new Set(
       transactions
@@ -81,8 +85,6 @@ export async function getMonthlySummary(
     userId,
     linkedTransactionIds
   )
-  const budgetRules = await loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear)
-  const profile = await loadBudgetSettings(supabase, userId)
 
   const categoryMap = new Map(categories.map((c) => [c.id, c]))
   const originalCategoryById = new Map(
