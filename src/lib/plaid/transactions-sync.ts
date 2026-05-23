@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
-import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
+import {
+  getUserCategories,
+  getOrCreateCategory,
+  getOrCreateRefundedCategory,
+} from '@/lib/categories-db'
 import { getCategoryFromPlaid } from '@/lib/categories'
 import { getPlaidClient } from '@/lib/plaid/client'
 import {
@@ -305,11 +309,18 @@ export async function syncPlaidItemTransactions({
         transactionKind = 'refund'
 
         if (match) {
+          const refundedCategory = await getOrCreateRefundedCategory(
+            supabase,
+            itemUserId,
+            userCategories
+          )
+
           linkedTransactionId = match.original.id
           budgetEffectiveDate = match.original.date
           refundMatchConfidence = match.confidence
           refundMatchReason = match.reason
-          nextCategoryId = match.original.category_id ?? nextCategoryId
+          nextCategoryId =
+            refundedCategory?.id ?? match.original.category_id ?? nextCategoryId
         } else if (!existingTransaction?.budget_effective_date) {
           budgetEffectiveDate = tx.date
           refundMatchConfidence = null

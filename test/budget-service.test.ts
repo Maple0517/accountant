@@ -145,3 +145,111 @@ test('updateCategoryBudget accepts valid category owned by current user', async 
     period: 'monthly',
   })
 })
+
+test('getMonthlySummary budgets linked refunded-category rows against original category', async () => {
+  const categories = [
+    {
+      id: 'cat_shopping',
+      user_id: 'user_1',
+      name: 'Shopping',
+      type: 'expense',
+      sort_order: 0,
+      is_excluded_from_budget: false,
+    },
+    {
+      id: 'cat_refunded',
+      user_id: 'user_1',
+      name: 'Refunded',
+      name_zh: '已退款',
+      type: 'expense',
+      sort_order: 1,
+      is_excluded_from_budget: false,
+    },
+  ]
+  const monthlyTransactions = [
+    {
+      id: 'purchase',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_shopping',
+      amount: 100,
+      date: '2026-01-20',
+      budget_effective_date: '2026-01-20',
+      description: 'Amazon purchase',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'normal',
+      linked_transaction_id: null,
+    },
+    {
+      id: 'refund',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_refunded',
+      amount: -100,
+      date: '2026-02-05',
+      budget_effective_date: '2026-01-20',
+      description: 'Amazon refund',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'refund',
+      linked_transaction_id: 'purchase',
+    },
+  ]
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq(column: string, value: unknown) {
+          void value
+          if (table === 'categories' && column === 'user_id') {
+            return {
+              order() {
+                return Promise.resolve({ data: categories, error: null })
+              },
+            }
+          }
+
+          if (table === 'profiles' && column === 'id') {
+            return {
+              single() {
+                return Promise.resolve({ data: null, error: null })
+              },
+            }
+          }
+
+          return chain
+        },
+        or() {
+          return Promise.resolve({ data: monthlyTransactions, error: null })
+        },
+        in(column: string, ids: string[]) {
+          assert.equal(table, 'transactions')
+          assert.equal(column, 'id')
+          assert.deepEqual(ids, ['purchase'])
+          return Promise.resolve({
+            data: [{ id: 'purchase', category_id: 'cat_shopping' }],
+            error: null,
+          })
+        },
+        order() {
+          return Promise.resolve({ data: categories, error: null })
+        },
+        single() {
+          return Promise.resolve({ data: null, error: null })
+        },
+      }
+
+      return chain
+    },
+  }
+
+  const summary = await getMonthlySummary(supabase as never, 'user_1', '2026-01')
+  const shopping = summary.categories.find((category) => category.categoryId === 'cat_shopping')
+  const refunded = summary.categories.find((category) => category.categoryId === 'cat_refunded')
+
+  assert.equal(shopping?.actualSpend, 0)
+  assert.equal(refunded?.actualSpend, 0)
+})

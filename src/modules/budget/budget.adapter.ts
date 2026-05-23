@@ -48,10 +48,14 @@ export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
 export function adaptTransactions(
   rows: Transaction[],
   categoryMap: Map<string, Category>,
+  budgetCategoryByTransactionId: Map<string, string | null> = new Map(),
 ): BudgetTransactionInput[] {
   return rows.map((row) => {
-    const category = row.category_id
-      ? categoryMap.get(row.category_id)
+    const budgetCategoryId = budgetCategoryByTransactionId.has(row.id)
+      ? budgetCategoryByTransactionId.get(row.id) ?? null
+      : row.category_id ?? null
+    const category = budgetCategoryId
+      ? categoryMap.get(budgetCategoryId)
       : undefined;
 
     const type = category?.type ?? 'expense';
@@ -61,7 +65,7 @@ export function adaptTransactions(
       id: row.id,
       amount: rawAmount,
       date: getBudgetDate(row),
-      categoryId: row.category_id ?? null,
+      categoryId: budgetCategoryId,
       type,
       status: row.pending ? ('pending' as const) : ('posted' as const),
       isHidden: false,

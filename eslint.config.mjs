@@ -15,6 +15,9 @@ const eslintConfig = defineConfig([
     // Compiled JS output from `npm run pretest` (tsconfig.test.json → .tmp-tests/).
     // These are CommonJS files and will always trigger @typescript-eslint/no-require-imports.
     ".tmp-tests/**",
+    // Compiled JS output and reports from one-off local scripts.
+    ".tmp-scripts/**",
+    ".tmp-refund-backfill/**",
   ]),
 ]);
 

@@ -59,6 +59,29 @@ export async function loadTransactionsForBudgetMonth(
   return data ?? [];
 }
 
+export async function loadLinkedOriginalTransactionsForBudget(
+  supabase: SupabaseClient,
+  userId: string,
+  linkedTransactionIds: string[],
+): Promise<Pick<Transaction, 'id' | 'category_id'>[]> {
+  if (linkedTransactionIds.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('id, category_id')
+    .eq('user_id', userId)
+    .in('id', linkedTransactionIds);
+
+  if (error) {
+    console.error('[budget.repository] loadLinkedOriginalTransactionsForBudget failed:', error.message);
+    return [];
+  }
+
+  return data ?? [];
+}
+
 /**
  * Loads monthly budget rules for a specific month+year.
  */
