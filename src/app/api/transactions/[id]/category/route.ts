@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
+import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,13 +38,13 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, category_id, tags, merchant_name, description, source')
+          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
         supabase
           .from('categories')
-          .select('id, user_id, name, name_zh, icon, color, is_excluded_from_budget')
+          .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget')
           .eq('id', categoryId)
           .eq('user_id', user.id)
           .single(),
@@ -64,7 +65,7 @@ export async function PATCH(
     if (mode === 'similar') {
       const { data: candidates, error: candidatesError } = await supabase
         .from('transactions')
-        .select('id, tags, merchant_name, description')
+        .select('id, tags, merchant_name, description, transaction_kind')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
 
@@ -90,6 +91,11 @@ export async function PATCH(
           .from('transactions')
           .update({
             category_id: categoryId,
+            budget_behavior: deriveBudgetBehavior({
+              transactionKind: candidate.transaction_kind,
+              category,
+            }),
+            semantic_override_source: 'user',
             tags,
           })
           .eq('id', candidate.id)
@@ -105,6 +111,11 @@ export async function PATCH(
         .from('transactions')
         .update({
           category_id: categoryId,
+          budget_behavior: deriveBudgetBehavior({
+            transactionKind: transaction.transaction_kind,
+            category,
+          }),
+          semantic_override_source: 'user',
           tags,
         })
         .eq('id', id)

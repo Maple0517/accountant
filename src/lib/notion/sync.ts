@@ -2,9 +2,49 @@ import { getNotionClient } from './client'
 import { Sema } from 'async-sema'
 import type { Transaction } from '@/types'
 import { createAdminClient } from '@/lib/supabase/admin'
+import type { UpdateDataSourceParameters } from '@notionhq/client'
 
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
+const semanticsPropertiesEnsured = new Set<string>()
+
+const semanticPropertySchema: NonNullable<UpdateDataSourceParameters['properties']> = {
+  Kind: {
+    select: {
+      options: [
+        { name: 'Normal', color: 'default' },
+        { name: 'Refund', color: 'green' },
+        { name: 'Reimbursement', color: 'blue' },
+        { name: 'Transfer', color: 'gray' },
+      ],
+    },
+  },
+  'Budget Treatment': {
+    select: {
+      options: [
+        { name: 'Counts as Spending', color: 'red' },
+        { name: 'Counts as Income', color: 'green' },
+        { name: 'Excluded as Transfer', color: 'gray' },
+        { name: 'Excluded Manually', color: 'yellow' },
+      ],
+    },
+  },
+  'Budget Date': { date: {} },
+  'Linked Transaction': { rich_text: {} },
+  'Transfer Group': { rich_text: {} },
+  'Transfer Status': {
+    select: {
+      options: [
+        { name: 'Matched', color: 'green' },
+        { name: 'Suggested', color: 'yellow' },
+        { name: 'Unmatched', color: 'orange' },
+        { name: 'Ignored', color: 'gray' },
+      ],
+    },
+  },
+  'Match Confidence': { number: { format: 'percent' } },
+  Reason: { rich_text: {} },
+}
 
 /**
  * Create the Notion database structure for transactions
@@ -86,6 +126,7 @@ export async function createTransactionDatabase(
         },
         Tags: { multi_select: {} },
         'Transaction ID': { rich_text: {} },
+        ...semanticPropertySchema,
       },
     }),
   });
@@ -114,13 +155,17 @@ export async function syncTransactionToNotion(
 
   try {
     const notion = getNotionClient(notionToken)
+    const includeSemantics = await ensureTransactionSemanticsProperties(
+      databaseId,
+      notionToken
+    )
 
     // Check if already synced (has notion_page_id)
     if (transaction.notion_page_id) {
       // Update existing page
       await notion.pages.update({
         page_id: transaction.notion_page_id,
-        properties: buildNotionProperties(transaction),
+        properties: buildNotionProperties(transaction, includeSemantics),
       })
       return transaction.notion_page_id
     }
@@ -138,7 +183,7 @@ export async function syncTransactionToNotion(
     // Create new page
     const response = await notion.pages.create({
       parent: { database_id: databaseId },
-      properties: buildNotionProperties(transaction),
+      properties: buildNotionProperties(transaction, includeSemantics),
     })
 
     return response.id
@@ -188,6 +233,38 @@ export async function batchSyncToNotion(
   }
 
   return { synced, failed, results }
+}
+
+async function ensureTransactionSemanticsProperties(
+  databaseId: string,
+  notionToken?: string
+) {
+  if (semanticsPropertiesEnsured.has(databaseId)) {
+    return true
+  }
+
+  try {
+    const notion = getNotionClient(notionToken)
+    const database = await notion.databases.retrieve({
+      database_id: databaseId,
+    })
+    const dataSourceId =
+      'data_sources' in database ? database.data_sources[0]?.id : null
+
+    if (!dataSourceId) {
+      return false
+    }
+
+    await notion.dataSources.update({
+      data_source_id: dataSourceId,
+      properties: semanticPropertySchema,
+    })
+    semanticsPropertiesEnsured.add(databaseId)
+    return true
+  } catch (error) {
+    console.error('Failed to ensure Notion semantic properties:', error)
+    return false
+  }
 }
 
 /**
@@ -321,7 +398,8 @@ function buildNotionProperties(
   transaction: Transaction & {
     category_name?: string
     account_name?: string
-  }
+  },
+  includeSemantics = false
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Record<string, any> {
   const description =
@@ -383,9 +461,85 @@ function buildNotionProperties(
     }
   }
 
-  // Determine type
-  const type = Number(transaction.amount) > 0 ? 'income' : 'expense'
+  const type =
+    transaction.budget_behavior === 'exclude_as_transfer'
+      ? 'transfer'
+      : transaction.budget_behavior === 'count_as_income'
+        ? 'income'
+        : Number(transaction.amount) < 0
+          ? 'income'
+          : 'expense'
   properties.Type = { select: { name: type } }
 
+  if (includeSemantics) {
+    const kind = formatTransactionKind(transaction.transaction_kind)
+    const treatment = formatBudgetTreatment(transaction.budget_behavior)
+    const transferStatus = formatTransferStatus(transaction.transfer_match_status)
+
+    if (kind) {
+      properties.Kind = { select: { name: kind } }
+    }
+
+    if (treatment) {
+      properties['Budget Treatment'] = { select: { name: treatment } }
+    }
+
+    properties['Budget Date'] = {
+      date: { start: transaction.budget_effective_date || transaction.date },
+    }
+
+    if (transaction.linked_transaction_id) {
+      properties['Linked Transaction'] = {
+        rich_text: [{ text: { content: transaction.linked_transaction_id } }],
+      }
+    }
+
+    if (transaction.transfer_group_id) {
+      properties['Transfer Group'] = {
+        rich_text: [{ text: { content: transaction.transfer_group_id } }],
+      }
+    }
+
+    if (transferStatus) {
+      properties['Transfer Status'] = { select: { name: transferStatus } }
+    }
+
+    if (transaction.transfer_match_confidence != null) {
+      properties['Match Confidence'] = {
+        number: Number(transaction.transfer_match_confidence) / 100,
+      }
+    }
+
+    const reason = transaction.transfer_match_reason || transaction.refund_match_reason
+    if (reason) {
+      properties.Reason = {
+        rich_text: [{ text: { content: reason } }],
+      }
+    }
+  }
+
   return properties
+}
+
+function formatTransactionKind(kind: Transaction['transaction_kind']) {
+  if (kind === 'refund') return 'Refund'
+  if (kind === 'reimbursement') return 'Reimbursement'
+  if (kind === 'transfer') return 'Transfer'
+  return 'Normal'
+}
+
+function formatBudgetTreatment(behavior: Transaction['budget_behavior']) {
+  if (behavior === 'count_as_spending') return 'Counts as Spending'
+  if (behavior === 'count_as_income') return 'Counts as Income'
+  if (behavior === 'exclude_as_transfer') return 'Excluded as Transfer'
+  if (behavior === 'exclude_manual') return 'Excluded Manually'
+  return null
+}
+
+function formatTransferStatus(status: Transaction['transfer_match_status']) {
+  if (status === 'auto_matched' || status === 'manually_matched') return 'Matched'
+  if (status === 'suggested') return 'Suggested'
+  if (status === 'unmatched') return 'Unmatched'
+  if (status === 'ignored') return 'Ignored'
+  return null
 }

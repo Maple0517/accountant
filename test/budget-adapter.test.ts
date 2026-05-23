@@ -129,3 +129,27 @@ test('transaction adapter uses original category for linked refund budget math',
   assert.equal(refund.categoryId, 'cat_shopping')
   assert.equal(refund.amount, -100)
 })
+
+test('transaction adapter preserves transaction-level budget behavior', () => {
+  const transfer = makeCategory({
+    id: 'cat_transfer',
+    name: 'Transfer',
+    type: 'transfer',
+    is_excluded_from_budget: false,
+  })
+  const [payment] = adaptTransactions(
+    [
+      makeTransaction({
+        id: 'payment',
+        amount: 250,
+        category_id: 'cat_transfer',
+        transaction_kind: 'transfer',
+        budget_behavior: 'exclude_as_transfer',
+      }),
+    ],
+    new Map([[transfer.id, transfer]])
+  )
+
+  assert.equal(payment.type, 'transfer')
+  assert.equal(payment.budgetBehavior, 'exclude_as_transfer')
+})
