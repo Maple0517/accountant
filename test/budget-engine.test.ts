@@ -174,6 +174,37 @@ test('excluded category not counted', () => {
   assert.equal(result.totalBaseBudget, 0)
 })
 
+test('explicit count_as_spending can include a category legacy rules exclude', () => {
+  const debtPayment: BudgetCategoryInput = {
+    id: 'cat_debt',
+    name: 'Debt Payment',
+    type: 'transfer',
+    isExcludedFromBudget: true,
+  }
+
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [debtPayment],
+      transactions: [
+        {
+          id: 'tx_debt',
+          amount: 300,
+          date: '2026-05-04',
+          categoryId: 'cat_debt',
+          type: 'transfer',
+          budgetBehavior: 'count_as_spending',
+        },
+      ],
+      budgetRules: [{ categoryId: 'cat_debt', month: '2026-05', amount: 300 }],
+    })
+  )
+
+  assert.equal(result.categories.length, 1)
+  assert.equal(result.categories[0].categoryId, 'cat_debt')
+  assert.equal(result.categories[0].actualSpend, 300)
+  assert.equal(result.totalBaseBudget, 300)
+})
+
 test('hidden transaction not counted', () => {
   const result = calculateMonthlySummary(
     makeInput({
@@ -210,6 +241,52 @@ test('transfer and income transactions not counted', () => {
   )
 
   // Only the expense transaction should be counted; income category not in output
+  assert.equal(result.categories.length, 1)
+  assert.equal(result.categories[0].actualSpend, 25)
+})
+
+test('explicit budget behavior overrides expense-category fallback', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries],
+      transactions: [
+        {
+          id: 'transfer',
+          amount: 500,
+          date: '2026-05-01',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          budgetBehavior: 'exclude_as_transfer',
+        },
+        {
+          id: 'income',
+          amount: -3000,
+          date: '2026-05-02',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          budgetBehavior: 'count_as_income',
+        },
+        {
+          id: 'manual',
+          amount: 75,
+          date: '2026-05-03',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          budgetBehavior: 'exclude_manual',
+        },
+        {
+          id: 'purchase',
+          amount: 25,
+          date: '2026-05-10',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          budgetBehavior: 'count_as_spending',
+        },
+      ],
+      budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
+    })
+  )
+
   assert.equal(result.categories.length, 1)
   assert.equal(result.categories[0].actualSpend, 25)
 })

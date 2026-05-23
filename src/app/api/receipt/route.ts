@@ -8,6 +8,7 @@ import {
 } from '@/lib/gemini/receipt-parser'
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
+import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 
 export const dynamic = 'force-dynamic'
 
@@ -199,6 +200,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const transactionKind =
+      parsed.transaction_type === 'transfer' ? 'transfer' : 'normal'
+    const categoryForBudgetBehavior = categoryId
+      ? userCategories.find((category) => category.id === categoryId)
+      : null
+    const budgetBehavior = deriveBudgetBehavior({
+      transactionKind,
+      category: categoryForBudgetBehavior,
+      transactionType: parsed.transaction_type,
+    })
+
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
       .insert({
@@ -215,6 +227,10 @@ export async function POST(request: NextRequest) {
           (tag) => tag !== 'unknown'
         ),
         notes: mergedNotes || undefined,
+        transaction_kind: transactionKind,
+        budget_behavior: budgetBehavior,
+        budget_effective_date: parsed.date,
+        semantic_override_source: 'ai',
       })
       .select()
       .single()

@@ -36,19 +36,17 @@ function isIncludedTransaction(
   monthStart: string,
   nextMonthStart: string,
   includePending: boolean,
-  expenseCategoryIds: Set<string>
+  legacyExpenseCategoryIds: Set<string>,
+  knownCategoryIds: Set<string>
 ): boolean {
-  // Must be an expense type
-  if (tx.type !== 'expense') return false
-
   // Date must be within the month boundary
   if (tx.date < monthStart || tx.date >= nextMonthStart) return false
 
   // Must have a categoryId
   if (tx.categoryId === null) return false
 
-  // Category must be a non-excluded expense category
-  if (!expenseCategoryIds.has(tx.categoryId)) return false
+  // Category must exist in the budget category set
+  if (!knownCategoryIds.has(tx.categoryId)) return false
 
   // Must not be hidden or deleted
   if (tx.isHidden === true) return false
@@ -57,6 +55,28 @@ function isIncludedTransaction(
   // Pending check
   if (!includePending && tx.status === 'pending') return false
 
+  if (tx.budgetBehavior != null) {
+    return tx.budgetBehavior === 'count_as_spending'
+  }
+
+  // Legacy fallback while older rows are not backfilled yet.
+  if (tx.type !== 'expense') return false
+  return legacyExpenseCategoryIds.has(tx.categoryId)
+}
+
+function isEligibleForBudgetMonth(
+  tx: BudgetTransactionInput,
+  monthStart: string,
+  nextMonthStart: string,
+  includePending: boolean,
+  knownCategoryIds: Set<string>
+): boolean {
+  if (tx.date < monthStart || tx.date >= nextMonthStart) return false
+  if (tx.categoryId === null) return false
+  if (!knownCategoryIds.has(tx.categoryId)) return false
+  if (tx.isHidden === true) return false
+  if (tx.isDeleted === true) return false
+  if (!includePending && tx.status === 'pending') return false
   return true
 }
 
@@ -81,10 +101,31 @@ export function calculateMonthlySummary(input: BudgetEngineInput): MonthlyBudget
   const includePending = settings.includePendingTransactions
 
   // Identify non-excluded expense categories
-  const expenseCategories = categories.filter(
+  const legacyExpenseCategories = categories.filter(
     (c) => c.type === 'expense' && !c.isExcludedFromBudget
   )
-  const expenseCategoryIds = new Set(expenseCategories.map((c) => c.id))
+  const legacyExpenseCategoryIds = new Set(legacyExpenseCategories.map((c) => c.id))
+  const knownCategoryIds = new Set(categories.map((c) => c.id))
+  const explicitSpendingCategoryIds = new Set(
+    transactions
+      .filter(
+        (tx) =>
+          tx.budgetBehavior === 'count_as_spending' &&
+          isEligibleForBudgetMonth(
+            tx,
+            monthStart,
+            nextMonthStart,
+            includePending,
+            knownCategoryIds
+          )
+      )
+      .map((tx) => tx.categoryId!)
+  )
+  const expenseCategoryIds = new Set([
+    ...legacyExpenseCategoryIds,
+    ...explicitSpendingCategoryIds,
+  ])
+  const expenseCategories = categories.filter((c) => expenseCategoryIds.has(c.id))
 
   // Build a lookup for budget rules keyed by categoryId
   const ruleMap = new Map<string, number>()
@@ -97,7 +138,16 @@ export function calculateMonthlySummary(input: BudgetEngineInput): MonthlyBudget
   // Accumulate spend per category
   const spendMap = new Map<string, number>()
   for (const tx of transactions) {
-    if (isIncludedTransaction(tx, monthStart, nextMonthStart, includePending, expenseCategoryIds)) {
+    if (
+      isIncludedTransaction(
+        tx,
+        monthStart,
+        nextMonthStart,
+        includePending,
+        legacyExpenseCategoryIds,
+        knownCategoryIds
+      )
+    ) {
       const current = spendMap.get(tx.categoryId!) ?? 0
       spendMap.set(tx.categoryId!, current + tx.amount)
     }

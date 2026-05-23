@@ -1,4 +1,18 @@
 export type TransactionKind = 'normal' | 'refund' | 'reimbursement' | 'transfer'
+export type BudgetBehavior =
+  | 'count_as_spending'
+  | 'count_as_income'
+  | 'exclude_as_transfer'
+  | 'exclude_manual'
+
+export type TransferMatchStatus =
+  | 'unmatched'
+  | 'auto_matched'
+  | 'suggested'
+  | 'manually_matched'
+  | 'ignored'
+
+export type SemanticOverrideSource = 'system' | 'user' | 'rule' | 'ai'
 
 export type Transaction = {
   id: string
@@ -20,10 +34,16 @@ export type Transaction = {
   tags?: string[]
   notes?: string
   transaction_kind?: TransactionKind
+  budget_behavior?: BudgetBehavior | null
   linked_transaction_id?: string | null
   budget_effective_date?: string | null
   refund_match_confidence?: number | null
   refund_match_reason?: string | null
+  transfer_group_id?: string | null
+  transfer_match_status?: TransferMatchStatus | null
+  transfer_match_confidence?: number | null
+  transfer_match_reason?: string | null
+  semantic_override_source?: SemanticOverrideSource | null
   created_at: string
   updated_at: string
 }

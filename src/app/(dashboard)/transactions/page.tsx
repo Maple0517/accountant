@@ -596,6 +596,50 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleSemanticsSave = async (
+    transactionId: string,
+    payload: {
+      transaction_kind?: Transaction['transaction_kind']
+      budget_behavior?: Transaction['budget_behavior']
+      transfer_match_status?: Transaction['transfer_match_status']
+      existing_debt_payment?: boolean
+    }
+  ) => {
+    setSavingCategory(true)
+    setCategorySaveStatus(null)
+
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/semantics`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update transaction treatment')
+      }
+
+      const updated = data.transaction as TransactionWithRelations
+      setTransactions((current) =>
+        current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
+      )
+      setCategorySaveStatus({
+        transactionId,
+        message: 'Treatment saved.',
+      })
+    } catch (error) {
+      console.error('Failed to update transaction treatment:', error)
+      setCategorySaveStatus({
+        transactionId,
+        message:
+          error instanceof Error ? error.message : 'Failed to update treatment',
+      })
+    } finally {
+      setSavingCategory(false)
+    }
+  }
+
   const transactionsGroupedByDate = useMemo(
     () =>
       transactions.reduce(
@@ -716,6 +760,7 @@ export default function TransactionsPage() {
       onSaveRefundMetadata={(payload) =>
         handleRefundMetadataSave(tx.id, payload)
       }
+      onSaveSemantics={(payload) => handleSemanticsSave(tx.id, payload)}
     />
   )
 
@@ -948,6 +993,7 @@ function TransactionItem({
   onDismissSimilar,
   onCreateCategory,
   onSaveRefundMetadata,
+  onSaveSemantics,
 }: {
   transaction: TransactionWithRelations
   linkCandidates: RefundLinkCandidate[]
@@ -966,6 +1012,12 @@ function TransactionItem({
     transaction_kind?: Transaction['transaction_kind']
     linked_transaction_id?: string | null
     budget_effective_date?: string | null
+  }) => void
+  onSaveSemantics: (payload: {
+    transaction_kind?: Transaction['transaction_kind']
+    budget_behavior?: Transaction['budget_behavior']
+    transfer_match_status?: Transaction['transfer_match_status']
+    existing_debt_payment?: boolean
   }) => void
 }) {
   const amount = Number(tx.amount)
@@ -1014,6 +1066,28 @@ function TransactionItem({
     metaParts.push('Refund')
   } else if (tx.transaction_kind === 'reimbursement') {
     metaParts.push('Reimbursement')
+  } else if (tx.transaction_kind === 'transfer') {
+    metaParts.push('Transfer')
+  }
+  if (tx.budget_behavior === 'count_as_spending') {
+    metaParts.push('Counts as spending')
+  } else if (tx.budget_behavior === 'count_as_income') {
+    metaParts.push('Counts as income')
+  } else if (tx.budget_behavior === 'exclude_as_transfer') {
+    metaParts.push('Excluded transfer')
+  } else if (tx.budget_behavior === 'exclude_manual') {
+    metaParts.push('Excluded')
+  }
+  if (tx.transfer_match_status === 'auto_matched') {
+    metaParts.push('Matched')
+  } else if (tx.transfer_match_status === 'manually_matched') {
+    metaParts.push('Matched')
+  } else if (tx.transfer_match_status === 'suggested') {
+    metaParts.push('Suggested')
+  } else if (tx.transfer_match_status === 'unmatched') {
+    metaParts.push('Unmatched')
+  } else if (tx.transfer_match_status === 'ignored') {
+    metaParts.push('Not transfer')
   }
   const budgetApplication = formatBudgetApplication(tx)
   if (budgetApplication) {
@@ -1185,6 +1259,113 @@ function TransactionItem({
                 Apply Date
               </button>
             </div>
+          </div>
+          <div className="refund-tools">
+            <div className="tx-category-popover-header">
+              <span>Budget treatment</span>
+              {savingCategory && <span>Saving...</span>}
+            </div>
+            <div className="refund-kind-actions">
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.budget_behavior === 'count_as_spending' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() =>
+                  onSaveSemantics({
+                    transaction_kind:
+                      tx.transaction_kind === 'transfer' ? 'transfer' : 'normal',
+                    budget_behavior: 'count_as_spending',
+                  })
+                }
+              >
+                Count spending
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.budget_behavior === 'count_as_income' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() =>
+                  onSaveSemantics({
+                    transaction_kind: 'normal',
+                    budget_behavior: 'count_as_income',
+                  })
+                }
+              >
+                Count income
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.budget_behavior === 'exclude_as_transfer' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() =>
+                  onSaveSemantics({
+                    transaction_kind: 'transfer',
+                    budget_behavior: 'exclude_as_transfer',
+                  })
+                }
+              >
+                Transfer
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${tx.budget_behavior === 'exclude_manual' ? 'btn-primary' : 'btn-ghost'}`}
+                disabled={savingCategory}
+                onClick={() =>
+                  onSaveSemantics({
+                    budget_behavior: 'exclude_manual',
+                  })
+                }
+              >
+                Exclude
+              </button>
+            </div>
+            <div className="refund-kind-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={savingCategory}
+                onClick={() =>
+                  onSaveSemantics({
+                    existing_debt_payment: true,
+                  })
+                }
+              >
+                Existing debt
+              </button>
+              {tx.transfer_match_status && tx.transfer_match_status !== 'ignored' && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={savingCategory}
+                  onClick={() =>
+                    onSaveSemantics({
+                      transaction_kind: 'normal',
+                      transfer_match_status: 'ignored',
+                      budget_behavior: 'count_as_spending',
+                    })
+                  }
+                >
+                  Not transfer
+                </button>
+              )}
+              {tx.transfer_match_status === 'suggested' && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={savingCategory}
+                  onClick={() =>
+                    onSaveSemantics({
+                      transfer_match_status: 'manually_matched',
+                    })
+                  }
+                >
+                  Confirm match
+                </button>
+              )}
+            </div>
+            {tx.transfer_match_reason && (
+              <p className="refund-hint">{tx.transfer_match_reason}</p>
+            )}
           </div>
           <div className="new-category-section">
             {showNewCategoryForm ? (

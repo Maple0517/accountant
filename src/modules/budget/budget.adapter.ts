@@ -67,6 +67,7 @@ export function adaptTransactions(
       date: getBudgetDate(row),
       categoryId: budgetCategoryId,
       type,
+      budgetBehavior: row.budget_behavior ?? null,
       status: row.pending ? ('pending' as const) : ('posted' as const),
       isHidden: false,
       isDeleted: false,

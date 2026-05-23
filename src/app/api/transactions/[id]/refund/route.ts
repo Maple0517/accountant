@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getOrCreateRefundedCategory } from '@/lib/categories-db'
+import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 import type { TransactionKind } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -57,7 +58,17 @@ export async function PATCH(
 
     const { data: transaction, error: transactionError } = await supabase
       .from('transactions')
-      .select('id, user_id, date, category_id, transaction_kind')
+      .select(`
+        id,
+        user_id,
+        date,
+        category_id,
+        transaction_kind,
+        categories (
+          type,
+          is_excluded_from_budget
+        )
+      `)
       .eq('id', id)
       .eq('user_id', user.id)
       .single()
@@ -67,9 +78,17 @@ export async function PATCH(
     }
 
     const update: Record<string, unknown> = {}
+    const transactionCategory = Array.isArray(transaction.categories)
+      ? transaction.categories[0]
+      : transaction.categories
 
     if (requestedKind) {
       update.transaction_kind = requestedKind
+      update.budget_behavior = deriveBudgetBehavior({
+        transactionKind: requestedKind,
+        category: transactionCategory,
+      })
+      update.semantic_override_source = 'user'
     }
 
     if (requestedBudgetDate !== undefined) {
@@ -82,6 +101,7 @@ export async function PATCH(
         update.budget_effective_date = transaction.date
         update.refund_match_confidence = null
         update.refund_match_reason = null
+        update.semantic_override_source = 'user'
       } else {
         const { data: original, error: originalError } = await supabase
           .from('transactions')
@@ -103,16 +123,22 @@ export async function PATCH(
         )
 
         update.transaction_kind = 'refund'
+        update.budget_behavior = 'count_as_spending'
         update.linked_transaction_id = original.id
         update.category_id = refundedCategory?.id ?? original.category_id
         update.budget_effective_date = original.date
         update.refund_match_confidence = null
         update.refund_match_reason = 'manual link'
+        update.semantic_override_source = 'user'
       }
     }
 
     if (update.transaction_kind === 'normal') {
       update.linked_transaction_id = null
+      update.budget_behavior = deriveBudgetBehavior({
+        transactionKind: 'normal',
+        category: transactionCategory,
+      })
       update.budget_effective_date = transaction.date
       update.refund_match_confidence = null
       update.refund_match_reason = null
@@ -120,7 +146,10 @@ export async function PATCH(
       update.transaction_kind === 'refund' ||
       update.transaction_kind === 'reimbursement'
     ) {
+      update.budget_behavior = 'count_as_spending'
       update.budget_effective_date = update.budget_effective_date ?? transaction.date
+    } else if (update.transaction_kind === 'transfer') {
+      update.budget_behavior = 'exclude_as_transfer'
     }
 
     if (Object.keys(update).length === 0) {
