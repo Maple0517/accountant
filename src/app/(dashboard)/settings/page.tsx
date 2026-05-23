@@ -25,7 +25,7 @@ export default function SettingsPage() {
       if (user) {
         const { data } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, display_name, default_currency, notion_sync_enabled, notion_token, notion_database_id, created_at, updated_at')
           .eq('id', user.id)
           .single()
         
@@ -104,7 +104,7 @@ export default function SettingsPage() {
         // Reload profile in case DB ID was set
         const { data: newProfile } = await supabase
           .from('profiles')
-          .select('*')
+          .select('id, display_name, default_currency, notion_sync_enabled, notion_token, notion_database_id, created_at, updated_at')
           .eq('id', profile!.id)
           .single()
         if (newProfile) setProfile(newProfile)

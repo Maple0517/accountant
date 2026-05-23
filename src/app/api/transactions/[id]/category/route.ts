@@ -85,26 +85,27 @@ export async function PATCH(
 
       similarCount = Math.max(0, similarTransactions.length - 1)
 
-      for (const candidate of similarTransactions) {
-        const tags = stripAutomaticClassificationTags(candidate.tags)
-        const { error: updateError } = await supabase
-          .from('transactions')
-          .update({
-            category_id: categoryId,
-            budget_behavior: deriveBudgetBehavior({
-              transactionKind: candidate.transaction_kind,
-              category,
-            }),
-            semantic_override_source: 'user',
-            tags,
-          })
-          .eq('id', candidate.id)
-          .eq('user_id', user.id)
+      const updates = await Promise.all(
+        similarTransactions.map(async (candidate) => {
+          const tags = stripAutomaticClassificationTags(candidate.tags)
+          const { error: updateError } = await supabase
+            .from('transactions')
+            .update({
+              category_id: categoryId,
+              budget_behavior: deriveBudgetBehavior({
+                transactionKind: candidate.transaction_kind,
+                category,
+              }),
+              semantic_override_source: 'user',
+              tags,
+            })
+            .eq('id', candidate.id)
+            .eq('user_id', user.id)
 
-        if (!updateError) {
-          updatedCount += 1
-        }
-      }
+          return updateError ? 0 : 1
+        })
+      )
+      updatedCount = updates.reduce<number>((sum, value) => sum + value, 0)
     } else {
       const tags = stripAutomaticClassificationTags(transaction.tags)
       const { error: updateError } = await supabase
@@ -139,12 +140,14 @@ export async function PATCH(
       if (!candidatesError) {
         similarCount = Math.max(
           0,
-          (candidates || []).filter((candidate) => {
+          (candidates || []).reduce<number>((count, candidate) => {
             const candidateKey = normalizeMatchKey(
               candidate.merchant_name || candidate.description
             )
             return candidate.id !== id && candidateKey !== '' && candidateKey === matchKey
-          }).length
+              ? count + 1
+              : count
+          }, 0)
         )
       }
     }

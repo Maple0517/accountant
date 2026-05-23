@@ -33,7 +33,7 @@ export default function AccountsPage() {
         console.warn('Failed to fetch account sync metadata, falling back to accounts only:', error)
         const fallback = await supabase
           .from('accounts')
-          .select('*')
+          .select('id, user_id, plaid_item_id, plaid_account_id, name, official_name, type, subtype, mask, current_balance, available_balance, iso_currency_code, is_manual, created_at, updated_at')
           .order('created_at', { ascending: false })
 
         data = fallback.data
