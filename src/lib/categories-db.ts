@@ -46,7 +46,7 @@ async function ensureExcludedCategory(
         .update({ is_excluded_from_budget: true })
         .eq('id', existing.id)
         .eq('user_id', userId)
-        .select('*')
+        .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
         .single()
 
       if (error) {
@@ -79,7 +79,7 @@ async function ensureExcludedCategory(
       sort_order: maxSortOrder + 1,
       is_excluded_from_budget: true,
     })
-    .select('*')
+    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
     .single()
 
   if (error) {
@@ -99,7 +99,7 @@ export async function getUserCategories(
 ): Promise<CategoryRow[]> {
   const { data: categories, error } = await supabase
     .from('categories')
-    .select('*')
+    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
     .eq('user_id', userId)
 
   if (error) {
@@ -126,7 +126,7 @@ export async function getUserCategories(
   const { data: inserted, error: insertError } = await supabase
     .from('categories')
     .insert(categoriesToInsert)
-    .select('*')
+    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
 
   if (insertError) {
     console.error('Error seeding categories:', insertError)
@@ -163,7 +163,7 @@ export async function getOrCreateCategory(
 
   const { data: concurrentMatch, error: concurrentMatchError } = await supabase
     .from('categories')
-    .select('*')
+    .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
     .eq('user_id', userId)
     .ilike('name', categoryInfo.name.trim())
 
@@ -201,7 +201,7 @@ export async function getOrCreateCategory(
 
     const { data: retryMatch } = await supabase
       .from('categories')
-      .select('*')
+      .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
       .eq('user_id', userId)
       .ilike('name', categoryInfo.name.trim())
 

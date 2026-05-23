@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         sort_order: nextSortOrder,
         is_excluded_from_budget: isExcludedFromBudget,
       })
-      .select('*')
+      .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
       .single()
 
     if (error) {

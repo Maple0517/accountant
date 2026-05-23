@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/currency'
 import {
@@ -77,6 +77,8 @@ type RefundLinkCandidate = {
   label: string
 }
 
+const EMPTY_LINK_CANDIDATES: RefundLinkCandidate[] = []
+
 function isActiveAiJob(job: AiClassificationJob | null): job is AiClassificationJob {
   return job?.status === 'queued' || job?.status === 'running'
 }
@@ -85,6 +87,19 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function useDebouncedValue<T>(value: T, delayMs: number) {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value)
+    }, delayMs)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [value, delayMs])
+
+  return debouncedValue
+}
 
 function getCategoryButtonStyle(category: Category, selected: boolean) {
   const color = category.color || '#607d8b'
@@ -149,7 +164,7 @@ export default function TransactionsPage() {
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [groupBy, setGroupBy] = useState<TransactionGroupBy>('date')
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null)
-  const [savingCategory, setSavingCategory] = useState(false)
+  const [savingTransactionId, setSavingTransactionId] = useState<string | null>(null)
   const [categorySaveStatus, setCategorySaveStatus] = useState<{
     transactionId: string
     message: string
@@ -166,21 +181,53 @@ export default function TransactionsPage() {
   })
 
   const supabase = useMemo(() => createClient(), [])
+  const debouncedSearch = useDebouncedValue(filters.search, 300)
+  const queryFilters = useMemo(
+    () => ({
+      search: debouncedSearch,
+      sourceOrAccount: filters.sourceOrAccount,
+      category: filters.category,
+      currency: filters.currency,
+      dateFrom: filters.dateFrom,
+      dateTo: filters.dateTo,
+    }),
+    [
+      debouncedSearch,
+      filters.sourceOrAccount,
+      filters.category,
+      filters.currency,
+      filters.dateFrom,
+      filters.dateTo,
+    ]
+  )
 
   const fetchTransactions = useCallback(
     async (isMounted = true) => {
       let query = supabase
         .from('transactions')
         .select(`
-          *,
-          categories (
-            id,
-            name,
-            name_zh,
-            icon,
-            color,
-            is_excluded_from_budget
-          ),
+          id,
+          user_id,
+          account_id,
+          amount,
+          iso_currency_code,
+          date,
+          merchant_name,
+          description,
+          pending,
+          source,
+          category_id,
+          tags,
+          transaction_kind,
+          budget_behavior,
+          linked_transaction_id,
+          budget_effective_date,
+          refund_match_confidence,
+          refund_match_reason,
+          transfer_match_status,
+          transfer_match_reason,
+          created_at,
+          updated_at,
           accounts (
             id,
             name,
@@ -193,39 +240,48 @@ export default function TransactionsPage() {
               institution_name,
               institution_id
             )
+          ),
+          categories (
+            id,
+            name,
+            name_zh,
+            icon,
+            color,
+            is_excluded_from_budget
           )
         `)
         .order('date', { ascending: false })
         .limit(200)
 
-      if (filters.search) {
+      if (queryFilters.search) {
+        const escapedSearch = queryFilters.search.replace(/[%,]/g, '')
         query = query.or(
-          `merchant_name.ilike.%${filters.search}%,description.ilike.%${filters.search}%`
+          `merchant_name.ilike.%${escapedSearch}%,description.ilike.%${escapedSearch}%`
         )
       }
-      if (filters.sourceOrAccount === 'manual') {
+      if (queryFilters.sourceOrAccount === 'manual') {
         query = query.eq('source', 'manual')
-      } else if (filters.sourceOrAccount === 'receipt') {
+      } else if (queryFilters.sourceOrAccount === 'receipt') {
         query = query.eq('source', 'receipt')
-      } else if (filters.sourceOrAccount.startsWith('account:')) {
+      } else if (queryFilters.sourceOrAccount.startsWith('account:')) {
         query = query.eq(
           'account_id',
-          filters.sourceOrAccount.slice('account:'.length)
+          queryFilters.sourceOrAccount.slice('account:'.length)
         )
       }
-      if (filters.category === 'uncategorized') {
+      if (queryFilters.category === 'uncategorized') {
         query = query.is('category_id', null)
-      } else if (filters.category !== 'all') {
-        query = query.eq('category_id', filters.category)
+      } else if (queryFilters.category !== 'all') {
+        query = query.eq('category_id', queryFilters.category)
       }
-      if (filters.currency !== 'all') {
-        query = query.eq('iso_currency_code', filters.currency)
+      if (queryFilters.currency !== 'all') {
+        query = query.eq('iso_currency_code', queryFilters.currency)
       }
-      if (filters.dateFrom) {
-        query = query.gte('date', filters.dateFrom)
+      if (queryFilters.dateFrom) {
+        query = query.gte('date', queryFilters.dateFrom)
       }
-      if (filters.dateTo) {
-        query = query.lte('date', filters.dateTo)
+      if (queryFilters.dateTo) {
+        query = query.lte('date', queryFilters.dateTo)
       }
 
       const { data, error } = await query
@@ -235,7 +291,25 @@ export default function TransactionsPage() {
       if (error) {
         console.error('Error fetching transactions:', error)
       } else {
-        const nextTransactions = (data || []) as TransactionWithRelations[]
+        const nextTransactions = ((data || []) as Array<{
+          accounts?: TransactionAccountRelation | TransactionAccountRelation[] | null
+          categories?:
+            | Pick<
+                Category,
+                'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
+              >
+            | Array<
+                Pick<
+                  Category,
+                  'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
+                >
+              >
+            | null
+        }>).map((tx) => ({
+          ...(tx as unknown as Transaction),
+          accounts: Array.isArray(tx.accounts) ? tx.accounts[0] ?? null : tx.accounts ?? null,
+          categories: Array.isArray(tx.categories) ? tx.categories[0] ?? null : tx.categories ?? null,
+        })) as TransactionWithRelations[]
         setTransactions(nextTransactions)
         setEditingTransactionId((current) =>
           current && nextTransactions.some((tx) => tx.id === current)
@@ -246,13 +320,13 @@ export default function TransactionsPage() {
 
       setLoading(false)
     },
-    [filters, supabase]
+    [queryFilters, supabase]
   )
 
   const fetchCategories = useCallback(async () => {
     const { data, error } = await supabase
       .from('categories')
-      .select('*')
+      .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
       .order('sort_order', { ascending: true })
 
     if (error) {
@@ -399,11 +473,14 @@ export default function TransactionsPage() {
   }, [processAiQueue])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchLatestAiJob()
+    const timeoutId = window.setTimeout(() => {
+      fetchLatestAiJob()
+    }, 800)
+
+    return () => window.clearTimeout(timeoutId)
   }, [fetchLatestAiJob])
 
-  const handleRefreshAiClassification = async () => {
+  const handleRefreshAiClassification = useCallback(async () => {
     setRefreshingAi(true)
     setAiRefreshStatus(null)
 
@@ -434,211 +511,224 @@ export default function TransactionsPage() {
         error instanceof Error ? error.message : 'Failed to create AI queue'
       )
     } finally {
-      if (!isActiveAiJob(aiJob)) {
-        setRefreshingAi(false)
-      }
+      setRefreshingAi(false)
     }
-  }
+  }, [processAiQueue])
 
-  const handleCategorySave = async (
-    transactionId: string,
-    categoryId: string,
-    applyMode: 'single' | 'similar' = 'single'
-  ) => {
-    setSavingCategory(true)
-    setCategorySaveStatus(null)
+  const handleCategorySave = useCallback(
+    async (
+      transactionId: string,
+      categoryId: string,
+      applyMode: 'single' | 'similar' = 'single'
+    ) => {
+      setSavingTransactionId(transactionId)
+      setCategorySaveStatus(null)
 
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}/category`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category_id: categoryId, apply_mode: applyMode }),
-      })
-      const data = await response.json()
+      try {
+        const response = await fetch(`/api/transactions/${transactionId}/category`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category_id: categoryId, apply_mode: applyMode }),
+        })
+        const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update category')
-      }
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update category')
+        }
 
-      const updatedCategory = data.transaction?.categories as
-        | Pick<
-            Category,
-            'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
-          >
-        | undefined
-      const categoryName =
-        updatedCategory?.name_zh ||
-        updatedCategory?.name ||
-        categories.find((category) => category.id === categoryId)?.name_zh ||
-        categories.find((category) => category.id === categoryId)?.name ||
-        'Selected category'
+        const updatedCategory = data.transaction?.categories as
+          | Pick<
+              Category,
+              'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
+            >
+          | undefined
+        const categoryName =
+          updatedCategory?.name_zh ||
+          updatedCategory?.name ||
+          categories.find((category) => category.id === categoryId)?.name_zh ||
+          categories.find((category) => category.id === categoryId)?.name ||
+          'Selected category'
 
-      setEditingTransactionId(null)
+        setEditingTransactionId(null)
 
-      if (applyMode === 'similar') {
+        if (applyMode === 'similar') {
+          setCategorySaveStatus({
+            transactionId,
+            message: `已将 ${categoryName} 同步到 ${data.updated_count || 0} 笔同名交易。`,
+          })
+          setSimilarSuggestion(null)
+          await fetchTransactions()
+        } else {
+          setTransactions((current) =>
+            current.map((tx) =>
+              tx.id === transactionId
+                ? {
+                    ...tx,
+                    category_id: categoryId,
+                    tags: stripAutomaticClassificationTags(tx.tags),
+                    categories: updatedCategory || tx.categories,
+                  }
+                : tx
+            )
+          )
+
+          if ((data.similar_count || 0) > 0) {
+            setSimilarSuggestion({
+              transactionId,
+              categoryId,
+              categoryName,
+              similarCount: data.similar_count,
+            })
+            setCategorySaveStatus({
+              transactionId,
+              message: `已改为 ${categoryName}。`,
+            })
+          } else {
+            setSimilarSuggestion(null)
+            setCategorySaveStatus({
+              transactionId,
+              message: `已改为 ${categoryName}。`,
+            })
+          }
+        }
+      } catch (error) {
+        console.error('Failed to update category:', error)
         setCategorySaveStatus({
           transactionId,
-          message: `已将 ${categoryName} 同步到 ${data.updated_count || 0} 笔同名交易。`,
+          message:
+            error instanceof Error ? error.message : 'Failed to update category',
         })
-        setSimilarSuggestion(null)
-        await fetchTransactions()
-      } else {
-        setTransactions((current) =>
-          current.map((tx) =>
-            tx.id === transactionId
-              ? {
-                  ...tx,
-                  category_id: categoryId,
-                  tags: stripAutomaticClassificationTags(tx.tags),
-                  categories: updatedCategory || tx.categories,
-                }
-              : tx
-          )
-        )
+      } finally {
+        setSavingTransactionId(null)
+      }
+    },
+    [categories, fetchTransactions]
+  )
 
-        if ((data.similar_count || 0) > 0) {
-          setSimilarSuggestion({
-            transactionId,
-            categoryId,
-            categoryName,
-            similarCount: data.similar_count,
-          })
-          setCategorySaveStatus({
-            transactionId,
-            message: `已改为 ${categoryName}。`,
-          })
-        } else {
-          setSimilarSuggestion(null)
-          setCategorySaveStatus({
-            transactionId,
-            message: `已改为 ${categoryName}。`,
-          })
+  const handleCreateCategory = useCallback(
+    async (
+      transactionId: string,
+      name: string,
+      icon: string,
+      color: string
+    ) => {
+      try {
+        setSavingTransactionId(transactionId)
+        const response = await fetch('/api/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, icon, color, type: 'expense' }),
+        })
+        const newCategory = await response.json()
+        if (!response.ok) throw new Error(newCategory.error || 'Failed to create category')
+
+        setCategories((prev) => [newCategory as Category, ...prev])
+        await handleCategorySave(transactionId, newCategory.id)
+      } catch (error) {
+        console.error('Failed to create category:', error)
+        setCategorySaveStatus({
+          transactionId,
+          message: error instanceof Error ? error.message : 'Failed to create category',
+        })
+      } finally {
+        setSavingTransactionId(null)
+      }
+    },
+    [handleCategorySave]
+  )
+
+  const handleRefundMetadataSave = useCallback(
+    async (
+      transactionId: string,
+      payload: {
+        transaction_kind?: Transaction['transaction_kind']
+        linked_transaction_id?: string | null
+        budget_effective_date?: string | null
+      }
+    ) => {
+      setSavingTransactionId(transactionId)
+      setCategorySaveStatus(null)
+
+      try {
+        const response = await fetch(`/api/transactions/${transactionId}/refund`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update refund metadata')
         }
+
+        const updated = data.transaction as TransactionWithRelations
+        setTransactions((current) =>
+          current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
+        )
+        setCategorySaveStatus({
+          transactionId,
+          message: 'Refund settings saved.',
+        })
+      } catch (error) {
+        console.error('Failed to update refund metadata:', error)
+        setCategorySaveStatus({
+          transactionId,
+          message:
+            error instanceof Error ? error.message : 'Failed to update refund metadata',
+        })
+      } finally {
+        setSavingTransactionId(null)
       }
-    } catch (error) {
-      console.error('Failed to update category:', error)
-      setCategorySaveStatus({
-        transactionId,
-        message:
-          error instanceof Error ? error.message : 'Failed to update category',
-      })
-    } finally {
-      setSavingCategory(false)
-    }
-  }
+    },
+    []
+  )
 
-  const handleCreateCategory = async (
-    transactionId: string,
-    name: string,
-    icon: string,
-    color: string
-  ) => {
-    try {
-      const response = await fetch('/api/categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, icon, color, type: 'expense' }),
-      })
-      const newCategory = await response.json()
-      if (!response.ok) throw new Error(newCategory.error || 'Failed to create category')
-
-      setCategories((prev) => [newCategory as Category, ...prev])
-      await handleCategorySave(transactionId, newCategory.id)
-    } catch (error) {
-      console.error('Failed to create category:', error)
-      setCategorySaveStatus({
-        transactionId,
-        message: error instanceof Error ? error.message : 'Failed to create category',
-      })
-    }
-  }
-
-  const handleRefundMetadataSave = async (
-    transactionId: string,
-    payload: {
-      transaction_kind?: Transaction['transaction_kind']
-      linked_transaction_id?: string | null
-      budget_effective_date?: string | null
-    }
-  ) => {
-    setSavingCategory(true)
-    setCategorySaveStatus(null)
-
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}/refund`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update refund metadata')
+  const handleSemanticsSave = useCallback(
+    async (
+      transactionId: string,
+      payload: {
+        transaction_kind?: Transaction['transaction_kind']
+        budget_behavior?: Transaction['budget_behavior']
+        transfer_match_status?: Transaction['transfer_match_status']
+        existing_debt_payment?: boolean
       }
+    ) => {
+      setSavingTransactionId(transactionId)
+      setCategorySaveStatus(null)
 
-      const updated = data.transaction as TransactionWithRelations
-      setTransactions((current) =>
-        current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
-      )
-      setCategorySaveStatus({
-        transactionId,
-        message: 'Refund settings saved.',
-      })
-    } catch (error) {
-      console.error('Failed to update refund metadata:', error)
-      setCategorySaveStatus({
-        transactionId,
-        message:
-          error instanceof Error ? error.message : 'Failed to update refund metadata',
-      })
-    } finally {
-      setSavingCategory(false)
-    }
-  }
+      try {
+        const response = await fetch(`/api/transactions/${transactionId}/semantics`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await response.json()
 
-  const handleSemanticsSave = async (
-    transactionId: string,
-    payload: {
-      transaction_kind?: Transaction['transaction_kind']
-      budget_behavior?: Transaction['budget_behavior']
-      transfer_match_status?: Transaction['transfer_match_status']
-      existing_debt_payment?: boolean
-    }
-  ) => {
-    setSavingCategory(true)
-    setCategorySaveStatus(null)
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to update transaction treatment')
+        }
 
-    try {
-      const response = await fetch(`/api/transactions/${transactionId}/semantics`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update transaction treatment')
+        const updated = data.transaction as TransactionWithRelations
+        setTransactions((current) =>
+          current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
+        )
+        setCategorySaveStatus({
+          transactionId,
+          message: 'Treatment saved.',
+        })
+      } catch (error) {
+        console.error('Failed to update transaction treatment:', error)
+        setCategorySaveStatus({
+          transactionId,
+          message:
+            error instanceof Error ? error.message : 'Failed to update treatment',
+        })
+      } finally {
+        setSavingTransactionId(null)
       }
-
-      const updated = data.transaction as TransactionWithRelations
-      setTransactions((current) =>
-        current.map((tx) => (tx.id === transactionId ? { ...tx, ...updated } : tx))
-      )
-      setCategorySaveStatus({
-        transactionId,
-        message: 'Treatment saved.',
-      })
-    } catch (error) {
-      console.error('Failed to update transaction treatment:', error)
-      setCategorySaveStatus({
-        transactionId,
-        message:
-          error instanceof Error ? error.message : 'Failed to update treatment',
-      })
-    } finally {
-      setSavingCategory(false)
-    }
-  }
+    },
+    []
+  )
 
   const transactionsGroupedByDate = useMemo(
     () =>
@@ -691,7 +781,40 @@ export default function TransactionsPage() {
 
   const hasTransactions = transactions.length > 0
 
-  const formatDate = (dateStr: string) => {
+  const linkCandidatesByTransactionId = useMemo(() => {
+    if (!editingTransactionId) {
+      return new Map<string, RefundLinkCandidate[]>()
+    }
+
+    const editingTransaction = transactions.find(
+      (tx) => tx.id === editingTransactionId
+    )
+    if (!editingTransaction) {
+      return new Map<string, RefundLinkCandidate[]>()
+    }
+
+    const linkCandidates = transactions
+      .filter((candidate) => {
+        if (candidate.id === editingTransaction.id) return false
+        if (Number(candidate.amount) <= 0) return false
+        if (candidate.date > editingTransaction.date) return false
+        return true
+      })
+      .slice(0, 30)
+      .map((candidate) => ({
+        id: candidate.id,
+        label: `${formatShortDate(candidate.date)} · ${
+          candidate.merchant_name || candidate.description
+        } · ${formatCurrency(
+          Number(candidate.amount),
+          candidate.iso_currency_code || 'USD'
+        )}`,
+      }))
+
+    return new Map([[editingTransaction.id, linkCandidates]])
+  }, [editingTransactionId, transactions])
+
+  const formatDate = useCallback((dateStr: string) => {
     const date = new Date(dateStr + 'T00:00:00')
     const today = new Date()
     const yesterday = new Date(today)
@@ -705,63 +828,64 @@ export default function TransactionsPage() {
       month: 'short',
       day: 'numeric',
     })
-  }
+  }, [])
 
-  const renderTransactionItem = (tx: TransactionWithRelations) => (
-    <TransactionItem
-      key={tx.id}
-      transaction={tx}
-      linkCandidates={transactions
-        .filter((candidate) => {
-          if (candidate.id === tx.id) return false
-          if (Number(candidate.amount) <= 0) return false
-          if (candidate.date > tx.date) return false
-          return true
-        })
-        .slice(0, 30)
-        .map((candidate) => ({
-          id: candidate.id,
-          label: `${formatShortDate(candidate.date)} · ${
-            candidate.merchant_name || candidate.description
-          } · ${formatCurrency(
-            Number(candidate.amount),
-            candidate.iso_currency_code || 'USD'
-          )}`,
-        }))}
-      categories={categories}
-      categoriesLoading={categoriesLoading}
-      isEditing={editingTransactionId === tx.id}
-      savingCategory={savingCategory}
-      statusMessage={
-        categorySaveStatus?.transactionId === tx.id
-          ? categorySaveStatus.message
-          : null
-      }
-      similarSuggestion={
-        similarSuggestion?.transactionId === tx.id ? similarSuggestion : null
-      }
-      onToggleCategoryPicker={() => {
-        setCategorySaveStatus(null)
-        setSimilarSuggestion(null)
-        setEditingTransactionId((current) => (current === tx.id ? null : tx.id))
-      }}
-      onSaveCategory={(categoryId) => handleCategorySave(tx.id, categoryId)}
-      onApplySimilar={(suggestion) =>
-        handleCategorySave(
-          suggestion.transactionId,
-          suggestion.categoryId,
-          'similar'
-        )
-      }
-      onDismissSimilar={() => setSimilarSuggestion(null)}
-      onCreateCategory={(name, icon, color) =>
-        handleCreateCategory(tx.id, name, icon, color)
-      }
-      onSaveRefundMetadata={(payload) =>
-        handleRefundMetadataSave(tx.id, payload)
-      }
-      onSaveSemantics={(payload) => handleSemanticsSave(tx.id, payload)}
-    />
+  const handleToggleCategoryPicker = useCallback((transactionId: string) => {
+    setCategorySaveStatus(null)
+    setSimilarSuggestion(null)
+    setEditingTransactionId((current) =>
+      current === transactionId ? null : transactionId
+    )
+  }, [])
+
+  const handleDismissSimilar = useCallback(() => {
+    setSimilarSuggestion(null)
+  }, [])
+
+  const renderTransactionItem = useCallback(
+    (tx: TransactionWithRelations) => (
+      <TransactionItem
+        key={tx.id}
+        transaction={tx}
+        linkCandidates={
+          linkCandidatesByTransactionId.get(tx.id) || EMPTY_LINK_CANDIDATES
+        }
+        categories={categories}
+        categoriesLoading={categoriesLoading}
+        isEditing={editingTransactionId === tx.id}
+        isSaving={savingTransactionId === tx.id}
+        statusMessage={
+          categorySaveStatus?.transactionId === tx.id
+            ? categorySaveStatus.message
+            : null
+        }
+        similarSuggestion={
+          similarSuggestion?.transactionId === tx.id ? similarSuggestion : null
+        }
+        onToggleCategoryPicker={handleToggleCategoryPicker}
+        onSaveCategory={handleCategorySave}
+        onApplySimilar={handleCategorySave}
+        onDismissSimilar={handleDismissSimilar}
+        onCreateCategory={handleCreateCategory}
+        onSaveRefundMetadata={handleRefundMetadataSave}
+        onSaveSemantics={handleSemanticsSave}
+      />
+    ),
+    [
+      categories,
+      categoriesLoading,
+      categorySaveStatus,
+      editingTransactionId,
+      handleCategorySave,
+      handleCreateCategory,
+      handleDismissSimilar,
+      handleRefundMetadataSave,
+      handleSemanticsSave,
+      handleToggleCategoryPicker,
+      linkCandidatesByTransactionId,
+      savingTransactionId,
+      similarSuggestion,
+    ]
   )
 
   return (
@@ -978,13 +1102,13 @@ export default function TransactionsPage() {
   )
 }
 
-function TransactionItem({
+const TransactionItem = memo(function TransactionItem({
   transaction: tx,
   linkCandidates,
   categories,
   categoriesLoading,
   isEditing,
-  savingCategory,
+  isSaving,
   statusMessage,
   similarSuggestion,
   onToggleCategoryPicker,
@@ -1000,25 +1124,44 @@ function TransactionItem({
   categories: Category[]
   categoriesLoading: boolean
   isEditing: boolean
-  savingCategory: boolean
+  isSaving: boolean
   statusMessage: string | null
   similarSuggestion: SimilarCategorySuggestion | null
-  onToggleCategoryPicker: () => void
-  onSaveCategory: (categoryId: string) => void
-  onApplySimilar: (suggestion: SimilarCategorySuggestion) => void
+  onToggleCategoryPicker: (transactionId: string) => void
+  onSaveCategory: (
+    transactionId: string,
+    categoryId: string,
+    applyMode?: 'single' | 'similar'
+  ) => void
+  onApplySimilar: (
+    transactionId: string,
+    categoryId: string,
+    applyMode: 'similar'
+  ) => void
   onDismissSimilar: () => void
-  onCreateCategory: (name: string, icon: string, color: string) => void
-  onSaveRefundMetadata: (payload: {
-    transaction_kind?: Transaction['transaction_kind']
-    linked_transaction_id?: string | null
-    budget_effective_date?: string | null
-  }) => void
-  onSaveSemantics: (payload: {
-    transaction_kind?: Transaction['transaction_kind']
-    budget_behavior?: Transaction['budget_behavior']
-    transfer_match_status?: Transaction['transfer_match_status']
-    existing_debt_payment?: boolean
-  }) => void
+  onCreateCategory: (
+    transactionId: string,
+    name: string,
+    icon: string,
+    color: string
+  ) => void
+  onSaveRefundMetadata: (
+    transactionId: string,
+    payload: {
+      transaction_kind?: Transaction['transaction_kind']
+      linked_transaction_id?: string | null
+      budget_effective_date?: string | null
+    }
+  ) => void
+  onSaveSemantics: (
+    transactionId: string,
+    payload: {
+      transaction_kind?: Transaction['transaction_kind']
+      budget_behavior?: Transaction['budget_behavior']
+      transfer_match_status?: Transaction['transfer_match_status']
+      existing_debt_payment?: boolean
+    }
+  ) => void
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
@@ -1119,7 +1262,7 @@ function TransactionItem({
           )}
           aria-expanded={isEditing}
           aria-label={`Change category for ${merchantName}`}
-          onClick={onToggleCategoryPicker}
+          onClick={() => onToggleCategoryPicker(tx.id)}
         >
           <span className="tx-category-pill-icon">{categoryIcon}</span>
           <span className="tx-category-pill-label">{categoryName}</span>
@@ -1132,7 +1275,7 @@ function TransactionItem({
         <div className="tx-category-popover">
           <div className="tx-category-popover-header">
             <span>Pick a category</span>
-            {savingCategory && <span>Saving...</span>}
+            {isSaving && <span>Saving...</span>}
           </div>
           {categoriesLoading ? (
             <p className="text-secondary">Loading categories...</p>
@@ -1146,8 +1289,8 @@ function TransactionItem({
                     type="button"
                     className={`category-chip ${isSelected ? 'selected' : ''}`}
                     style={getCategoryButtonStyle(category, isSelected)}
-                    disabled={savingCategory}
-                    onClick={() => onSaveCategory(category.id)}
+                    disabled={isSaving}
+                    onClick={() => onSaveCategory(tx.id, category.id)}
                   >
                     <span className="category-chip-icon">{category.icon || '📦'}</span>
                     <span className="category-chip-label">
@@ -1164,30 +1307,30 @@ function TransactionItem({
           <div className="refund-tools">
             <div className="tx-category-popover-header">
               <span>Refund handling</span>
-              {savingCategory && <span>Saving...</span>}
+              {isSaving && <span>Saving...</span>}
             </div>
             <div className="refund-kind-actions">
               <button
                 type="button"
                 className={`btn btn-sm ${tx.transaction_kind === 'refund' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
-                onClick={() => onSaveRefundMetadata({ transaction_kind: 'refund' })}
+                disabled={isSaving}
+                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'refund' })}
               >
                 Refund
               </button>
               <button
                 type="button"
                 className={`btn btn-sm ${tx.transaction_kind === 'reimbursement' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
-                onClick={() => onSaveRefundMetadata({ transaction_kind: 'reimbursement' })}
+                disabled={isSaving}
+                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'reimbursement' })}
               >
                 Reimbursement
               </button>
               <button
                 type="button"
                 className={`btn btn-sm ${!tx.transaction_kind || tx.transaction_kind === 'normal' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
-                onClick={() => onSaveRefundMetadata({ transaction_kind: 'normal' })}
+                disabled={isSaving}
+                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'normal' })}
               >
                 Normal
               </button>
@@ -1205,7 +1348,7 @@ function TransactionItem({
               <select
                 className="input"
                 value={selectedLinkId}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onChange={(e) => setSelectedLinkId(e.target.value)}
               >
                 <option value="">No linked purchase</option>
@@ -1218,9 +1361,9 @@ function TransactionItem({
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                disabled={!selectedLinkId || savingCategory}
+                disabled={!selectedLinkId || isSaving}
                 onClick={() =>
-                  onSaveRefundMetadata({ linked_transaction_id: selectedLinkId })
+                  onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
                 }
               >
                 Link
@@ -1228,11 +1371,11 @@ function TransactionItem({
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                disabled={!tx.linked_transaction_id || savingCategory}
+                disabled={!tx.linked_transaction_id || isSaving}
                 onClick={() => {
                   setSelectedLinkId('')
                   setBudgetEffectiveDate(tx.date)
-                  onSaveRefundMetadata({ linked_transaction_id: null })
+                  onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
                 }}
               >
                 Clear
@@ -1243,15 +1386,15 @@ function TransactionItem({
                 type="date"
                 className="input"
                 value={budgetEffectiveDate}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onChange={(e) => setBudgetEffectiveDate(e.target.value)}
               />
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                disabled={!budgetEffectiveDate || savingCategory}
+                disabled={!budgetEffectiveDate || isSaving}
                 onClick={() =>
-                  onSaveRefundMetadata({
+                  onSaveRefundMetadata(tx.id, {
                     budget_effective_date: budgetEffectiveDate,
                   })
                 }
@@ -1263,15 +1406,15 @@ function TransactionItem({
           <div className="refund-tools">
             <div className="tx-category-popover-header">
               <span>Budget treatment</span>
-              {savingCategory && <span>Saving...</span>}
+              {isSaving && <span>Saving...</span>}
             </div>
             <div className="refund-kind-actions">
               <button
                 type="button"
                 className={`btn btn-sm ${tx.budget_behavior === 'count_as_spending' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onClick={() =>
-                  onSaveSemantics({
+                  onSaveSemantics(tx.id, {
                     transaction_kind:
                       tx.transaction_kind === 'transfer' ? 'transfer' : 'normal',
                     budget_behavior: 'count_as_spending',
@@ -1283,9 +1426,9 @@ function TransactionItem({
               <button
                 type="button"
                 className={`btn btn-sm ${tx.budget_behavior === 'count_as_income' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onClick={() =>
-                  onSaveSemantics({
+                  onSaveSemantics(tx.id, {
                     transaction_kind: 'normal',
                     budget_behavior: 'count_as_income',
                   })
@@ -1296,9 +1439,9 @@ function TransactionItem({
               <button
                 type="button"
                 className={`btn btn-sm ${tx.budget_behavior === 'exclude_as_transfer' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onClick={() =>
-                  onSaveSemantics({
+                  onSaveSemantics(tx.id, {
                     transaction_kind: 'transfer',
                     budget_behavior: 'exclude_as_transfer',
                   })
@@ -1309,9 +1452,9 @@ function TransactionItem({
               <button
                 type="button"
                 className={`btn btn-sm ${tx.budget_behavior === 'exclude_manual' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={savingCategory}
+                disabled={isSaving}
                 onClick={() =>
-                  onSaveSemantics({
+                  onSaveSemantics(tx.id, {
                     budget_behavior: 'exclude_manual',
                   })
                 }
@@ -1323,9 +1466,9 @@ function TransactionItem({
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                disabled={savingCategory}
+                disabled={isSaving}
                 onClick={() =>
-                  onSaveSemantics({
+                  onSaveSemantics(tx.id, {
                     existing_debt_payment: true,
                   })
                 }
@@ -1336,11 +1479,11 @@ function TransactionItem({
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
-                  disabled={savingCategory}
+                  disabled={isSaving}
                   onClick={() =>
-                    onSaveSemantics({
-                      transaction_kind: 'normal',
-                      transfer_match_status: 'ignored',
+                  onSaveSemantics(tx.id, {
+                    transaction_kind: 'normal',
+                    transfer_match_status: 'ignored',
                       budget_behavior: 'count_as_spending',
                     })
                   }
@@ -1352,10 +1495,10 @@ function TransactionItem({
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
-                  disabled={savingCategory}
+                  disabled={isSaving}
                   onClick={() =>
-                    onSaveSemantics({
-                      transfer_match_status: 'manually_matched',
+                  onSaveSemantics(tx.id, {
+                    transfer_match_status: 'manually_matched',
                     })
                   }
                 >
@@ -1378,7 +1521,7 @@ function TransactionItem({
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && newCategoryName.trim()) {
-                      onCreateCategory(newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                      onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
                       setNewCategoryName('')
                       setShowNewCategoryForm(false)
                     }
@@ -1412,14 +1555,14 @@ function TransactionItem({
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
-                    disabled={!newCategoryName.trim() || savingCategory}
+                    disabled={!newCategoryName.trim() || isSaving}
                     onClick={() => {
-                      onCreateCategory(newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                      onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
                       setNewCategoryName('')
                       setShowNewCategoryForm(false)
                     }}
                   >
-                    {savingCategory ? 'Creating...' : 'Create'}
+                    {isSaving ? 'Creating...' : 'Create'}
                   </button>
                   <button
                     type="button"
@@ -1466,8 +1609,14 @@ function TransactionItem({
               <button
                 type="button"
                 className="btn btn-primary"
-                disabled={savingCategory}
-                onClick={() => onApplySimilar(similarSuggestion)}
+                disabled={isSaving}
+                onClick={() =>
+                  onApplySimilar(
+                    similarSuggestion.transactionId,
+                    similarSuggestion.categoryId,
+                    'similar'
+                  )
+                }
               >
                 同步同名
               </button>
@@ -1484,4 +1633,4 @@ function TransactionItem({
       )}
     </div>
   )
-}
+})

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentUser } from '@/lib/auth/server'
 import { formatCurrency } from '@/lib/currency'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -6,18 +6,35 @@ import Link from 'next/link'
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const { supabase, user } = await getCurrentUser()
 
   if (!user) {
     redirect('/auth/login')
   }
 
-  // Fetch accounts
-  const { data: accounts } = await supabase
-    .from('accounts')
-    .select('*')
-    .eq('user_id', user.id)
+  // Fetch current month's transactions
+  const now = new Date()
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+
+  const [{ data: accounts }, { data: monthTx }, { data: recentTx }] =
+    await Promise.all([
+      supabase
+        .from('accounts')
+        .select('type, current_balance')
+        .eq('user_id', user.id),
+      supabase
+        .from('transactions')
+        .select('amount')
+        .eq('user_id', user.id)
+        .eq('pending', false)
+        .gte('date', firstDayOfMonth),
+      supabase
+        .from('transactions')
+        .select('id, merchant_name, description, amount, date, source')
+        .eq('user_id', user.id)
+        .order('date', { ascending: false })
+        .limit(5),
+    ])
 
   let totalBalance = 0
   if (accounts) {
@@ -29,18 +46,6 @@ export default async function DashboardPage() {
       }
     })
   }
-
-  // Fetch current month's transactions
-  const now = new Date()
-  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-
-  // Exclude pending transactions to match budget engine semantics.
-  const { data: monthTx } = await supabase
-    .from('transactions')
-    .select('amount, source')
-    .eq('user_id', user.id)
-    .eq('pending', false)
-    .gte('date', firstDayOfMonth)
 
   let monthlySpending = 0
   let monthlyIncome = 0
@@ -66,14 +71,6 @@ export default async function DashboardPage() {
     { label: 'Monthly Income', value: monthlyIncome, change: 'This Month', trend: 'neutral' },
     { label: 'Savings Rate', value: Math.max(0, savingsRate), isPercentage: true, change: 'This Month', trend: 'neutral' },
   ]
-
-  // Fetch recent transactions
-  const { data: recentTx } = await supabase
-    .from('transactions')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('date', { ascending: false })
-    .limit(5)
 
   // Mapping categories to icons roughly
   const getIcon = (category: string | null) => {

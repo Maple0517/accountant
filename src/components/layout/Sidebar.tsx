@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 
 const NAV_ITEMS = [
   { name: 'Dashboard', href: '/dashboard', icon: '📊' },
@@ -15,19 +15,10 @@ const NAV_ITEMS = [
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ]
 
-export default function Sidebar() {
+export default function Sidebar({ userEmail }: { userEmail: string | null }) {
   const pathname = usePathname()
   const router = useRouter()
-  const supabase = createClient()
-  const [email, setEmail] = useState<string | null>(null)
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        setEmail(data.user.email ?? null)
-      }
-    })
-  }, [supabase])
+  const supabase = useMemo(() => createClient(), [])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -60,10 +51,10 @@ export default function Sidebar() {
       <div className="sidebar-footer">
         <div className="user-info">
           <div className="avatar">
-            {email ? email.charAt(0).toUpperCase() : 'U'}
+            {userEmail ? userEmail.charAt(0).toUpperCase() : 'U'}
           </div>
           <div className="user-details">
-            <span className="user-email">{email || 'User'}</span>
+            <span className="user-email">{userEmail || 'User'}</span>
           </div>
         </div>
         <button className="btn-signout" onClick={handleSignOut}>
