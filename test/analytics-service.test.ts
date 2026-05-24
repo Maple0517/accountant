@@ -21,7 +21,8 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
-      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+      category_id: 'food',
+      categories: { name: 'Food', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800' },
     },
     {
       amount: -100,
@@ -29,6 +30,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
       budget_behavior: 'count_as_income',
       budget_effective_date: null,
       transaction_kind: 'normal',
+      category_id: 'income',
       categories: { name: 'Income', icon: '💰', color: '#4caf50' },
     },
     {
@@ -37,6 +39,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
       budget_behavior: 'exclude_as_transfer',
       budget_effective_date: null,
       transaction_kind: 'transfer',
+      category_id: 'transfer',
       categories: { name: 'Transfer', icon: '🔁', color: '#9e9e9e' },
     },
     {
@@ -45,7 +48,17 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
       budget_behavior: 'count_as_spending',
       budget_effective_date: '2026-05-02',
       transaction_kind: 'refund',
-      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+      category_id: 'food',
+      categories: { name: 'Food', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: 5,
+      date: '2026-05-03',
+      budget_behavior: 'count_as_spending',
+      budget_effective_date: null,
+      transaction_kind: 'normal',
+      category_id: 'subscription',
+      categories: { name: '订阅', icon: '💻', color: '#ef5350' },
     },
   ]
   const supabase = {
@@ -73,13 +86,15 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
 
   const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month')
 
-  assert.equal(summary.totalSpending, 17)
+  assert.equal(summary.totalSpending, 22)
   assert.equal(summary.totalIncome, 100)
   assert.deepEqual(summary.byCategory, [
-    { name: 'Food', icon: '🍔', color: '#ff9800', total: 17 },
+    { name: 'Food & Drink', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800', total: 17 },
+    { name: 'Subscriptions', name_zh: '订阅', icon: '💻', color: '#ef5350', total: 5 },
   ])
   assert.deepEqual(summary.byDay, [
     { date: '2026-05-01', total: 25 },
     { date: '2026-05-02', total: -8 },
+    { date: '2026-05-03', total: 5 },
   ])
 })

@@ -1,16 +1,18 @@
-import { I18nProvider } from '@/i18n/client'
+import { I18nProvider, type Locale } from '@/i18n/client'
 import Sidebar from './Sidebar'
 import Header from './Header'
 
 export function AppShell({
   children,
   userEmail,
+  initialLocale = 'en',
 }: {
   children: React.ReactNode
   userEmail: string | null
+  initialLocale?: Locale
 }) {
   return (
-    <I18nProvider>
+    <I18nProvider initialLocale={initialLocale}>
       <div className="app-layout">
       <Sidebar userEmail={userEmail} />
       <div className="main-content">

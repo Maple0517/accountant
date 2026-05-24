@@ -1,18 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { DEFAULT_CATEGORIES } from '@/lib/categories'
 import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
+
+type AnalyticsCategoryRelation = {
+  name?: string | null
+  name_zh?: string | null
+  icon?: string | null
+  color?: string | null
+}
 
 type AnalyticsTransactionRow = {
   amount: number | string
   date: string
+  category_id?: string | null
   budget_effective_date?: string | null
   budget_behavior?: string | null
   transaction_kind?: string | null
-  categories?: {
-    name?: string | null
-    name_zh?: string | null
-    icon?: string | null
-    color?: string | null
-  } | null
+  categories?: AnalyticsCategoryRelation | AnalyticsCategoryRelation[] | null
 }
 
 function getDateFrom(period: AnalyticsPeriod): string {
@@ -72,6 +76,25 @@ function getSemanticAmounts(tx: AnalyticsTransactionRow) {
   return { spending: 0, income: 0, categorySpend: 0 }
 }
 
+function normalizeCategoryDisplay(
+  category: AnalyticsTransactionRow['categories']
+) {
+  const cat = Array.isArray(category) ? category[0] : category
+  const canonical = DEFAULT_CATEGORIES.find((defaultCategory) =>
+    defaultCategory.name === cat?.name ||
+    defaultCategory.name_zh === cat?.name ||
+    defaultCategory.name === cat?.name_zh ||
+    defaultCategory.name_zh === cat?.name_zh
+  )
+
+  return {
+    name: canonical?.name || cat?.name || cat?.name_zh || 'Other',
+    name_zh: canonical?.name_zh || cat?.name_zh || null,
+    icon: cat?.icon || canonical?.icon || '📦',
+    color: cat?.color || canonical?.color || '#8888a0',
+  }
+}
+
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
@@ -81,7 +104,7 @@ export async function getAnalyticsSummary(
   const dateFrom = getDateFrom(period)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, date, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
+    .select('amount, date, category_id, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
     .eq('user_id', userId)
     .gte('date', dateFrom)
     .order('date', { ascending: true })
@@ -107,17 +130,17 @@ export async function getAnalyticsSummary(
 
     if (semanticAmounts.categorySpend !== 0) {
       const rawCat = tx.categories
-      const cat = Array.isArray(rawCat) ? rawCat[0] : rawCat
-      const catName = cat?.name_zh || cat?.name || 'Other'
-      const existing = categoryMap.get(catName) || {
-        name: catName,
-        ...(cat?.name_zh ? { name_zh: cat.name_zh } : {}),
-        icon: cat?.icon || '📦',
-        color: cat?.color || '#8888a0',
+      const cat = normalizeCategoryDisplay(rawCat)
+      const catKey = tx.category_id || cat.name
+      const existing = categoryMap.get(catKey) || {
+        name: cat.name,
+        name_zh: cat.name_zh,
+        icon: cat.icon,
+        color: cat.color,
         total: 0,
       }
       existing.total += semanticAmounts.categorySpend
-      categoryMap.set(catName, existing)
+      categoryMap.set(catKey, existing)
     }
 
     const budgetDate = getBudgetDate(tx)

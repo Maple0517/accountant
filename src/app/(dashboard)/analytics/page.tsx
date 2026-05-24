@@ -90,7 +90,7 @@ export default function AnalyticsPage() {
 
           <AnalyticsCharts data={data} currencyCode={currencyCode} />
 
-          <Card padding="none">
+          <Card padding="none" className="top-categories-card">
             <div className="card-header">
               <div>
                 <h3>{t('analytics.topCategories')}</h3>
@@ -107,7 +107,7 @@ export default function AnalyticsPage() {
                       <span className="cat-name">{categoryName(cat)}</span>
                     </div>
                     <div className="cat-bar-wrapper">
-                      <div className="cat-bar" style={{ width: `${percentage}%`, backgroundColor: cat.color || '#7c5cff' }} />
+                      <div className="cat-bar" style={{ width: `${Math.min(Math.abs(percentage), 100)}%`, backgroundColor: cat.color || '#7c5cff' }} />
                     </div>
                     <div className="cat-amount">
                       <span className="cat-value">{formatCurrency(cat.total, currencyCode)}</span>

@@ -64,7 +64,7 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
   return (
     <div className="plaid-link-container">
       {error && <div className="error-message">{error}</div>}
-      <button className="btn btn-primary btn-link-bank" onClick={() => open()} disabled={!ready || !token || loading} type="button">
+      <button className="btn btn-primary btn-md btn-link-bank" onClick={() => open()} disabled={!ready || !token || loading} type="button">
         {loading ? t('common.connecting') : t('accounts.connectBank')}
       </button>
     </div>

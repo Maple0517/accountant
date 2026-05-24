@@ -6,7 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
 } from 'react'
 
 export type Locale = 'en' | 'zh'
@@ -15,6 +15,10 @@ type TranslationValue = string | ((params?: Record<string, string | number>) => 
 type TranslationDictionary = Record<string, TranslationValue>
 
 const STORAGE_KEY = 'accountant.locale'
+const COOKIE_KEY = 'accountant.locale'
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
+const LOCALE_CHANGE_EVENT = 'accountant-locale-change'
+let clientLocaleOverride: Locale | null = null
 
 const en: TranslationDictionary = {
   'app.brand': 'Accountant',
@@ -149,6 +153,26 @@ const en: TranslationDictionary = {
   'accounts.plaidInitError': 'Error initializing Plaid',
   'accounts.linkError': 'Error linking account',
   'accounts.connectBank': 'Connect bank',
+  'accounts.manageConnection': 'Manage connection',
+  'accounts.connection': 'Connection',
+  'accounts.connectionAccountCount': ({ count } = {}) => `${count} account${count === 1 ? '' : 's'} in this connection`,
+  'accounts.manageSharedAccountsTitle': 'Manage shared cards',
+  'accounts.manageSharedAccountsCopy': 'Open Plaid to choose which cards and accounts remain shared. Unselected accounts stop syncing here, while their existing local history stays in Accountant.',
+  'accounts.manageSharedAccounts': 'Choose shared cards',
+  'accounts.manageSharedAccountsSuccess': 'Shared accounts updated. Unselected accounts will no longer sync.',
+  'accounts.manageSharedAccountsError': 'Failed to update shared accounts.',
+  'accounts.disconnectKeepHistoryTitle': 'Disconnect and keep history',
+  'accounts.disconnectKeepHistoryCopy': 'Stops Plaid access and future syncs for this bank connection. Existing accounts and transactions stay in your history.',
+  'accounts.disconnectKeepHistory': 'Disconnect and keep history',
+  'accounts.disconnecting': 'Disconnecting...',
+  'accounts.disconnectSuccess': 'Connection disconnected. Historical accounts and transactions were kept.',
+  'accounts.disconnectError': 'Failed to disconnect connection.',
+  'accounts.deleteHistoryTitle': 'Delete local history',
+  'accounts.deleteHistoryCopy': 'This also removes local accounts and transactions for this bank connection. Budgets and reports that used those transactions will change.',
+  'accounts.deleteHistoryConfirm': 'I understand this will permanently delete local history for this connection.',
+  'accounts.deleteHistory': 'Delete connection and history',
+  'accounts.deletingHistory': 'Deleting history...',
+  'accounts.deleteHistorySuccess': 'Connection and local history deleted.',
   'analytics.title': 'Insights',
   'analytics.subtitle': 'Conclusions first, charts second: understand what changed in your money flow.',
   'analytics.week': 'Week',
@@ -501,6 +525,26 @@ const zh: TranslationDictionary = {
   'accounts.plaidInitError': 'Plaid 初始化失败',
   'accounts.linkError': '连接账户失败',
   'accounts.connectBank': '连接银行',
+  'accounts.manageConnection': '管理连接',
+  'accounts.connection': '银行连接',
+  'accounts.connectionAccountCount': ({ count } = {}) => `此连接下有 ${count} 个账户`,
+  'accounts.manageSharedAccountsTitle': '管理共享卡片',
+  'accounts.manageSharedAccountsCopy': '打开 Plaid 重新选择哪些卡片和账户继续共享。取消选择的账户会停止同步，已有本地历史会保留在 Accountant 里。',
+  'accounts.manageSharedAccounts': '选择共享卡片',
+  'accounts.manageSharedAccountsSuccess': '共享账户已更新，取消选择的账户将不再同步。',
+  'accounts.manageSharedAccountsError': '更新共享账户失败。',
+  'accounts.disconnectKeepHistoryTitle': '断开连接并保留历史',
+  'accounts.disconnectKeepHistoryCopy': '停止 Plaid 访问和后续同步，但保留已有账户与交易历史。',
+  'accounts.disconnectKeepHistory': '断开并保留历史',
+  'accounts.disconnecting': '正在断开...',
+  'accounts.disconnectSuccess': '连接已断开，历史账户和交易已保留。',
+  'accounts.disconnectError': '断开连接失败。',
+  'accounts.deleteHistoryTitle': '删除本地历史',
+  'accounts.deleteHistoryCopy': '这会同时删除此银行连接下的本地账户和交易；依赖这些交易的预算与报表会随之变化。',
+  'accounts.deleteHistoryConfirm': '我理解这会永久删除此连接的本地历史。',
+  'accounts.deleteHistory': '删除连接和历史',
+  'accounts.deletingHistory': '正在删除历史...',
+  'accounts.deleteHistorySuccess': '连接和本地历史已删除。',
   'analytics.title': '洞察',
   'analytics.subtitle': '先看结论，再看图表：理解资金流变化。',
   'analytics.week': '周',
@@ -688,16 +732,49 @@ const zh: TranslationDictionary = {
   'settings.endpointLabel': '端点',
 }
 
-function detectInitialLocale(): Locale {
-  if (typeof window === 'undefined') return 'en'
-  const stored = window.localStorage.getItem(STORAGE_KEY)
+function readStoredLocale(): Locale | null {
+  try {
+    const stored = window.localStorage?.getItem(STORAGE_KEY)
+    return stored === 'en' || stored === 'zh' ? stored : null
+  } catch {
+    return null
+  }
+}
+
+function detectBrowserLocale(fallback: Locale = 'en'): Locale {
+  if (clientLocaleOverride) return clientLocaleOverride
+  const stored = readStoredLocale()
   if (stored === 'en' || stored === 'zh') return stored
   const languages = window.navigator.languages?.length
     ? window.navigator.languages
     : [window.navigator.language]
   return languages.some((language) => language.toLowerCase().startsWith('zh'))
     ? 'zh'
-    : 'en'
+    : fallback
+}
+
+function persistLocale(locale: Locale) {
+  clientLocaleOverride = locale
+  try {
+    window.localStorage?.setItem(STORAGE_KEY, locale)
+  } catch {
+    // Some embedded browser contexts deny storage; keep the in-memory locale.
+  }
+  try {
+    document.cookie = `${COOKIE_KEY}=${locale}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax`
+  } catch {
+    // Cookie writes can also be unavailable in sandboxed previews.
+  }
+  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+}
+
+function subscribeToLocaleChanges(onStoreChange: () => void) {
+  window.addEventListener('storage', onStoreChange)
+  window.addEventListener(LOCALE_CHANGE_EVENT, onStoreChange)
+  return () => {
+    window.removeEventListener('storage', onStoreChange)
+    window.removeEventListener(LOCALE_CHANGE_EVENT, onStoreChange)
+  }
 }
 
 function translateFromDictionary(
@@ -720,17 +797,31 @@ type I18nContextValue = {
 
 const I18nContext = createContext<I18nContextValue | null>(null)
 
-export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(() => detectInitialLocale())
+export function I18nProvider({
+  children,
+  initialLocale = 'en',
+}: {
+  children: React.ReactNode
+  initialLocale?: Locale
+}) {
+  const getLocaleSnapshot = useCallback(
+    () => detectBrowserLocale(initialLocale),
+    [initialLocale]
+  )
+  const getServerLocaleSnapshot = useCallback(() => initialLocale, [initialLocale])
+  const locale = useSyncExternalStore(
+    subscribeToLocaleChanges,
+    getLocaleSnapshot,
+    getServerLocaleSnapshot
+  )
 
   const setLocale = useCallback((nextLocale: Locale) => {
-    setLocaleState(nextLocale)
-    window.localStorage.setItem(STORAGE_KEY, nextLocale)
-    document.documentElement.lang = nextLocale === 'zh' ? 'zh-CN' : 'en'
+    persistLocale(nextLocale)
+    window.dispatchEvent(new Event(LOCALE_CHANGE_EVENT))
   }, [])
 
   useEffect(() => {
-    document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+    persistLocale(locale)
   }, [locale])
 
   const value = useMemo<I18nContextValue>(() => {

@@ -13,6 +13,7 @@ export const DEFAULT_CATEGORIES: AppCategory[] = [
   { name: 'Transportation', name_zh: '交通出行', icon: '🚗', color: '#2196f3', type: 'expense', plaidPrimary: ['TRANSPORTATION'] },
   { name: 'Shopping', name_zh: '购物消费', icon: '🛍️', color: '#e91e63', type: 'expense', plaidPrimary: ['SHOPS', 'GENERAL_MERCHANDISE', 'HOME_IMPROVEMENT'] },
   { name: 'Entertainment', name_zh: '休闲娱乐', icon: '🎬', color: '#9c27b0', type: 'expense', plaidPrimary: ['ENTERTAINMENT', 'RECREATION'] },
+  { name: 'Subscriptions', name_zh: '订阅', icon: '💻', color: '#ef5350', type: 'expense' },
   { name: 'Bills & Utilities', name_zh: '生活缴费', icon: '💡', color: '#ffc107', type: 'expense', plaidPrimary: ['BILLS_AND_UTILITIES', 'RENT_AND_UTILITIES', 'BANK_FEES', 'LOAN_PAYMENTS'] },
   { name: 'Health', name_zh: '医疗保健', icon: '🏥', color: '#f44336', type: 'expense', plaidPrimary: ['HEALTHCARE', 'MEDICAL', 'PERSONAL_CARE'] },
   { name: 'Education', name_zh: '学习教育', icon: '📚', color: '#3f51b5', type: 'expense', plaidPrimary: ['EDUCATION'] },
