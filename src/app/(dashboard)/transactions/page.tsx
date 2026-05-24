@@ -1,8 +1,9 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import useSWR from 'swr'
 import { formatCurrency } from '@/lib/currency'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Badge } from '@/components/ui/Badge'
 import {
   AI_CLASSIFIED_TAG,
   AI_PENDING_TAG,
@@ -21,6 +22,18 @@ type TransactionFilter = {
 }
 
 type TransactionGroupBy = 'date' | 'category'
+type SavedView = 'all' | 'needs_review' | 'uncategorized' | 'ai_pending' | 'refunds' | 'transfers' | 'pending' | 'large'
+
+const SAVED_VIEWS: Array<{ id: SavedView; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'needs_review', label: 'Needs Review' },
+  { id: 'uncategorized', label: 'Uncategorized' },
+  { id: 'ai_pending', label: 'AI Pending' },
+  { id: 'refunds', label: 'Refunds' },
+  { id: 'transfers', label: 'Transfers' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'large', label: 'Large' },
+]
 
 
 type TransactionWithRelations = Transaction & {
@@ -77,7 +90,27 @@ type RefundLinkCandidate = {
   label: string
 }
 
+type RefundFormDraft = {
+  txId: string
+  serverSelectedLinkId: string
+  serverBudgetEffectiveDate: string
+  selectedLinkId: string
+  budgetEffectiveDate: string
+}
+
 const EMPTY_LINK_CANDIDATES: RefundLinkCandidate[] = []
+
+function getRefundDraftFromTransaction(tx: TransactionWithRelations): RefundFormDraft {
+  const serverSelectedLinkId = tx.linked_transaction_id || ''
+  const serverBudgetEffectiveDate = tx.budget_effective_date || tx.date
+  return {
+    txId: tx.id,
+    serverSelectedLinkId,
+    serverBudgetEffectiveDate,
+    selectedLinkId: serverSelectedLinkId,
+    budgetEffectiveDate: serverBudgetEffectiveDate,
+  }
+}
 
 function isActiveAiJob(job: AiClassificationJob | null): job is AiClassificationJob {
   return job?.status === 'queued' || job?.status === 'running'
@@ -154,9 +187,14 @@ const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 const TRANSACTIONS_PAGE_SIZE = 50
 
+function emptyViewCounts(): Record<SavedView, number> {
+  return Object.fromEntries(SAVED_VIEWS.map((view) => [view.id, 0])) as Record<SavedView, number>
+}
+
 type TransactionsApiResponse = {
   transactions: TransactionWithRelations[]
   totalCount: number
+  viewCounts?: Record<SavedView, number>
   categories: Category[]
   accounts: TransactionAccountRelation[]
   limit: number
@@ -167,6 +205,7 @@ type TransactionsApiResponse = {
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [totalCount, setTotalCount] = useState(0)
+  const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [refreshingAi, setRefreshingAi] = useState(false)
@@ -176,6 +215,7 @@ export default function TransactionsPage() {
   const [accountOptions, setAccountOptions] = useState<AccountFilterOption[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [groupBy, setGroupBy] = useState<TransactionGroupBy>('date')
+  const [savedView, setSavedView] = useState<SavedView>('all')
   const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null)
   const [savingTransactionId, setSavingTransactionId] = useState<string | null>(null)
   const [categorySaveStatus, setCategorySaveStatus] = useState<{
@@ -234,6 +274,7 @@ export default function TransactionsPage() {
         sourceOrAccount: queryFilters.sourceOrAccount,
         category: queryFilters.category,
         currency: queryFilters.currency,
+        savedView,
       })
 
       if (queryFilters.search) params.set('search', queryFilters.search)
@@ -256,6 +297,10 @@ export default function TransactionsPage() {
           append ? [...current, ...nextTransactions] : nextTransactions
         )
         setTotalCount(payload.totalCount || 0)
+        setServerViewCounts((current) => ({
+          ...current,
+          ...(payload.viewCounts || {}),
+        }))
         setCategories(payload.categories || [])
         setCategoriesLoading(false)
         setAccountOptions(
@@ -288,43 +333,16 @@ export default function TransactionsPage() {
         }
       }
     },
-    [queryFilters]
+    [queryFilters, savedView]
   )
 
-  const initialParams = new URLSearchParams({
-    limit: String(TRANSACTIONS_PAGE_SIZE),
-    offset: '0',
-    sourceOrAccount: queryFilters.sourceOrAccount,
-    category: queryFilters.category,
-    currency: queryFilters.currency,
-  })
-  if (queryFilters.search) initialParams.set('search', queryFilters.search)
-  if (queryFilters.dateFrom) initialParams.set('dateFrom', queryFilters.dateFrom)
-  if (queryFilters.dateTo) initialParams.set('dateTo', queryFilters.dateTo)
-
-  const { data: initialData } = useSWR<TransactionsApiResponse>(`/api/transactions?${initialParams.toString()}`, (url: string) => fetch(url).then(r => r.json()), { revalidateOnFocus: false })
-
   useEffect(() => {
-    if (initialData) {
-      setTransactions(initialData.transactions || [])
-      setTotalCount(initialData.totalCount || 0)
-      setCategories(initialData.categories || [])
-      setCategoriesLoading(false)
-      setAccountOptions(
-        (initialData.accounts || [])
-          .map((account) => ({
-            id: account.id || '',
-            label: formatAccountSourceLabel(account),
-            institutionName: account.plaid_items?.institution_name ?? null,
-            accountName: account.name ?? account.official_name ?? null,
-            mask: account.mask ?? null,
-            type: account.type ?? null,
-          }))
-          .filter((account) => account.id)
-      )
-      setLoading(false)
-    }
-  }, [initialData])
+    const timeoutId = window.setTimeout(() => {
+      fetchTransactions()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [fetchTransactions])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
@@ -670,9 +688,11 @@ export default function TransactionsPage() {
     []
   )
 
-  const transactionsGroupedByDate = useMemo(
+  const visibleTransactions = transactions
+
+  const visibleTransactionsGroupedByDate = useMemo(
     () =>
-      transactions.reduce(
+      visibleTransactions.reduce(
         (groups, tx) => {
           const date = tx.date
           if (!groups[date]) groups[date] = []
@@ -681,16 +701,16 @@ export default function TransactionsPage() {
         },
         {} as Record<string, TransactionWithRelations[]>
       ),
-    [transactions]
+    [visibleTransactions]
   )
 
-  const transactionsGroupedByCategory = useMemo(() => {
+  const visibleTransactionsGroupedByCategory = useMemo(() => {
     const categorySortMap = new Map(
       categories.map((category) => [category.id, category.sort_order ?? 0])
     )
     const groupMap = new Map<string, CategoryTransactionGroup>()
 
-    for (const tx of transactions) {
+    for (const tx of visibleTransactions) {
       const categoryId = tx.category_id ?? null
       const key = categoryId || 'uncategorized'
       const category = tx.categories
@@ -700,7 +720,7 @@ export default function TransactionsPage() {
           key,
           categoryId,
           categoryName: category?.name_zh || category?.name || 'Uncategorized',
-          categoryIcon: category?.icon || '📦',
+          categoryIcon: category?.icon || '•',
           categoryColor: category?.color || null,
           sortOrder: categoryId ? categorySortMap.get(categoryId) ?? 9999 : 10000,
           transactions: [],
@@ -717,9 +737,13 @@ export default function TransactionsPage() {
       if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
       return a.categoryName.localeCompare(b.categoryName)
     })
-  }, [transactions, categories])
+  }, [visibleTransactions, categories])
 
-  const hasTransactions = transactions.length > 0
+  const pendingCount = serverViewCounts.pending || 0
+  const needsReviewCount = serverViewCounts.needs_review || 0
+  const totalVisibleAmount = visibleTransactions.reduce((sum, tx) => sum + Number(tx.amount), 0)
+  const visibleCurrency = visibleTransactions.find((tx) => tx.iso_currency_code)?.iso_currency_code || 'USD'
+  const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
 
   const handleLoadMore = useCallback(() => {
@@ -838,26 +862,27 @@ export default function TransactionsPage() {
 
   return (
     <div className="transactions-page">
-      <div className="page-header">
-        <div>
-          <h1>Transactions</h1>
-          <p className="text-secondary">
-            Showing {transactions.length}
-            {totalCount > transactions.length ? ` of ${totalCount}` : ''}{' '}
-            transaction{totalCount !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleRefreshAiClassification}
-          disabled={refreshingAi || isActiveAiJob(aiJob)}
-          title="Queue all pending Plaid fallback classifications for AI"
-        >
-          {refreshingAi || isActiveAiJob(aiJob)
-            ? 'Processing AI...'
-            : '✨ Queue AI Refresh'}
-        </button>
+      <PageHeader
+        title="Transactions"
+        subtitle={`Showing ${visibleTransactions.length} of ${transactions.length}${totalCount > transactions.length ? ` loaded / ${totalCount} total` : ''} transactions`}
+        actions={
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={handleRefreshAiClassification}
+            disabled={refreshingAi || isActiveAiJob(aiJob)}
+            title="Queue all pending Plaid fallback classifications for AI"
+          >
+            {refreshingAi || isActiveAiJob(aiJob) ? 'Processing AI...' : 'Queue AI refresh'}
+          </button>
+        }
+      />
+
+      <div className="transactions-summary-grid">
+        <div className="card card-pad-sm"><span className="metric-label">Loaded</span><span className="metric-value">{transactions.length}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">Needs review</span><span className="metric-value">{needsReviewCount}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">Pending</span><span className="metric-value">{pendingCount}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">Visible net</span><span className="metric-value">{formatCurrency(-totalVisibleAmount, visibleCurrency)}</span></div>
       </div>
 
       {(aiRefreshStatus || aiJob) && (
@@ -872,13 +897,27 @@ export default function TransactionsPage() {
         </div>
       )}
 
+      <div className="saved-view-row" aria-label="Saved transaction views">
+        {SAVED_VIEWS.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className={`btn btn-sm ${savedView === view.id ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setSavedView(view.id)}
+          >
+            {view.label}
+            <span className="badge badge-muted">{serverViewCounts[view.id] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="card filters-bar">
         <div className="filter-group">
           <input
             type="text"
             className="input"
             aria-label="Search transactions"
-            placeholder="🔍 Search merchant or description..."
+            placeholder="Search merchant or description..."
             value={filters.search}
             onChange={(e) =>
               setFilters((f) => ({ ...f, search: e.target.value }))
@@ -894,14 +933,14 @@ export default function TransactionsPage() {
               setFilters((f) => ({ ...f, sourceOrAccount: e.target.value }))
             }
           >
-            <option value="all">All Accounts</option>
+            <option value="all">All accounts</option>
             {accountOptions.map((account) => (
               <option key={account.id} value={`account:${account.id}`}>
-                🏦 {account.label}
+                {account.label}
               </option>
             ))}
-            <option value="manual">✏️ Manual</option>
-            <option value="receipt">📸 Receipt</option>
+            <option value="manual">Manual</option>
+            <option value="receipt">Receipt</option>
           </select>
           <select
             className="input"
@@ -911,13 +950,13 @@ export default function TransactionsPage() {
               setFilters((f) => ({ ...f, category: e.target.value }))
             }
           >
-            <option value="all">All Categories</option>
+            <option value="all">All categories</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
-                {category.icon || '📦'} {category.name_zh || category.name}
+                {category.icon || '•'} {category.name_zh || category.name}
               </option>
             ))}
-            <option value="uncategorized">📦 Uncategorized</option>
+            <option value="uncategorized">Uncategorized</option>
           </select>
           <select
             className="input"
@@ -927,9 +966,9 @@ export default function TransactionsPage() {
               setFilters((f) => ({ ...f, currency: e.target.value }))
             }
           >
-            <option value="all">All Currencies</option>
-            <option value="USD">$ USD</option>
-            <option value="CNY">¥ CNY</option>
+            <option value="all">All currencies</option>
+            <option value="USD">USD</option>
+            <option value="CNY">CNY</option>
           </select>
           <input
             type="date"
@@ -939,7 +978,6 @@ export default function TransactionsPage() {
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateFrom: e.target.value }))
             }
-            placeholder="From"
           />
           <input
             type="date"
@@ -949,7 +987,6 @@ export default function TransactionsPage() {
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateTo: e.target.value }))
             }
-            placeholder="To"
           />
         </div>
         <div className="view-toggle-row">
@@ -984,16 +1021,15 @@ export default function TransactionsPage() {
         </div>
       ) : !hasTransactions ? (
         <div className="card empty-state">
-          <span className="empty-icon">📭</span>
-          <h3>No transactions yet</h3>
+          <h3>No transactions in this view</h3>
           <p className="text-secondary">
-            Connect a bank account or add a manual transaction to get started.
+            Try another saved view or adjust filters.
           </p>
         </div>
       ) : (
         <div className="transaction-groups">
           {groupBy === 'date'
-            ? Object.entries(transactionsGroupedByDate).map(([date, txs]) => {
+            ? Object.entries(visibleTransactionsGroupedByDate).map(([date, txs]) => {
                 const dayTotal = txs.reduce(
                   (sum, tx) => sum + Number(tx.amount),
                   0
@@ -1017,34 +1053,21 @@ export default function TransactionsPage() {
                   </div>
                 )
               })
-            : transactionsGroupedByCategory.map((group) => (
+            : visibleTransactionsGroupedByCategory.map((group) => (
                 <div key={group.key} className="transaction-group">
                   <div className="group-header">
                     <span className="group-date">
                       <span
                         className="group-category-icon"
-                        style={
-                          group.categoryColor
-                            ? { color: group.categoryColor }
-                            : undefined
-                        }
+                        style={group.categoryColor ? { color: group.categoryColor } : undefined}
                       >
                         {group.categoryIcon}
                       </span>{' '}
                       {group.categoryName}
-                      <span className="group-count">
-                        {' '}
-                        · {group.transactions.length} transaction
-                        {group.transactions.length === 1 ? '' : 's'}
-                      </span>
+                      <span className="group-count"> · {group.transactions.length} transaction{group.transactions.length === 1 ? '' : 's'}</span>
                     </span>
-                    <span
-                      className={`group-total ${group.total <= 0 ? 'income' : 'expense'}`}
-                    >
-                      {formatCurrency(
-                        -group.total,
-                        group.transactions[0]?.iso_currency_code || 'USD'
-                      )}
+                    <span className={`group-total ${group.total <= 0 ? 'income' : 'expense'}`}>
+                      {formatCurrency(-group.total, group.transactions[0]?.iso_currency_code || 'USD')}
                     </span>
                   </div>
                   <div className="card transaction-list-card">
@@ -1143,43 +1166,45 @@ const TransactionItem = memo(function TransactionItem({
   const [newCategoryName, setNewCategoryName] = useState('')
   const [selectedNewIcon, setSelectedNewIcon] = useState(CATEGORY_ICONS[0])
   const [selectedNewColor, setSelectedNewColor] = useState(CATEGORY_COLORS[5])
-  const serverSelectedLinkId = tx.linked_transaction_id || ''
-  const serverBudgetEffectiveDate = tx.budget_effective_date || tx.date
-  const [refundFormDraft, setRefundFormDraft] = useState(() => ({
-    txId: tx.id,
-    serverSelectedLinkId,
-    serverBudgetEffectiveDate,
-    selectedLinkId: serverSelectedLinkId,
-    budgetEffectiveDate: serverBudgetEffectiveDate,
-  }))
+  const [refundFormDraft, setRefundFormDraft] = useState<RefundFormDraft>(() =>
+    getRefundDraftFromTransaction(tx)
+  )
+  const syncedRefundFormDraft =
+    refundFormDraft.txId === tx.id &&
+    refundFormDraft.serverSelectedLinkId === (tx.linked_transaction_id || '') &&
+    refundFormDraft.serverBudgetEffectiveDate === (tx.budget_effective_date || tx.date)
+      ? refundFormDraft
+      : getRefundDraftFromTransaction(tx)
 
-  if (
-    refundFormDraft.txId !== tx.id ||
-    refundFormDraft.serverSelectedLinkId !== serverSelectedLinkId ||
-    refundFormDraft.serverBudgetEffectiveDate !== serverBudgetEffectiveDate
-  ) {
-    setRefundFormDraft({
-      txId: tx.id,
-      serverSelectedLinkId,
-      serverBudgetEffectiveDate,
-      selectedLinkId: serverSelectedLinkId,
-      budgetEffectiveDate: serverBudgetEffectiveDate,
-    })
-  }
-
-  const selectedLinkId = refundFormDraft.selectedLinkId
-  const budgetEffectiveDate = refundFormDraft.budgetEffectiveDate
+  const selectedLinkId = syncedRefundFormDraft.selectedLinkId
+  const budgetEffectiveDate = syncedRefundFormDraft.budgetEffectiveDate
   const setSelectedLinkId = (selectedLinkId: string) =>
-    setRefundFormDraft((draft) => ({ ...draft, selectedLinkId }))
+    setRefundFormDraft({ ...syncedRefundFormDraft, selectedLinkId })
   const setBudgetEffectiveDate = (budgetEffectiveDate: string) =>
-    setRefundFormDraft((draft) => ({ ...draft, budgetEffectiveDate }))
+    setRefundFormDraft({ ...syncedRefundFormDraft, budgetEffectiveDate })
 
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
     classificationStatus = 'AI Pending'
   } else if (tags.includes(AI_CLASSIFIED_TAG)) {
-    classificationStatus = 'AI'
+    classificationStatus = 'AI Classified'
   }
+
+  const badgeParts: Array<{ label: string; tone: 'accent' | 'success' | 'warning' | 'info' | 'muted' }> = []
+  if (classificationStatus) {
+    badgeParts.push({ label: classificationStatus, tone: classificationStatus === 'AI Pending' ? 'accent' : 'success' })
+  }
+  if (tx.pending) badgeParts.push({ label: 'Pending', tone: 'warning' })
+  if (tx.transaction_kind === 'refund') badgeParts.push({ label: 'Refund', tone: 'success' })
+  if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: 'Reimbursement', tone: 'success' })
+  if (tx.transaction_kind === 'transfer') badgeParts.push({ label: 'Transfer', tone: 'info' })
+  if (tx.budget_behavior === 'count_as_spending') badgeParts.push({ label: 'Counts spending', tone: 'warning' })
+  if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: 'Counts income', tone: 'success' })
+  if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: 'Excluded transfer', tone: 'muted' })
+  if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: 'Excluded', tone: 'muted' })
+  if (tx.transfer_match_status === 'auto_matched' || tx.transfer_match_status === 'manually_matched') badgeParts.push({ label: 'Matched', tone: 'success' })
+  if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: 'Suggested', tone: 'warning' })
+  if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: 'Unmatched', tone: 'warning' })
 
   const metaParts: string[] = []
 
@@ -1239,6 +1264,13 @@ const TransactionItem = memo(function TransactionItem({
         <div className="tx-details">
           <span className="tx-merchant">{merchantName}</span>
           {metaText && <span className="tx-meta">{metaText}</span>}
+          {badgeParts.length > 0 && (
+            <span className="tx-badges">
+              {badgeParts.slice(0, 5).map((badge) => (
+                <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
+              ))}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -1368,8 +1400,11 @@ const TransactionItem = memo(function TransactionItem({
                 className="btn btn-ghost btn-sm"
                 disabled={!tx.linked_transaction_id || isSaving}
                 onClick={() => {
-                  setSelectedLinkId('')
-                  setBudgetEffectiveDate(tx.date)
+                  setRefundFormDraft({
+                    ...syncedRefundFormDraft,
+                    selectedLinkId: '',
+                    budgetEffectiveDate: tx.date,
+                  })
                   onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
                 }}
               >

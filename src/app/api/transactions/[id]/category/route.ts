@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
 import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
 
@@ -16,14 +17,16 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
+    const authClient = await createClient()
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await authClient.auth.getUser()
 
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createAdminClient()
 
     const { id } = await context.params
     const body = await request.json()
@@ -133,6 +136,14 @@ export async function PATCH(
         .eq('user_id', user.id)
 
       if (updateError) {
+        console.error('Category update failed', {
+          transactionId: id,
+          userId: user.id,
+          categoryId,
+          mode,
+          updatePayload,
+          error: updateError,
+        })
         return Response.json(
           { error: 'Failed to update transaction category' },
           { status: 500 }

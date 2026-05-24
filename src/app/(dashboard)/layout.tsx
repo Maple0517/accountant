@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation'
 import { getCurrentUser } from '@/lib/auth/server'
-import Sidebar from '@/components/layout/Sidebar'
-import Header from '@/components/layout/Header'
+import { AppShell } from '@/components/layout/AppShell'
 
 export default async function DashboardLayout({
   children,
@@ -14,16 +13,5 @@ export default async function DashboardLayout({
     redirect('/auth/login')
   }
 
-  return (
-    <div className="app-layout">
-      <Sidebar userEmail={user.email ?? null} />
-      <div className="main-content">
-        <Header />
-        <main className="page-content animate-fade-in">
-          {children}
-        </main>
-      </div>
-
-    </div>
-  )
+  return <AppShell userEmail={user.email ?? null}>{children}</AppShell>
 }
