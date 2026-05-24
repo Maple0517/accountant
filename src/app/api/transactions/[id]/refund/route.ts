@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateRefundedCategory } from '@/lib/categories-db'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 import type { TransactionKind } from '@/types'
@@ -23,14 +24,16 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createClient()
+    const authClient = await createClient()
     const {
       data: { user },
-    } = await supabase.auth.getUser()
+    } = await authClient.auth.getUser()
 
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const supabase = createAdminClient()
 
     const { id } = await context.params
     const body = await request.json()
@@ -181,6 +184,14 @@ export async function PATCH(
       .single()
 
     if (updateError || !updated) {
+      if (updateError) {
+        console.error('Refund metadata update failed', {
+          transactionId: id,
+          userId: user.id,
+          update,
+          error: updateError,
+        })
+      }
       return Response.json(
         { error: 'Failed to update refund metadata' },
         { status: 500 }

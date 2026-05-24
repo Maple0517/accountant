@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 import type { AiClassificationJob } from '@/types'
 import {
@@ -19,8 +20,9 @@ function isMissingQueueTableError(error: { message?: string; code?: string }) {
 }
 
 async function getUser() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  const supabase = user ? createAdminClient() : null
 
   return { supabase, user }
 }
@@ -30,6 +32,10 @@ export async function GET() {
     const { supabase, user } = await getUser()
 
     if (!user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabase) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -73,6 +79,10 @@ export async function POST() {
     const { supabase, user } = await getUser()
 
     if (!user) {
+      return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!supabase) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
