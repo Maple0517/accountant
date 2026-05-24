@@ -3,10 +3,12 @@
 import { formatCurrency } from '@/lib/currency'
 import type { Account } from '@/types'
 import { useState } from 'react'
+import { Badge } from '@/components/ui/Badge'
+import { StatusDot } from '@/components/ui/StatusDot'
 
 interface AccountCardProps {
   account: Account
-  onRefresh?: (plaidItemId: string) => void
+  onRefresh?: (plaidItemId: string) => void | Promise<void>
 }
 
 export default function AccountCard({ account, onRefresh }: AccountCardProps) {
@@ -14,96 +16,77 @@ export default function AccountCard({ account, onRefresh }: AccountCardProps) {
 
   const handleRefresh = async () => {
     if (!account.plaid_item_id || !onRefresh) return
-    
     setRefreshing(true)
-    await onRefresh(account.plaid_item_id)
-    setRefreshing(false)
+    try {
+      await onRefresh(account.plaid_item_id)
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   const getSyncStatusText = () => {
-    if (account.last_sync_error) {
-      return 'Last sync failed. Try again later.'
-    }
-
+    if (account.last_sync_error) return 'Last sync failed. Try again later.'
     if (account.last_synced_at) {
-      return `Last checked: ${new Intl.DateTimeFormat(undefined, {
+      return `Last checked ${new Intl.DateTimeFormat(undefined, {
         month: 'short',
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit',
       }).format(new Date(account.last_synced_at))}`
     }
-
-    return null
+    return account.is_manual ? 'Manual account' : 'Not checked yet'
   }
 
-  const syncStatusText = getSyncStatusText()
-
-  // Generate a gradient based on account name/type
-  const getGradient = () => {
-    if (account.type === 'credit') {
-      return 'linear-gradient(135deg, rgba(255, 82, 82, 0.1) 0%, rgba(255, 82, 82, 0.05) 100%)'
-    } else if (account.type === 'savings') {
-      return 'linear-gradient(135deg, rgba(0, 230, 118, 0.1) 0%, rgba(0, 230, 118, 0.05) 100%)'
-    }
-    return 'linear-gradient(135deg, rgba(68, 138, 255, 0.1) 0%, rgba(68, 138, 255, 0.05) 100%)'
-  }
-
-  const getBorderColor = () => {
-    if (account.type === 'credit') return 'rgba(255, 82, 82, 0.2)'
-    if (account.type === 'savings') return 'rgba(0, 230, 118, 0.2)'
-    return 'rgba(68, 138, 255, 0.2)'
-  }
+  const syncTone = account.last_sync_error ? 'warning' : account.last_synced_at ? 'success' : 'neutral'
+  const isCredit = account.type === 'credit'
+  const utilization =
+    isCredit && account.available_balance != null && account.current_balance != null
+      ? Number(account.current_balance) / Math.max(Number(account.current_balance) + Number(account.available_balance), 1)
+      : null
 
   return (
-    <div className="account-card card" style={{ 
-      background: getGradient(),
-      borderColor: getBorderColor()
-    }}>
-      <div className="card-header">
+    <div className="account-card card">
+      <div className="card-header" style={{ padding: 0, border: 0 }}>
         <div className="account-info">
           <h3>{account.name}</h3>
-          <span className="account-mask">
-            {account.mask ? `•••• ${account.mask}` : account.type}
-          </span>
+          <span className="account-mask">{account.mask ? `•••• ${account.mask}` : account.subtype || account.type}</span>
         </div>
-        {account.plaid_item_id && onRefresh && (
-          <button 
-            className={`btn-sync ${refreshing ? 'syncing' : ''}`}
-            onClick={handleRefresh}
-            disabled={refreshing}
-            title="Check for available updates"
-          >
-            🔄
-          </button>
-        )}
+        <Badge tone={isCredit ? 'warning' : account.is_manual ? 'muted' : 'info'}>{account.type}</Badge>
       </div>
-      
+
       <div className="card-body">
         <div className="balance-info">
-          <span className="balance-label">Current Balance</span>
-          <span className="balance-amount">
-            {formatCurrency(account.current_balance || 0, account.iso_currency_code || 'USD')}
-          </span>
+          <span className="balance-label">Current balance</span>
+          <span className="balance-amount">{formatCurrency(account.current_balance || 0, account.iso_currency_code || 'USD')}</span>
         </div>
-        
+
         {account.available_balance !== null && account.available_balance !== undefined && (
           <div className="balance-info available">
-            <span className="balance-label">Available Balance</span>
-            <span className="balance-amount-small">
-              {formatCurrency(account.available_balance, account.iso_currency_code || 'USD')}
-            </span>
+            <span className="balance-label">Available {isCredit ? 'credit' : 'balance'}</span>
+            <span className="balance-amount-small">{formatCurrency(account.available_balance, account.iso_currency_code || 'USD')}</span>
+          </div>
+        )}
+
+        {utilization !== null && Number.isFinite(utilization) && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+              <span className="balance-label">Utilization</span>
+              <span className="text-secondary text-xs">{Math.round(utilization * 100)}%</span>
+            </div>
+            <div className="progress"><div className="progress-fill progress-warning" style={{ width: `${Math.min(utilization * 100, 100)}%` }} /></div>
           </div>
         )}
       </div>
 
-      {syncStatusText && (
-        <div className={`sync-status ${account.last_sync_error ? 'error' : ''}`}>
-          {syncStatusText}
-        </div>
-      )}
+      <div className={`sync-status ${account.last_sync_error ? 'error' : ''}`}>
+        <StatusDot tone={syncTone} label={getSyncStatusText()} />
+      </div>
 
-      
+      {account.plaid_item_id && onRefresh && (
+        <button className={`btn btn-ghost btn-sm ${refreshing ? 'syncing' : ''}`} onClick={handleRefresh} disabled={refreshing} type="button">
+          {refreshing ? 'Checking...' : 'Check updates'}
+        </button>
+      )}
     </div>
   )
 }

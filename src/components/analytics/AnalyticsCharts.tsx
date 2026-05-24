@@ -15,6 +15,7 @@ import {
   ScriptableContext,
 } from 'chart.js'
 import { Doughnut, Line, Bar } from 'react-chartjs-2'
+import { formatCurrency } from '@/lib/currency'
 import type { AnalyticsData } from '@/modules/analytics/analytics.types'
 
 ChartJS.register(
@@ -30,73 +31,69 @@ ChartJS.register(
   Filler
 )
 
-export default function AnalyticsCharts({ data }: { data: AnalyticsData }) {
-  const pieData = {
+const gridColor = 'rgba(52, 59, 77, 0.45)'
+const tickColor = '#687083'
+const textColor = '#a3aab8'
+
+function money(value: string | number, currencyCode: string) {
+  return formatCurrency(Number(value), currencyCode).replace(/\.00$/, '')
+}
+
+export default function AnalyticsCharts({
+  data,
+  currencyCode = 'USD',
+}: {
+  data: AnalyticsData
+  currencyCode?: string
+}) {
+  const categoryData = {
     labels: data.byCategory.map((c) => `${c.icon} ${c.name}`),
     datasets: [
       {
+        label: 'Spending',
         data: data.byCategory.map((c) => c.total),
-        backgroundColor: [
-          '#6c5ce7',
-          '#ff5252',
-          '#448aff',
-          '#ffab40',
-          '#00e676',
-          '#ff6e40',
-          '#7c4dff',
-          '#64ffda',
-          '#ffd740',
-          '#e040fb',
-        ],
-        borderWidth: 0,
-        borderRadius: 4,
-        spacing: 2,
+        backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'),
+        borderRadius: 8,
+        borderSkipped: false,
       },
     ],
   }
 
-  const pieOptions = {
+  const categoryOptions = {
+    indexAxis: 'y' as const,
     responsive: true,
     maintainAspectRatio: false,
-    cutout: '70%',
-    plugins: {
-      legend: {
-        position: 'right' as const,
-        labels: {
-          color: '#8888a0',
-          padding: 12,
-          font: { family: 'Inter', size: 12 },
-          usePointStyle: true,
-          pointStyleWidth: 10,
-        },
+    scales: {
+      x: {
+        grid: { color: gridColor },
+        ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) },
       },
+      y: { grid: { display: false }, ticks: { color: textColor, font: { size: 11 } } },
     },
+    plugins: { legend: { display: false } },
   }
 
   const lineData = {
     labels: data.byDay.map((d) => {
       const date = new Date(`${d.date}T00:00:00`)
-      return date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      })
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     }),
     datasets: [
       {
         label: 'Daily Spending',
         data: data.byDay.map((d) => d.total),
-        borderColor: '#6c5ce7',
+        borderColor: '#7c5cff',
         backgroundColor: (context: ScriptableContext<'line'>) => {
           const ctx = context.chart.ctx
-          const gradient = ctx.createLinearGradient(0, 0, 0, 200)
-          gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)')
-          gradient.addColorStop(1, 'rgba(108, 92, 231, 0)')
+          const gradient = ctx.createLinearGradient(0, 0, 0, 220)
+          gradient.addColorStop(0, 'rgba(124, 92, 255, 0.28)')
+          gradient.addColorStop(1, 'rgba(124, 92, 255, 0)')
           return gradient
         },
         fill: true,
-        tension: 0.4,
-        pointRadius: 3,
-        pointBackgroundColor: '#6c5ce7',
+        tension: 0.35,
+        pointRadius: 2,
+        pointBackgroundColor: '#b5a6ff',
         pointBorderWidth: 0,
         borderWidth: 2,
       },
@@ -107,51 +104,20 @@ export default function AnalyticsCharts({ data }: { data: AnalyticsData }) {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      x: {
-        grid: { color: 'rgba(255,255,255,0.03)' },
-        ticks: {
-          color: '#555570',
-          font: { size: 11 },
-          maxTicksLimit: 10,
-        },
-      },
-      y: {
-        grid: { color: 'rgba(255,255,255,0.03)' },
-        ticks: {
-          color: '#555570',
-          font: { family: 'JetBrains Mono', size: 11 },
-          callback: (v: string | number) => `$${v}`,
-        },
-      },
+      x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, maxTicksLimit: 10 } },
+      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
     },
-    plugins: {
-      legend: { display: false },
-    },
+    plugins: { legend: { display: false } },
   }
 
   const barData = {
     labels: data.byMonth.map((m) => {
       const [y, mo] = m.month.split('-')
-      return new Date(Number(y), Number(mo) - 1).toLocaleDateString('en-US', {
-        month: 'short',
-        year: '2-digit',
-      })
+      return new Date(Number(y), Number(mo) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
     }),
     datasets: [
-      {
-        label: 'Income',
-        data: data.byMonth.map((m) => m.income),
-        backgroundColor: 'rgba(0, 230, 118, 0.7)',
-        borderRadius: 6,
-        borderSkipped: false,
-      },
-      {
-        label: 'Spending',
-        data: data.byMonth.map((m) => m.spending),
-        backgroundColor: 'rgba(255, 82, 82, 0.7)',
-        borderRadius: 6,
-        borderSkipped: false,
-      },
+      { label: 'Income', data: data.byMonth.map((m) => m.income), backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 8, borderSkipped: false },
+      { label: 'Spending', data: data.byMonth.map((m) => m.spending), backgroundColor: 'rgba(255, 92, 122, 0.72)', borderRadius: 8, borderSkipped: false },
     ],
   }
 
@@ -159,49 +125,49 @@ export default function AnalyticsCharts({ data }: { data: AnalyticsData }) {
     responsive: true,
     maintainAspectRatio: false,
     scales: {
-      x: {
-        grid: { display: false },
-        ticks: { color: '#555570', font: { size: 11 } },
-      },
-      y: {
-        grid: { color: 'rgba(255,255,255,0.03)' },
-        ticks: {
-          color: '#555570',
-          font: { family: 'JetBrains Mono', size: 11 },
-          callback: (v: string | number) => `$${v}`,
-        },
-      },
+      x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } } },
+      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
     },
-    plugins: {
-      legend: {
-        labels: {
-          color: '#8888a0',
-          font: { family: 'Inter', size: 12 },
-          usePointStyle: true,
-          pointStyleWidth: 10,
-        },
-      },
-    },
+    plugins: { legend: { labels: { color: textColor, font: { size: 12 }, usePointStyle: true, pointStyleWidth: 10 } } },
+  }
+
+  const donutData = {
+    labels: data.byCategory.map((c) => c.name),
+    datasets: [{ data: data.byCategory.map((c) => c.total), backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'), borderWidth: 0, spacing: 2 }],
+  }
+
+  const donutOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '72%',
+    plugins: { legend: { display: false } },
   }
 
   return (
     <div className="charts-grid">
-      <div className="card chart-card">
-        <h3>Spending by Category</h3>
-        <div className="chart-container pie-container">
-          <Doughnut data={pieData} options={pieOptions} aria-label="Spending by category chart" />
+      <div className="card chart-card full-width">
+        <h3>Category ranking</h3>
+        <div className="chart-container">
+          <Bar data={categoryData} options={categoryOptions} aria-label="Spending ranked by category" />
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>Daily Spending Trend</h3>
+        <h3>Daily spending trend</h3>
         <div className="chart-container">
           <Line data={lineData} options={lineOptions} aria-label="Daily spending trend chart" />
         </div>
       </div>
 
+      <div className="card chart-card">
+        <h3>Category share</h3>
+        <div className="chart-container pie-container">
+          <Doughnut data={donutData} options={donutOptions} aria-label="Spending share by category" />
+        </div>
+      </div>
+
       <div className="card chart-card full-width">
-        <h3>Income vs Spending</h3>
+        <h3>Income vs spending</h3>
         <div className="chart-container">
           <Bar data={barData} options={barOptions} aria-label="Income versus spending chart" />
         </div>

@@ -1,12 +1,15 @@
 'use client'
 
-import { forwardRef, useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import useSWR from 'swr'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ProgressBar } from '@/components/ui/ProgressBar'
 import { formatCurrency } from '@/lib/currency'
 import type { CategoryBudgetSummary, MonthlyBudgetSummary } from '@/modules/budget/budget.types'
-
-import useSWR from 'swr'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function toMonthParam(date: Date): string {
   const y = date.getFullYear()
@@ -14,8 +17,25 @@ function toMonthParam(date: Date): string {
   return `${y}-${m}`
 }
 
+function toUtcMonthParam(date: Date): string {
+  const y = date.getUTCFullYear()
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
+function subscribeCurrentMonth() {
+  return () => {}
+}
+
+function getClientCurrentMonth() {
+  return toMonthParam(new Date())
+}
+
+function getServerCurrentMonth() {
+  return toUtcMonthParam(new Date())
+}
+
 function formatMonthLabel(monthParam: string): string {
-  // monthParam: "YYYY-MM"
   const [year, month] = monthParam.split('-').map(Number)
   const date = new Date(year, month - 1, 1)
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
@@ -27,47 +47,58 @@ function addMonths(monthParam: string, delta: number): string {
   return toMonthParam(date)
 }
 
-const STATUS_COLORS: Record<CategoryBudgetSummary['status'], string> = {
-  under: '#22c55e',
-  near: '#f59e0b',
-  over: '#ef4444',
-  no_budget: '#6b7280',
+function getStatusTone(status: CategoryBudgetSummary['status']) {
+  if (status === 'under') return 'success' as const
+  if (status === 'near') return 'warning' as const
+  if (status === 'over') return 'danger' as const
+  return 'neutral' as const
+}
+
+function getHealth(summary: MonthlyBudgetSummary | undefined) {
+  if (!summary || summary.totalBaseBudget <= 0 || summary.totalPercentUsed === null) {
+    return { label: 'Not configured', tone: 'neutral' as const, copy: 'Set budgets to unlock monthly guidance.' }
+  }
+  if (summary.totalActualSpend > summary.totalBaseBudget) {
+    return { label: 'Over', tone: 'danger' as const, copy: 'Spending has exceeded the monthly plan.' }
+  }
+  if (summary.totalPercentUsed >= 0.8) {
+    return { label: 'Watch', tone: 'warning' as const, copy: 'You are close to the monthly limit.' }
+  }
+  return { label: 'Safe', tone: 'success' as const, copy: 'Current spending is inside the monthly plan.' }
 }
 
 const fetcher = async (url: string) => {
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed to load budget data (${res.status})`)
-  return res.json()
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || `Failed to load budget data (${res.status})`)
+  return json as MonthlyBudgetSummary
 }
 
-// ── Main Component ───────────────────────────────────────────────────────────
-
 export default function BudgetsPage() {
-  const [month, setMonth] = useState<string>(() => toMonthParam(new Date()))
-
+  const currentMonth = useSyncExternalStore(
+    subscribeCurrentMonth,
+    getClientCurrentMonth,
+    getServerCurrentMonth
+  )
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const month = selectedMonth ?? currentMonth
   const { data: summary, error: swrError, isLoading: loading, mutate } = useSWR<MonthlyBudgetSummary>(
     `/api/budget/monthly-summary?month=${month}`,
     fetcher
   )
   const error = swrError?.message || null
-
-  // Inline editing state
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string>('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  // ── Month navigation ───────────────────────────────────────────────────────
-
   function handlePrevMonth() {
-    setMonth((m) => addMonths(m, -1))
+    setSelectedMonth((m) => addMonths(m ?? month, -1))
   }
 
   function handleNextMonth() {
-    setMonth((m) => addMonths(m, 1))
+    setSelectedMonth((m) => addMonths(m ?? month, 1))
   }
-
-  // ── Inline editing ─────────────────────────────────────────────────────────
 
   function startEdit(cat: CategoryBudgetSummary) {
     setSaveError(null)
@@ -99,16 +130,8 @@ export default function BudgetsPage() {
       })
 
       if (!res.ok) {
-        let message = `Save failed (${res.status})`
-        try {
-          const payload = (await res.json()) as { error?: string }
-          if (payload?.error) {
-            message = payload.error
-          }
-        } catch {
-          // Ignore response parsing issues and keep fallback message.
-        }
-        throw new Error(message)
+        const payload = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(payload.error || `Save failed (${res.status})`)
       }
 
       setEditingId(null)
@@ -123,10 +146,7 @@ export default function BudgetsPage() {
     }
   }
 
-  function handleEditKeyDown(
-    e: React.KeyboardEvent<HTMLInputElement>,
-    categoryId: string
-  ) {
+  function handleEditKeyDown(e: React.KeyboardEvent<HTMLInputElement>, categoryId: string) {
     if (e.key === 'Enter') {
       e.preventDefault()
       commitEdit(categoryId)
@@ -135,190 +155,110 @@ export default function BudgetsPage() {
     }
   }
 
-  // ── Derived data ───────────────────────────────────────────────────────────
-
   const visibleCategories = summary?.categories ?? []
-
-  // ── Render ─────────────────────────────────────────────────────────────────
+  const health = getHealth(summary)
+  const riskyCategories = visibleCategories
+    .filter((category) => category.status === 'near' || category.status === 'over')
+    .sort((a, b) => (b.percentUsed ?? 0) - (a.percentUsed ?? 0))
+    .slice(0, 4)
 
   return (
     <div className="budgets-page">
-      {/* Page header */}
-      <div className="page-header">
-        <h1>Budgets</h1>
-        {/* Month navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            id="budget-prev-month"
-            className="btn btn-ghost"
-            onClick={handlePrevMonth}
-            style={{ padding: '0.5rem 0.875rem', fontSize: '1rem' }}
-            aria-label="Previous month"
-          >
-            ‹
-          </button>
-          <span
-            style={{
-              fontWeight: 600,
-              fontSize: '1rem',
-              minWidth: '130px',
-              textAlign: 'center',
-            }}
-          >
-            {formatMonthLabel(month)}
-          </span>
-          <button
-            id="budget-next-month"
-            className="btn btn-ghost"
-            onClick={handleNextMonth}
-            style={{ padding: '0.5rem 0.875rem', fontSize: '1rem' }}
-            aria-label="Next month"
-          >
-            ›
-          </button>
-        </div>
-      </div>
-
-      {/* Loading skeleton */}
-      {loading && (
-        <div className="loading-state animate-fade-in">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="card skeleton-card" style={{ height: '80px' }} />
-          ))}
-        </div>
-      )}
-
-      {/* Error */}
-      {!loading && error && (
-        <div className="card alert alert-error" style={{ padding: '1.5rem' }}>
-          ⚠️ {error}
-        </div>
-      )}
-
-      {/* Save error */}
-      {!loading && !error && saveError && (
-        <div className="card alert alert-error" style={{ padding: '1rem 1.5rem' }}>
-          ⚠️ {saveError}
-        </div>
-      )}
-
-      {/* Content */}
-      {!loading && !error && summary && (
-        <div className="animate-slide-up" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          {/* Summary cards */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-              gap: '1rem',
-            }}
-          >
-            <SummaryCard
-              label="Total Budget"
-              value={formatCurrency(summary.totalBaseBudget)}
-            />
-            <SummaryCard
-              label="Total Spent"
-              value={formatCurrency(summary.totalActualSpend)}
-              accent="var(--accent-orange)"
-            />
-            <SummaryCard
-              label="Remaining"
-              value={formatCurrency(summary.totalRemaining)}
-              accent={summary.totalRemaining < 0 ? 'var(--accent-red)' : 'var(--accent-green)'}
-            />
+      <PageHeader
+        title="Budgets"
+        subtitle="See which categories are safe, close, or over for the selected month."
+        actions={
+          <div className="page-header-actions">
+            <Button variant="ghost" size="sm" onClick={handlePrevMonth} aria-label="Previous month">‹</Button>
+            <span className="topbar-status">{formatMonthLabel(month)}</span>
+            <Button variant="ghost" size="sm" onClick={handleNextMonth} aria-label="Next month">›</Button>
           </div>
+        }
+      />
 
-          {/* Category list */}
-          {visibleCategories.length === 0 ? (
-            <div className="card empty-state">
-              <span className="empty-icon">🎯</span>
-              <h3>No budgetable categories yet</h3>
-              <p className="text-secondary">
-                Add an expense category first, then return here to set a spending limit for{' '}
-                {formatMonthLabel(month)}.
-              </p>
+      {loading && <div className="skeleton-card" />}
+      {!loading && error && <div className="alert alert-error">{error}</div>}
+      {!loading && !error && saveError && <div className="alert alert-error">{saveError}</div>}
+
+      {!loading && !error && summary && (
+        <>
+          <Card className="budget-health-card" padding="lg">
+            <div className="budget-health-status">
+              <Badge tone={health.tone}>{health.label}</Badge>
+              <strong>{summary.totalPercentUsed === null ? 'No plan yet' : `${Math.round(summary.totalPercentUsed * 100)}% used`}</strong>
+              <p className="text-secondary">{health.copy}</p>
             </div>
-          ) : (
-            <div
-              className="card"
-              style={{ padding: '0', overflow: 'hidden' }}
-            >
-              {/* Card header */}
-              <div
-                style={{
-                  padding: '1rem 1.5rem',
-                  borderBottom: '1px solid var(--glass-border)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <span style={{ fontWeight: 600, fontSize: '1rem' }}>
-                  Category Budgets
-                </span>
-                <span className="text-secondary" style={{ fontSize: '0.8rem' }}>
-                  {visibleCategories.length} categor{visibleCategories.length !== 1 ? 'ies' : 'y'}
-                </span>
+            <div>
+              <div className="summary-grid" style={{ marginBottom: '1rem' }}>
+                <div><span className="metric-label">Total budget</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget)}</span></div>
+                <div><span className="metric-label">Spent</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend)}</span></div>
+                <div><span className="metric-label">Remaining</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining)}</span></div>
               </div>
+              <ProgressBar value={summary.totalPercentUsed} tone={health.tone} label="Monthly budget progress" />
+              {summary.totalRemaining < 0 && <p className="budget-note">Remaining is negative because posted budget-counting spending is above the configured budget.</p>}
+            </div>
+          </Card>
 
-              {/* Category rows */}
-              <div style={{ padding: '0.5rem 0' }}>
-                {visibleCategories.map((cat, idx) => (
-                  <CategoryRow
-                    key={cat.categoryId}
-                    cat={cat}
-                    isEditing={editingId === cat.categoryId}
-                    editValue={editValue}
-                    saving={saving}
-                    isLast={idx === visibleCategories.length - 1}
-                    onStartEdit={() => startEdit(cat)}
-                    onEditChange={(v) => setEditValue(v)}
-                    onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
-                    onCommit={() => commitEdit(cat.categoryId)}
-                  />
+          {riskyCategories.length > 0 && (
+            <Card padding="md">
+              <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '0.8rem' }}>
+                <div>
+                  <h3>Categories to watch</h3>
+                  <p className="card-subtitle">The categories closest to their monthly limit.</p>
+                </div>
+              </div>
+              <div className="budget-risk-list">
+                {riskyCategories.map((category) => (
+                  <div className="budget-risk-row" key={category.categoryId}>
+                    <div>
+                      <strong>{category.categoryName}</strong>
+                      <span style={{ display: 'block' }}>{formatCurrency(category.actualSpend)} spent of {formatCurrency(category.baseBudget)}</span>
+                    </div>
+                    <Badge tone={getStatusTone(category.status)}>{category.status.replace('_', ' ')}</Badge>
+                  </div>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
-        </div>
+
+          {visibleCategories.length === 0 ? (
+            <EmptyState title="No budgetable categories yet">Add an expense category first, then return here to set a spending limit for {formatMonthLabel(month)}.</EmptyState>
+          ) : (
+            <Card className="budget-table" padding="none">
+              <div className="budget-row budget-row-heading" aria-hidden="true">
+                <span>Category</span>
+                <span>Budget</span>
+                <span>Spent</span>
+                <span>Left</span>
+                <span>Progress</span>
+                <span>Status</span>
+              </div>
+              {visibleCategories.map((cat) => (
+                <CategoryRow
+                  key={cat.categoryId}
+                  cat={cat}
+                  isEditing={editingId === cat.categoryId}
+                  editValue={editValue}
+                  saving={saving}
+                  onStartEdit={() => startEdit(cat)}
+                  onEditChange={(v) => setEditValue(v)}
+                  onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
+                  onCommit={() => commitEdit(cat.categoryId)}
+                />
+              ))}
+            </Card>
+          )}
+        </>
       )}
     </div>
   )
 }
-
-// ── SummaryCard ──────────────────────────────────────────────────────────────
-
-function SummaryCard({
-  label,
-  value,
-  accent,
-}: {
-  label: string
-  value: string
-  accent?: string
-}) {
-  return (
-    <div className="card stat-card">
-      <span className="stat-label">{label}</span>
-      <span
-        className="stat-value"
-        style={accent ? { color: accent } : undefined}
-      >
-        {value}
-      </span>
-    </div>
-  )
-}
-
-// ── CategoryRow ──────────────────────────────────────────────────────────────
 
 type CategoryRowProps = {
   cat: CategoryBudgetSummary
   isEditing: boolean
   editValue: string
   saving: boolean
-  isLast: boolean
   onStartEdit: () => void
   onEditChange: (v: string) => void
   onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
@@ -330,7 +270,6 @@ function CategoryRow({
   isEditing,
   editValue,
   saving,
-  isLast,
   onStartEdit,
   onEditChange,
   onEditKeyDown,
@@ -338,7 +277,6 @@ function CategoryRow({
 }: CategoryRowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Focus input when entering edit mode
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus()
@@ -346,203 +284,42 @@ function CategoryRow({
     }
   }, [isEditing])
 
-  const barWidth = `${Math.max(0, Math.min((cat.percentUsed ?? 0) * 100, 100))}%`
-  const barColor = STATUS_COLORS[cat.status]
-  const isNegativeRemaining = cat.remaining < 0
+  const tone = getStatusTone(cat.status)
+  const remainingColor = cat.remaining < 0 ? 'var(--expense)' : 'var(--text-primary)'
 
   return (
-    <div
-      style={{
-        padding: '1rem 1.5rem',
-        borderBottom: isLast ? 'none' : '1px solid var(--glass-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.625rem',
-        transition: 'background var(--transition-fast)',
-      }}
-      onMouseEnter={(e) =>
-        ((e.currentTarget as HTMLDivElement).style.background =
-          'var(--bg-card-hover)')
-      }
-      onMouseLeave={(e) =>
-        ((e.currentTarget as HTMLDivElement).style.background = 'transparent')
-      }
-    >
-      {/* Row top: name + budget amount + spent + remaining */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1rem',
-          flexWrap: 'wrap',
-        }}
-      >
-        {/* Category name */}
-        <span
-          style={{
-            flex: '1 1 140px',
-            fontWeight: 500,
-            fontSize: '0.95rem',
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {cat.categoryName}
-        </span>
-
-        {/* Budget amount (editable) */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.4rem',
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Budget
-          </span>
-          {isEditing ? (
-            <EditInput
-              ref={inputRef}
-              value={editValue}
-              disabled={saving}
-              onChange={(e) => onEditChange(e.target.value)}
-              onKeyDown={onEditKeyDown}
-              onBlur={onCommit}
-            />
-          ) : (
-            <button
-              id={`budget-edit-${cat.categoryId}`}
-              onClick={onStartEdit}
-              title="Click to edit budget"
-              aria-label={`Edit monthly budget for ${cat.categoryName}`}
-              style={{
-                background: 'rgba(108, 92, 231, 0.1)',
-                border: '1px solid rgba(108, 92, 231, 0.25)',
-                borderRadius: '8px',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                padding: '0.25rem 0.6rem',
-                cursor: 'pointer',
-                transition: 'all var(--transition-fast)',
-              }}
-              onMouseEnter={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.background =
-                  'rgba(108, 92, 231, 0.2)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor =
-                  'rgba(108, 92, 231, 0.5)'
-              }}
-              onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLButtonElement).style.background =
-                  'rgba(108, 92, 231, 0.1)'
-                ;(e.currentTarget as HTMLButtonElement).style.borderColor =
-                  'rgba(108, 92, 231, 0.25)'
-              }}
-            >
-              {formatCurrency(cat.baseBudget)}
-            </button>
-          )}
-        </div>
-
-        {/* Spent */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Spent
-          </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-            }}
-          >
-            {formatCurrency(cat.actualSpend)}
-            {cat.actualSpend < 0 ? ' credit' : ''}
-          </span>
-        </div>
-
-        {/* Remaining */}
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            flexShrink: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: '0.7rem',
-              color: 'var(--text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Left
-          </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.875rem',
-              fontWeight: 600,
-              color: isNegativeRemaining ? '#ef4444' : 'var(--text-primary)',
-            }}
-          >
-            {formatCurrency(cat.remaining)}
-          </span>
-        </div>
+    <div className="budget-row">
+      <div>
+        <span className="budget-category-name">{cat.categoryName}</span>
+        {cat.remaining < 0 && <span className="budget-note" style={{ display: 'block' }}>Over by {formatCurrency(Math.abs(cat.remaining))}</span>}
       </div>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          background: 'rgba(255, 255, 255, 0.08)',
-          borderRadius: '9999px',
-          overflow: 'hidden',
-          height: '8px',
-        }}
-      >
-        <div
-          style={{
-            width: barWidth,
-            backgroundColor: barColor,
-            height: '8px',
-            borderRadius: 'inherit',
-            transition: 'width 0.3s',
-          }}
-        />
+      <div>
+        <span className="budget-cell-label">Budget</span>
+        {isEditing ? (
+          <EditInput
+            ref={inputRef}
+            value={editValue}
+            disabled={saving}
+            onChange={(e) => onEditChange(e.target.value)}
+            onKeyDown={onEditKeyDown}
+            onBlur={onCommit}
+          />
+        ) : (
+          <button className="budget-edit-button" type="button" onClick={onStartEdit} aria-label={`Edit monthly budget for ${cat.categoryName}`}>
+            {formatCurrency(cat.baseBudget)}
+          </button>
+        )}
       </div>
+      <div><span className="budget-cell-label">Spent</span><span className="budget-cell-value">{formatCurrency(cat.actualSpend)}</span></div>
+      <div><span className="budget-cell-label">Left</span><span className="budget-cell-value" style={{ color: remainingColor }}>{formatCurrency(cat.remaining)}</span></div>
+      <div className="budget-progress-cell">
+        <span className="budget-cell-label">Progress</span>
+        <div style={{ marginTop: '0.45rem' }}><ProgressBar value={cat.percentUsed} tone={tone} label={`${cat.categoryName} budget progress`} /></div>
+      </div>
+      <div className="budget-actions-cell"><Badge tone={tone}>{cat.status.replace('_', ' ')}</Badge></div>
     </div>
   )
 }
-
-// ── EditInput ────────────────────────────────────────────────────────────────
 
 const EditInput = forwardRef<HTMLInputElement, {
   value: string
@@ -563,18 +340,7 @@ const EditInput = forwardRef<HTMLInputElement, {
       onChange={onChange}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
-      style={{
-        width: '110px',
-        padding: '0.25rem 0.5rem',
-        background: 'rgba(0,0,0,0.3)',
-        border: '1px solid var(--accent-primary)',
-        borderRadius: '8px',
-        color: 'var(--text-primary)',
-        fontFamily: 'var(--font-mono)',
-        fontSize: '0.875rem',
-        outline: 'none',
-        boxShadow: '0 0 0 3px rgba(108, 92, 231, 0.2)',
-      }}
+      className="input budget-edit-input"
     />
   )
 })

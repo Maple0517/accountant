@@ -1,53 +1,33 @@
 'use client'
 
-import { useSyncExternalStore } from 'react'
-import { usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
+import { StatusDot } from '@/components/ui/StatusDot'
 
-export default function Header() {
-  const pathname = usePathname()
-  
-  // Create a nice title from the pathname
-  const getPageTitle = () => {
-    const path = pathname.split('/')[1]
-    if (!path) return 'Dashboard'
-    return path.charAt(0).toUpperCase() + path.slice(1)
+export default function Header({ userEmail }: { userEmail: string | null }) {
+  const router = useRouter()
+
+  const handleSignOut = async () => {
+    const { createClient } = await import('@/lib/supabase/client')
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/auth/login')
   }
 
-  const currentDate = useSyncExternalStore(
-    () => () => undefined,
-    getFormattedToday,
-    () => ''
-  )
-
   return (
-    <header className="header">
-      <div className="header-content">
-        <div className="page-info">
-          <h1>{getPageTitle()}</h1>
-          <span className="date">{currentDate || 'Today'}</span>
+    <header className="topbar">
+      <div className="topbar-content">
+        <div className="topbar-title">
+          <div className="topbar-brand">Accountant</div>
+          <p>AI-powered money review workspace</p>
         </div>
-        
-        <div className="header-actions">
-          <div className="search-bar">
-            <span className="search-icon">🔍</span>
-            <input type="text" placeholder="Search..." className="search-input" aria-label="Search" />
-          </div>
-          <button className="notification-btn" aria-label="Notifications">
-            🔔
-            <span className="notification-badge" aria-hidden="true"></span>
+        <div className="topbar-actions">
+          <StatusDot tone="success" label="Signed in" />
+          <span className="topbar-status">{userEmail || 'User'}</span>
+          <button className="btn-signout btn-signout-inline" onClick={handleSignOut} type="button">
+            Sign out
           </button>
         </div>
       </div>
-
-      
     </header>
   )
-}
-
-function getFormattedToday() {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  })
 }

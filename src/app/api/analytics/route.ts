@@ -13,8 +13,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const periodParam = searchParams.get('period')
     const period = parseAnalyticsPeriod(periodParam)
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('default_currency')
+      .eq('id', user.id)
+      .maybeSingle()
+    const currencyCode =
+      typeof profile?.default_currency === 'string' && profile.default_currency
+        ? profile.default_currency
+        : 'USD'
 
-    const data = await getAnalyticsSummary(supabase, user.id, period)
+    const data = await getAnalyticsSummary(supabase, user.id, period, currencyCode)
     
     return Response.json({ data })
   } catch (error) {

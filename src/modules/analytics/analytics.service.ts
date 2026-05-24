@@ -74,7 +74,8 @@ function getSemanticAmounts(tx: AnalyticsTransactionRow) {
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
-  period: AnalyticsPeriod
+  period: AnalyticsPeriod,
+  currencyCode = 'USD'
 ): Promise<AnalyticsData> {
   const dateFrom = getDateFrom(period)
   const { data, error } = await supabase
@@ -133,6 +134,7 @@ export async function getAnalyticsSummary(
   return {
     totalSpending,
     totalIncome,
+    currencyCode,
     byCategory: Array.from(categoryMap.values()).sort(
       (a, b) => b.total - a.total
     ),

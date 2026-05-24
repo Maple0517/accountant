@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 import useSWR from 'swr'
+import { PageHeader } from '@/components/layout/PageHeader'
+import { Card } from '@/components/ui/Card'
+import { Badge } from '@/components/ui/Badge'
 import type { Profile, ReceiptApiKey } from '@/types'
 
 type SafeProfile = Omit<Profile, 'notion_token'> & {
@@ -10,53 +13,56 @@ type SafeProfile = Omit<Profile, 'notion_token'> & {
   notion_token_masked?: string | null
 }
 
-const fetcher = async (url: string) => {
+type NotionPayload = { profile?: SafeProfile }
+type ApiKeysPayload = { api_keys?: ReceiptApiKey[]; migration_required?: boolean }
+
+const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(data.error || 'Failed to load')
-  }
-  return data
+  if (!res.ok) throw new Error(data.error || 'Failed to load')
+  return data as T
+}
+
+function subscribeReceiptEndpoint() {
+  return () => {}
+}
+
+function getClientReceiptEndpoint() {
+  return `${window.location.origin}/api/receipt`
+}
+
+function getServerReceiptEndpoint() {
+  return '/api/receipt'
+}
+
+function mergeProfile(base: SafeProfile | null, draft: Partial<SafeProfile>): SafeProfile | null {
+  return base ? { ...base, ...draft } : null
 }
 
 export default function SettingsPage() {
-  const { data: profileData, error: profileError } = useSWR('/api/settings/notion', fetcher)
-  const { data: apiKeysData } = useSWR('/api/settings/api-keys', fetcher)
+  const { data: profileData, error: profileError, mutate: mutateProfile } = useSWR<NotionPayload>('/api/settings/notion', fetcher)
+  const { data: apiKeysData, mutate: mutateApiKeys } = useSWR<ApiKeysPayload>('/api/settings/api-keys', fetcher)
 
-  const [profile, setProfile] = useState<SafeProfile | null>(null)
+  const loadedProfile = profileData?.profile ?? null
+  const [profileDraft, setProfileDraft] = useState<Partial<SafeProfile>>({})
+  const profile = useMemo(() => mergeProfile(loadedProfile, profileDraft), [loadedProfile, profileDraft])
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [apiKeyBusy, setApiKeyBusy] = useState(false)
-  const [apiKeys, setApiKeys] = useState<ReceiptApiKey[]>([])
-  const [apiKeyMigrationRequired, setApiKeyMigrationRequired] = useState(false)
   const [apiKeyName, setApiKeyName] = useState('iOS Shortcut')
   const [generatedApiKey, setGeneratedApiKey] = useState('')
-  const [receiptEndpoint, setReceiptEndpoint] = useState('')
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [parentPageId, setParentPageId] = useState('')
   const [notionTokenInput, setNotionTokenInput] = useState('')
+  const receiptEndpoint = useSyncExternalStore(
+    subscribeReceiptEndpoint,
+    getClientReceiptEndpoint,
+    getServerReceiptEndpoint
+  )
 
-  useEffect(() => {
-    if (profileError) {
-      setMessage({ text: profileError.message || 'Failed to load settings.', type: 'error' })
-    } else if (profileData?.profile) {
-      setProfile(profileData.profile)
-    }
-  }, [profileData, profileError])
-
-  useEffect(() => {
-    if (apiKeysData) {
-      setApiKeys(apiKeysData.api_keys || [])
-      setApiKeyMigrationRequired(Boolean(apiKeysData.migration_required))
-    }
-  }, [apiKeysData])
-
-  useEffect(() => {
-    const frameId = window.requestAnimationFrame(() => {
-      setReceiptEndpoint(`${window.location.origin}/api/receipt`)
-    })
-    return () => window.cancelAnimationFrame(frameId)
-  }, [])
+  const apiKeys = apiKeysData?.api_keys || []
+  const apiKeyMigrationRequired = Boolean(apiKeysData?.migration_required)
+  const visibleMessage = message || (profileError ? { text: profileError.message || 'Failed to load settings.', type: 'error' as const } : null)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -72,10 +78,7 @@ export default function SettingsPage() {
         notion_sync_enabled: profile.notion_sync_enabled,
         notion_database_id: profile.notion_database_id,
       }
-
-      if (notionTokenInput.trim()) {
-        payload.notion_token = notionTokenInput.trim()
-      }
+      if (notionTokenInput.trim()) payload.notion_token = notionTokenInput.trim()
 
       const response = await fetch('/api/settings/notion', {
         method: 'PATCH',
@@ -87,8 +90,9 @@ export default function SettingsPage() {
       if (!response.ok) {
         setMessage({ text: data.error || 'Failed to save settings.', type: 'error' })
       } else {
-        setProfile(data.profile)
+        setProfileDraft({})
         setNotionTokenInput('')
+        mutateProfile({ profile: data.profile }, false)
         setMessage({ text: 'Settings saved successfully.', type: 'success' })
       }
     } catch {
@@ -116,14 +120,13 @@ export default function SettingsPage() {
           }),
         })
         const saveData = await saveResponse.json()
-
         if (!saveResponse.ok) {
           setMessage({ text: saveData.error || 'Failed to save Notion token.', type: 'error' })
           return
         }
-
-        setProfile(saveData.profile)
+        setProfileDraft({})
         setNotionTokenInput('')
+        mutateProfile({ profile: saveData.profile }, false)
       }
 
       const response = await fetch('/api/notion/sync', {
@@ -131,21 +134,13 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parent_page_id: parentPageId }),
       })
-      
       const data = await response.json()
-      
+
       if (data.error) {
         setMessage({ text: data.error, type: 'error' })
       } else {
-        setMessage({ 
-          text: `Sync complete! Synced ${data.synced} transactions. ${data.failed > 0 ? `(${data.failed} failed)` : ''}`, 
-          type: 'success' 
-        })
-        
-        // Reload profile in case DB ID was set
-        const profileResponse = await fetch('/api/settings/notion')
-        const profileData = await profileResponse.json()
-        if (profileResponse.ok) setProfile(profileData.profile)
+        setMessage({ text: `Sync complete! Synced ${data.synced} transactions. ${data.failed > 0 ? `(${data.failed} failed)` : ''}`, type: 'success' })
+        mutateProfile()
       }
     } catch {
       setMessage({ text: 'An unexpected error occurred.', type: 'error' })
@@ -172,7 +167,7 @@ export default function SettingsPage() {
       }
 
       setGeneratedApiKey(data.token)
-      setApiKeys((keys) => [data.api_key, ...keys])
+      mutateApiKeys((current) => ({ api_keys: [data.api_key, ...(current?.api_keys || [])] }), false)
       setMessage({ text: 'API key created. Copy it now; it will only be shown once.', type: 'success' })
     } catch {
       setMessage({ text: 'Failed to create API key.', type: 'error' })
@@ -198,11 +193,10 @@ export default function SettingsPage() {
         return
       }
 
-      setApiKeys((keys) =>
-        keys.map((key) =>
-          key.id === id ? { ...key, revoked_at: new Date().toISOString() } : key
-        )
-      )
+      mutateApiKeys((current) => ({
+        ...current,
+        api_keys: (current?.api_keys || []).map((key) => key.id === id ? { ...key, revoked_at: new Date().toISOString() } : key),
+      }), false)
       setMessage({ text: 'API key revoked.', type: 'success' })
     } catch {
       setMessage({ text: 'Failed to revoke API key.', type: 'error' })
@@ -213,7 +207,6 @@ export default function SettingsPage() {
 
   const handleCopy = async (text: string, label: string) => {
     if (!text) return
-
     try {
       await navigator.clipboard.writeText(text)
       setMessage({ text: `${label} copied.`, type: 'success' })
@@ -224,250 +217,132 @@ export default function SettingsPage() {
 
   const formatTimestamp = (value?: string | null) => {
     if (!value) return 'Never'
-
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    }).format(new Date(value))
+    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
   }
 
   return (
     <div className="settings-page">
-      <div className="page-header">
-        <h1>Settings</h1>
-      </div>
+      <PageHeader title="Integrations" subtitle="Manage profile settings, Notion sync, and iOS Shortcut capture without exposing raw internals by default." />
 
-      {message && (
-        <div className={`alert ${message.type === 'success' ? 'alert-success' : 'alert-error'}`}>
-          {message.text}
-        </div>
-      )}
+      {visibleMessage && <div className={`alert ${visibleMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>{visibleMessage.text}</div>}
 
       <form onSubmit={handleSave} className="settings-grid">
-        <div className="card settings-card">
+        <Card className="settings-card">
           <h2>Profile</h2>
+          <p className="settings-card-intro">Defaults used across the workspace.</p>
           <div className="input-group">
-            <label className="input-label" htmlFor="settings-display-name">Display Name</label>
-            <input
-              id="settings-display-name"
-              type="text"
-              className="input"
-              value={profile?.display_name || ''}
-              onChange={(e) => setProfile(p => p ? { ...p, display_name: e.target.value } : null)}
-            />
+            <label className="input-label" htmlFor="settings-display-name">Display name</label>
+            <input id="settings-display-name" type="text" className="input" value={profile?.display_name || ''} onChange={(e) => setProfileDraft((p) => ({ ...p, display_name: e.target.value }))} />
           </div>
-          
           <div className="input-group">
-            <label className="input-label" htmlFor="settings-default-currency">Default Currency</label>
-            <select
-              id="settings-default-currency"
-              className="input"
-              value={profile?.default_currency || 'USD'}
-              onChange={(e) => setProfile(p => p ? { ...p, default_currency: e.target.value } : null)}
-            >
+            <label className="input-label" htmlFor="settings-default-currency">Default currency</label>
+            <select id="settings-default-currency" className="input" value={profile?.default_currency || 'USD'} onChange={(e) => setProfileDraft((p) => ({ ...p, default_currency: e.target.value }))}>
               <option value="USD">USD ($)</option>
               <option value="CNY">CNY (¥)</option>
             </select>
           </div>
-        </div>
+        </Card>
 
-        <div className="card settings-card">
-          <h2>Notion Integration</h2>
-          <p className="text-secondary mb-4 text-sm">
-            Automatically sync your transactions to a Notion database.
-          </p>
-          
+        <Card className="settings-card">
+          <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
+            <div>
+              <h2>Notion</h2>
+              <p className="settings-card-intro" style={{ marginBottom: 0 }}>Single-direction transaction sync to your own database.</p>
+            </div>
+            <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? 'Connected' : 'Not connected'}</Badge>
+          </div>
+
           <div className="toggle-group mb-4">
             <label className="toggle-label">
-              <input
-                type="checkbox"
-                className="toggle-checkbox"
-                checked={profile?.notion_sync_enabled || false}
-                onChange={(e) => setProfile(p => p ? { ...p, notion_sync_enabled: e.target.checked } : null)}
-              />
-              <span>Enable Notion Sync</span>
+              <input type="checkbox" className="toggle-checkbox" checked={profile?.notion_sync_enabled || false} onChange={(e) => setProfileDraft((p) => ({ ...p, notion_sync_enabled: e.target.checked }))} />
+              <span>Enable Notion sync</span>
             </label>
           </div>
 
           {profile?.notion_sync_enabled && (
             <>
               <div className="input-group">
-                <label className="input-label" htmlFor="settings-notion-token">Notion Internal Integration Token</label>
-                <input
-                  id="settings-notion-token"
-                  type="password"
-                  className="input"
-                  placeholder={profile.notion_token_configured ? 'Leave blank to keep existing token' : 'secret_...'}
-                  value={notionTokenInput}
-                  onChange={(e) => setNotionTokenInput(e.target.value)}
-                />
-                {profile.notion_token_configured && (
-                  <p className="text-muted text-xs mt-1">
-                    Token saved: {profile.notion_token_masked || 'configured'}. Leave this blank to keep it unchanged.
-                  </p>
-                )}
+                <label className="input-label" htmlFor="settings-notion-token">Notion internal integration token</label>
+                <input id="settings-notion-token" type="password" className="input" placeholder={profile.notion_token_configured ? 'Leave blank to keep existing token' : 'secret_...'} value={notionTokenInput} onChange={(e) => setNotionTokenInput(e.target.value)} />
+                {profile.notion_token_configured && <p className="input-hint">Token saved: {profile.notion_token_masked || 'configured'}.</p>}
               </div>
 
               {!profile?.notion_database_id ? (
                 <div className="input-group">
-                  <label className="input-label" htmlFor="settings-notion-parent-page">Initial Setup: Parent Page ID</label>
-                  <p className="text-muted text-xs mb-2">
-                    To create the database, share a Notion page with your Integration and paste its ID here.
-                  </p>
-                  <input
-                    type="text"
-                    id="settings-notion-parent-page"
-                    className="input"
-                    placeholder="e.g. 1a2b3c4d5e6f7g8h9i0j"
-                    value={parentPageId}
-                    onChange={(e) => setParentPageId(e.target.value)}
-                  />
+                  <label className="input-label" htmlFor="settings-notion-parent-page">Initial setup parent page ID</label>
+                  <input type="text" id="settings-notion-parent-page" className="input" placeholder="Share a Notion page with the integration and paste its ID" value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} />
                 </div>
               ) : (
                 <div className="input-group">
-                  <label className="input-label" htmlFor="settings-notion-database-id">Database ID (Configured)</label>
-                  <input
-                    id="settings-notion-database-id"
-                    type="text"
-                    className="input"
-                    value={profile?.notion_database_id || ''}
-                    disabled
-                  />
-                  <p className="text-muted text-xs mt-1">Database successfully connected.</p>
+                  <label className="input-label">Database</label>
+                  <div className="code-block">Configured database ending in …{profile.notion_database_id.slice(-6)}</div>
                 </div>
               )}
 
-              <div className="sync-actions mt-4">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleManualSync}
-                  disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}
-                >
-                  {syncing ? 'Syncing...' : 'Force Sync to Notion'}
-                </button>
-              </div>
+              <button type="button" className="btn btn-secondary" onClick={handleManualSync} disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}>
+                {syncing ? 'Syncing...' : 'Force sync'}
+              </button>
             </>
           )}
-        </div>
+        </Card>
 
-        <div className="card settings-card full-width">
-          <h2>iOS Shortcut Capture</h2>
-          <p className="text-secondary mb-4 text-sm">
-            Capture receipts, payment screenshots, or transaction screens and turn them into app transactions.
-          </p>
-          
-          <div className="input-group">
-            <label className="input-label">Capture Endpoint</label>
-            <div className="code-block">
-              <code>{receiptEndpoint || '/api/receipt'}</code>
+        <Card className="settings-card full-width">
+          <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
+            <div>
+              <h2>iOS Shortcut Capture</h2>
+              <p className="settings-card-intro" style={{ marginBottom: 0 }}>Capture receipts or payment screenshots and convert them into transactions.</p>
             </div>
-            <p className="text-muted text-xs mt-2">
-              Put this URL in the Shortcut “Get Contents of URL” action.
-            </p>
+            <Badge tone={apiKeys.some((key) => !key.revoked_at) ? 'success' : 'muted'}>{apiKeys.some((key) => !key.revoked_at) ? 'Key active' : 'No active key'}</Badge>
           </div>
 
           {generatedApiKey && (
             <div className="api-key-reveal">
               <div>
-                <label className="input-label">New API Key</label>
-                <div className="code-block">
-                  <code>{generatedApiKey}</code>
-                </div>
-                <p className="text-muted text-xs mt-2">
-                  Copy this key now. It is stored as a hash and cannot be shown again.
-                </p>
+                <label className="input-label">New API key</label>
+                <div className="code-block"><code>{generatedApiKey}</code></div>
+                <p className="input-hint mt-2">Copy this key now. It is stored as a hash and cannot be shown again.</p>
               </div>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => handleCopy(generatedApiKey, 'API key')}
-              >
-                Copy Key
-              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => handleCopy(generatedApiKey, 'API key')}>Copy key</button>
             </div>
           )}
 
-          {apiKeyMigrationRequired && (
-            <div className="alert alert-error mb-4">
-              API key storage is not ready. Run <code>supabase/migrations/002_ios_receipt_api_keys.sql</code> in Supabase before generating Shortcut keys.
-            </div>
-          )}
+          {apiKeyMigrationRequired && <div className="alert alert-error mb-4">API key storage is not ready. Run <code>supabase/migrations/002_ios_receipt_api_keys.sql</code> in Supabase before generating Shortcut keys.</div>}
 
           <div className="api-key-actions">
             <div className="input-group api-key-name">
-              <label className="input-label" htmlFor="settings-api-key-name">Key Name</label>
-              <input
-                id="settings-api-key-name"
-                type="text"
-                className="input"
-                value={apiKeyName}
-                onChange={(e) => setApiKeyName(e.target.value)}
-              />
+              <label className="input-label" htmlFor="settings-api-key-name">Key name</label>
+              <input id="settings-api-key-name" type="text" className="input" value={apiKeyName} onChange={(e) => setApiKeyName(e.target.value)} />
             </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleCreateApiKey}
-              disabled={apiKeyBusy || apiKeyMigrationRequired}
-            >
-              {apiKeyBusy ? 'Working...' : 'Generate Key'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => handleCopy(receiptEndpoint, 'Endpoint')}
-            >
-              Copy Endpoint
-            </button>
+            <button type="button" className="btn btn-primary" onClick={handleCreateApiKey} disabled={apiKeyBusy || apiKeyMigrationRequired}>{apiKeyBusy ? 'Working...' : 'Generate key'}</button>
+            <button type="button" className="btn btn-ghost" onClick={() => handleCopy(receiptEndpoint, 'Endpoint')}>Copy endpoint</button>
           </div>
 
           <div className="api-key-list">
-            {apiKeys.length === 0 ? (
-              <p className="text-muted text-sm">No API keys yet.</p>
-            ) : (
-              apiKeys.map((key) => (
-                <div key={key.id} className="api-key-row">
-                  <div>
-                    <div className="api-key-title">
-                      <span>{key.name}</span>
-                      <span className={key.revoked_at ? 'badge api-key-revoked' : 'badge api-key-active'}>
-                        {key.revoked_at ? 'Revoked' : 'Active'}
-                      </span>
-                    </div>
-                    <div className="api-key-meta">
-                      <code>{key.key_prefix}...</code>
-                      <span>Created {formatTimestamp(key.created_at)}</span>
-                      <span>Last used {formatTimestamp(key.last_used_at)}</span>
-                    </div>
-                  </div>
-                  {!key.revoked_at && (
-                    <button
-                      type="button"
-                      className="btn btn-danger"
-                      onClick={() => handleRevokeApiKey(key.id)}
-                      disabled={apiKeyBusy}
-                    >
-                      Revoke
-                    </button>
-                  )}
+            {apiKeys.length === 0 ? <p className="text-muted text-sm">No API keys yet.</p> : apiKeys.map((key) => (
+              <div key={key.id} className="api-key-row">
+                <div>
+                  <div className="api-key-title"><span>{key.name}</span><Badge tone={key.revoked_at ? 'danger' : 'success'}>{key.revoked_at ? 'Revoked' : 'Active'}</Badge></div>
+                  <div className="api-key-meta"><code>{key.key_prefix}...</code><span>Created {formatTimestamp(key.created_at)}</span><span>Last used {formatTimestamp(key.last_used_at)}</span></div>
                 </div>
-              ))
-            )}
+                {!key.revoked_at && <button type="button" className="btn btn-danger" onClick={() => handleRevokeApiKey(key.id)} disabled={apiKeyBusy}>Revoke</button>}
+              </div>
+            ))}
           </div>
-        </div>
+
+          <details className="advanced-details">
+            <summary>Advanced endpoint details</summary>
+            <div className="input-group mt-4">
+              <label className="input-label">Capture endpoint</label>
+              <div className="code-block"><code>{receiptEndpoint}</code></div>
+              <p className="input-hint">Put this URL in the Shortcut “Get Contents of URL” action.</p>
+            </div>
+          </details>
+        </Card>
 
         <div className="form-actions full-width">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving...' : 'Save Settings'}
-          </button>
+          <button type="submit" className="btn btn-primary" disabled={saving || !profile}>{saving ? 'Saving...' : 'Save settings'}</button>
         </div>
       </form>
-
-      
     </div>
   )
 }
