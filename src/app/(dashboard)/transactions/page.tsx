@@ -5,7 +5,6 @@ import { formatCurrency } from '@/lib/currency'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import {
-  AI_CLASSIFIED_TAG,
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
   stripAutomaticClassificationTags,
@@ -441,41 +440,6 @@ export default function TransactionsPage() {
     return () => window.clearTimeout(timeoutId)
   }, [fetchLatestAiJob])
 
-  const handleRefreshAiClassification = useCallback(async () => {
-    setRefreshingAi(true)
-    setAiRefreshStatus(null)
-
-    try {
-      const response = await fetch('/api/plaid/ai-classification-jobs', {
-        method: 'POST',
-      })
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || t('transactions.createAiQueueError'))
-      }
-
-      const job = data.job as AiClassificationJob
-      setAiJob(job)
-
-      if (job.total_count === 0) {
-        setAiRefreshStatus(t('transactions.noPendingAi'))
-      } else {
-        setAiRefreshStatus(
-          t('transactions.aiQueueStarted', { count: job.total_count, plural: job.total_count === 1 ? '' : 's' })
-        )
-        await processAiQueue(job.id)
-      }
-    } catch (error) {
-      console.error('Failed to create AI queue:', error)
-      setAiRefreshStatus(
-        error instanceof Error ? error.message : t('transactions.createAiQueueError')
-      )
-    } finally {
-      setRefreshingAi(false)
-    }
-  }, [processAiQueue, t])
-
   const handleCategorySave = useCallback(
     async (
       transactionId: string,
@@ -872,17 +836,6 @@ export default function TransactionsPage() {
       <PageHeader
         title={t('transactions.title')}
         subtitle={t('transactions.subtitle', { visible: visibleTransactions.length, loaded: transactions.length, totalPart: totalCount > transactions.length ? t('transactions.loadedTotalPart', { loaded: transactions.length, total: totalCount }) : '' })}
-        actions={
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={handleRefreshAiClassification}
-            disabled={refreshingAi || isActiveAiJob(aiJob)}
-            title={t('transactions.queueAiTitle')}
-          >
-            {refreshingAi || isActiveAiJob(aiJob) ? t('transactions.processingAi') : t('transactions.queueAiRefresh')}
-          </button>
-        }
       />
 
       <div className="transactions-summary-grid">
@@ -1198,8 +1151,6 @@ const TransactionItem = memo(function TransactionItem({
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
     classificationStatus = t('transactions.aiPending')
-  } else if (tags.includes(AI_CLASSIFIED_TAG)) {
-    classificationStatus = t('transactions.aiClassified')
   }
 
   const badgeParts: Array<{ label: string; tone: 'accent' | 'success' | 'warning' | 'info' | 'muted' }> = []
@@ -1210,7 +1161,6 @@ const TransactionItem = memo(function TransactionItem({
   if (tx.transaction_kind === 'refund') badgeParts.push({ label: t('common.refund'), tone: 'success' })
   if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: t('common.reimbursement'), tone: 'success' })
   if (tx.transaction_kind === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
-  if (tx.budget_behavior === 'count_as_spending') badgeParts.push({ label: t('transactions.countsSpending'), tone: 'warning' })
   if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
   if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
   if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
@@ -1218,14 +1168,22 @@ const TransactionItem = memo(function TransactionItem({
   if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: t('common.suggested'), tone: 'warning' })
   if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: t('common.unmatched'), tone: 'warning' })
 
+  const badgeLabels = new Set(badgeParts.map((badge) => badge.label))
   const metaParts: string[] = []
+  const pushMetaPart = (label: string, dedupeAgainst?: string[]) => {
+    const labelsToCheck = [label, ...(dedupeAgainst || [])]
+    if (labelsToCheck.some((candidate) => badgeLabels.has(candidate))) {
+      return
+    }
+    metaParts.push(label)
+  }
 
   if (accountLabel) {
     metaParts.push(accountLabel)
   }
 
   if (classificationStatus) {
-    metaParts.push(classificationStatus)
+    pushMetaPart(classificationStatus)
   }
 
   if (tx.source === 'receipt') {
@@ -1233,39 +1191,19 @@ const TransactionItem = memo(function TransactionItem({
   } else if (tx.source === 'manual' && !accountLabel) {
     metaParts.push('Manual')
   }
-  if (tx.pending) {
-    metaParts.push(t('common.pending'))
-  }
-  if (tx.transaction_kind === 'refund') {
-    metaParts.push(t('common.refund'))
-  } else if (tx.transaction_kind === 'reimbursement') {
-    metaParts.push(t('common.reimbursement'))
-  } else if (tx.transaction_kind === 'transfer') {
-    metaParts.push(t('common.transfer'))
-  }
-  if (tx.budget_behavior === 'count_as_spending') {
-    metaParts.push(t('transactions.countsAsSpending'))
-  } else if (tx.budget_behavior === 'count_as_income') {
-    metaParts.push(t('transactions.countsAsIncome'))
-  } else if (tx.budget_behavior === 'exclude_as_transfer') {
-    metaParts.push(t('transactions.excludedTransfer'))
-  } else if (tx.budget_behavior === 'exclude_manual') {
-    metaParts.push(t('common.excluded'))
+  if (tx.budget_behavior === 'count_as_income') {
+    pushMetaPart(t('transactions.countsAsIncome'), [t('transactions.countsIncome')])
   }
   if (tx.transfer_match_status === 'auto_matched') {
-    metaParts.push(t('common.matched'))
+    pushMetaPart(t('common.matched'))
   } else if (tx.transfer_match_status === 'manually_matched') {
-    metaParts.push(t('common.matched'))
+    pushMetaPart(t('common.matched'))
   } else if (tx.transfer_match_status === 'suggested') {
-    metaParts.push(t('common.suggested'))
+    pushMetaPart(t('common.suggested'))
   } else if (tx.transfer_match_status === 'unmatched') {
-    metaParts.push(t('common.unmatched'))
+    pushMetaPart(t('common.unmatched'))
   } else if (tx.transfer_match_status === 'ignored') {
-    metaParts.push(t('common.notTransfer'))
-  }
-  const budgetApplication = formatBudgetApplication(tx, t, localeCode)
-  if (budgetApplication) {
-    metaParts.push(budgetApplication)
+    pushMetaPart(t('common.notTransfer'))
   }
   const metaText = metaParts.join(' · ')
 
@@ -1464,7 +1402,7 @@ const TransactionItem = memo(function TransactionItem({
                   })
                 }
               >
-                Count spending
+                {t('transactions.defaultTreatment')}
               </button>
               <button
                 type="button"
@@ -1652,7 +1590,7 @@ const TransactionItem = memo(function TransactionItem({
             <div className="similar-suggestion-actions">
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn btn-primary btn-sm"
                 disabled={isSaving}
                 onClick={() =>
                   onApplySimilar(
@@ -1666,7 +1604,7 @@ const TransactionItem = memo(function TransactionItem({
               </button>
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="btn btn-ghost btn-sm"
                 onClick={onDismissSimilar}
               >
                 {t('transactions.onlyThis')}
