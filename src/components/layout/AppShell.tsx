@@ -1,3 +1,4 @@
+import { I18nProvider } from '@/i18n/client'
 import Sidebar from './Sidebar'
 import Header from './Header'
 
@@ -9,12 +10,14 @@ export function AppShell({
   userEmail: string | null
 }) {
   return (
-    <div className="app-layout">
+    <I18nProvider>
+      <div className="app-layout">
       <Sidebar userEmail={userEmail} />
       <div className="main-content">
         <Header userEmail={userEmail} />
         <main className="page-content animate-fade-in">{children}</main>
       </div>
-    </div>
+      </div>
+    </I18nProvider>
   )
 }

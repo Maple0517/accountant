@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { formatCurrency } from '@/lib/currency'
+import { useI18n } from '@/i18n/client'
 
 type AccountRow = Account
 
@@ -24,12 +25,9 @@ function latestSync(accounts: AccountRow[]) {
   return dates.at(-1) || null
 }
 
-function formatTimestamp(value?: string | null) {
-  if (!value) return 'Never'
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
-}
 
 export default function AccountsPage() {
+  const { formatDate, t } = useI18n()
   const { data: payload, error, mutate, isLoading } = useSWR<{ accounts?: AccountRow[]; error?: string }>('/api/plaid/accounts', fetcher)
   const accounts = payload?.accounts || []
 
@@ -42,7 +40,7 @@ export default function AccountsPage() {
       })
       mutate()
     } catch (e) {
-      console.error('Failed to check for Plaid updates', e)
+      console.error(t('accounts.refreshError'), e)
     }
   }
 
@@ -58,8 +56,8 @@ export default function AccountsPage() {
   return (
     <div className="accounts-page">
       <PageHeader
-        title="Accounts"
-        subtitle="Connected accounts, balances, and sync freshness."
+        title={t('accounts.title')}
+        subtitle={t('accounts.subtitle')}
         actions={<PlaidLinkButton onSuccess={() => mutate()} />}
       />
 
@@ -67,23 +65,23 @@ export default function AccountsPage() {
 
       {accounts.length > 0 && (
         <div className="account-health-grid">
-          <Card padding="md"><span className="metric-label">Sync health</span><StatusDot tone={failedSyncCount > 0 ? 'warning' : 'success'} label={failedSyncCount > 0 ? `${failedSyncCount} account issue${failedSyncCount === 1 ? '' : 's'}` : 'All clear'} /></Card>
-          <Card padding="md"><span className="metric-label">Last successful sync</span><span className="metric-value" style={{ fontSize: '1rem' }}>{formatTimestamp(lastSync)}</span></Card>
-          <Card padding="md"><span className="metric-label">Cash & assets</span><span className="metric-value">{formatCurrency(totalCash)}</span></Card>
-          <Card padding="md"><span className="metric-label">Card debt</span><span className="metric-value" style={{ color: creditDebt > 0 ? 'var(--expense)' : undefined }}>{formatCurrency(creditDebt)}</span></Card>
+          <Card padding="md"><span className="metric-label">{t('accounts.syncHealth')}</span><StatusDot tone={failedSyncCount > 0 ? 'warning' : 'success'} label={failedSyncCount > 0 ? t('accounts.accountIssues', { count: failedSyncCount, plural: failedSyncCount === 1 ? '' : 's' }) : t('common.allClear')} /></Card>
+          <Card padding="md"><span className="metric-label">{t('accounts.lastSuccessfulSync')}</span><span className="metric-value" style={{ fontSize: '1rem' }}>{lastSync ? formatDate(new Date(lastSync), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : t('common.never')}</span></Card>
+          <Card padding="md"><span className="metric-label">{t('accounts.cashAssets')}</span><span className="metric-value">{formatCurrency(totalCash)}</span></Card>
+          <Card padding="md"><span className="metric-label">{t('dashboard.cardDebt')}</span><span className="metric-value" style={{ color: creditDebt > 0 ? 'var(--expense)' : undefined }}>{formatCurrency(creditDebt)}</span></Card>
         </div>
       )}
 
       {isLoading ? (
         <div className="loading-state"><div className="skeleton-card" /><div className="skeleton-card" /></div>
       ) : accounts.length === 0 ? (
-        <EmptyState title="No accounts yet">Connect your first bank account securely via Plaid to start syncing transactions automatically.</EmptyState>
+        <EmptyState title={t('accounts.noAccountsTitle')}>{t('accounts.noAccountsCopy')}</EmptyState>
       ) : (
         <div className="account-groups">
-          <AccountGroup title="Cash & Checking" accounts={checkingAccounts} onRefresh={handleRefresh} />
-          <AccountGroup title="Savings & Investments" accounts={savingsAccounts} onRefresh={handleRefresh} />
-          <AccountGroup title="Credit Cards" accounts={creditAccounts} onRefresh={handleRefresh} />
-          <AccountGroup title="Other Accounts" accounts={otherAccounts} onRefresh={handleRefresh} />
+          <AccountGroup title={t('accounts.cashChecking')} accounts={checkingAccounts} onRefresh={handleRefresh} />
+          <AccountGroup title={t('accounts.savingsInvestments')} accounts={savingsAccounts} onRefresh={handleRefresh} />
+          <AccountGroup title={t('accounts.creditCards')} accounts={creditAccounts} onRefresh={handleRefresh} />
+          <AccountGroup title={t('accounts.otherAccounts')} accounts={otherAccounts} onRefresh={handleRefresh} />
         </div>
       )}
     </div>

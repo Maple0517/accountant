@@ -17,6 +17,7 @@ import {
 import { Doughnut, Line, Bar } from 'react-chartjs-2'
 import { formatCurrency } from '@/lib/currency'
 import type { AnalyticsData } from '@/modules/analytics/analytics.types'
+import { useI18n } from '@/i18n/client'
 
 ChartJS.register(
   CategoryScale,
@@ -46,11 +47,13 @@ export default function AnalyticsCharts({
   data: AnalyticsData
   currencyCode?: string
 }) {
+  const { categoryName, locale, t } = useI18n()
+
   const categoryData = {
-    labels: data.byCategory.map((c) => `${c.icon} ${c.name}`),
+    labels: data.byCategory.map((c) => `${c.icon} ${categoryName(c)}`),
     datasets: [
       {
-        label: 'Spending',
+        label: t('analytics.spending'),
         data: data.byCategory.map((c) => c.total),
         backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'),
         borderRadius: 8,
@@ -76,11 +79,11 @@ export default function AnalyticsCharts({
   const lineData = {
     labels: data.byDay.map((d) => {
       const date = new Date(`${d.date}T00:00:00`)
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      return date.toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })
     }),
     datasets: [
       {
-        label: 'Daily Spending',
+        label: t('analytics.dailySpending'),
         data: data.byDay.map((d) => d.total),
         borderColor: '#7c5cff',
         backgroundColor: (context: ScriptableContext<'line'>) => {
@@ -113,11 +116,11 @@ export default function AnalyticsCharts({
   const barData = {
     labels: data.byMonth.map((m) => {
       const [y, mo] = m.month.split('-')
-      return new Date(Number(y), Number(mo) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+      return new Date(Number(y), Number(mo) - 1).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', year: '2-digit' })
     }),
     datasets: [
-      { label: 'Income', data: data.byMonth.map((m) => m.income), backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 8, borderSkipped: false },
-      { label: 'Spending', data: data.byMonth.map((m) => m.spending), backgroundColor: 'rgba(255, 92, 122, 0.72)', borderRadius: 8, borderSkipped: false },
+      { label: t('analytics.income'), data: data.byMonth.map((m) => m.income), backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 8, borderSkipped: false },
+      { label: t('analytics.spending'), data: data.byMonth.map((m) => m.spending), backgroundColor: 'rgba(255, 92, 122, 0.72)', borderRadius: 8, borderSkipped: false },
     ],
   }
 
@@ -132,7 +135,7 @@ export default function AnalyticsCharts({
   }
 
   const donutData = {
-    labels: data.byCategory.map((c) => c.name),
+    labels: data.byCategory.map((c) => categoryName(c)),
     datasets: [{ data: data.byCategory.map((c) => c.total), backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'), borderWidth: 0, spacing: 2 }],
   }
 
@@ -146,30 +149,30 @@ export default function AnalyticsCharts({
   return (
     <div className="charts-grid">
       <div className="card chart-card full-width">
-        <h3>Category ranking</h3>
+        <h3>{t('analytics.categoryRanking')}</h3>
         <div className="chart-container">
-          <Bar data={categoryData} options={categoryOptions} aria-label="Spending ranked by category" />
+          <Bar data={categoryData} options={categoryOptions} aria-label={t('analytics.categoryRankingAria')} />
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>Daily spending trend</h3>
+        <h3>{t('analytics.dailyTrend')}</h3>
         <div className="chart-container">
-          <Line data={lineData} options={lineOptions} aria-label="Daily spending trend chart" />
+          <Line data={lineData} options={lineOptions} aria-label={t('analytics.dailyTrendAria')} />
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>Category share</h3>
+        <h3>{t('analytics.categoryShare')}</h3>
         <div className="chart-container pie-container">
-          <Doughnut data={donutData} options={donutOptions} aria-label="Spending share by category" />
+          <Doughnut data={donutData} options={donutOptions} aria-label={t('analytics.categoryShareAria')} />
         </div>
       </div>
 
       <div className="card chart-card full-width">
-        <h3>Income vs spending</h3>
+        <h3>{t('analytics.incomeVsSpending')}</h3>
         <div className="chart-container">
-          <Bar data={barData} options={barOptions} aria-label="Income versus spending chart" />
+          <Bar data={barData} options={barOptions} aria-label={t('analytics.incomeVsSpendingAria')} />
         </div>
       </div>
     </div>

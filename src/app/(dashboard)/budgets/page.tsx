@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { formatCurrency } from '@/lib/currency'
 import type { CategoryBudgetSummary, MonthlyBudgetSummary } from '@/modules/budget/budget.types'
+import { useI18n } from '@/i18n/client'
 
 function toMonthParam(date: Date): string {
   const y = date.getFullYear()
@@ -35,10 +36,10 @@ function getServerCurrentMonth() {
   return toUtcMonthParam(new Date())
 }
 
-function formatMonthLabel(monthParam: string): string {
+function formatMonthLabel(monthParam: string, locale: string): string {
   const [year, month] = monthParam.split('-').map(Number)
   const date = new Date(year, month - 1, 1)
-  return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  return date.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
 }
 
 function addMonths(monthParam: string, delta: number): string {
@@ -56,15 +57,15 @@ function getStatusTone(status: CategoryBudgetSummary['status']) {
 
 function getHealth(summary: MonthlyBudgetSummary | undefined) {
   if (!summary || summary.totalBaseBudget <= 0 || summary.totalPercentUsed === null) {
-    return { label: 'Not configured', tone: 'neutral' as const, copy: 'Set budgets to unlock monthly guidance.' }
+    return { labelKey: 'budgets.notConfigured', tone: 'neutral' as const, copyKey: 'budgets.setGuidance' }
   }
   if (summary.totalActualSpend > summary.totalBaseBudget) {
-    return { label: 'Over', tone: 'danger' as const, copy: 'Spending has exceeded the monthly plan.' }
+    return { labelKey: 'budgets.over', tone: 'danger' as const, copyKey: 'budgets.overCopy' }
   }
   if (summary.totalPercentUsed >= 0.8) {
-    return { label: 'Watch', tone: 'warning' as const, copy: 'You are close to the monthly limit.' }
+    return { labelKey: 'budgets.watch', tone: 'warning' as const, copyKey: 'budgets.watchCopy' }
   }
-  return { label: 'Safe', tone: 'success' as const, copy: 'Current spending is inside the monthly plan.' }
+  return { labelKey: 'budgets.safe', tone: 'success' as const, copyKey: 'budgets.safeCopy' }
 }
 
 const fetcher = async (url: string) => {
@@ -75,6 +76,7 @@ const fetcher = async (url: string) => {
 }
 
 export default function BudgetsPage() {
+  const { categoryName, locale, t } = useI18n()
   const currentMonth = useSyncExternalStore(
     subscribeCurrentMonth,
     getClientCurrentMonth,
@@ -114,7 +116,7 @@ export default function BudgetsPage() {
   async function commitEdit(categoryId: string) {
     const amount = parseFloat(editValue)
     if (isNaN(amount) || amount < 0) {
-      setSaveError('Budget amount must be a non-negative number.')
+      setSaveError(t('budgets.nonNegative'))
       cancelEdit()
       return
     }
@@ -138,7 +140,7 @@ export default function BudgetsPage() {
       setEditValue('')
       mutate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to update budget'
+      const message = err instanceof Error ? err.message : t('budgets.updateError')
       setSaveError(message)
       console.error('Failed to update budget:', err)
     } finally {
@@ -165,13 +167,13 @@ export default function BudgetsPage() {
   return (
     <div className="budgets-page">
       <PageHeader
-        title="Budgets"
-        subtitle="See which categories are safe, close, or over for the selected month."
+        title={t('budgets.title')}
+        subtitle={t('budgets.subtitle')}
         actions={
           <div className="page-header-actions">
-            <Button variant="ghost" size="sm" onClick={handlePrevMonth} aria-label="Previous month">‹</Button>
-            <span className="topbar-status">{formatMonthLabel(month)}</span>
-            <Button variant="ghost" size="sm" onClick={handleNextMonth} aria-label="Next month">›</Button>
+            <Button variant="ghost" size="sm" onClick={handlePrevMonth} aria-label={t('budgets.prevMonth')}>‹</Button>
+            <span className="topbar-status">{formatMonthLabel(month, locale === 'zh' ? 'zh-CN' : 'en-US')}</span>
+            <Button variant="ghost" size="sm" onClick={handleNextMonth} aria-label={t('budgets.nextMonth')}>›</Button>
           </div>
         }
       />
@@ -184,18 +186,18 @@ export default function BudgetsPage() {
         <>
           <Card className="budget-health-card" padding="lg">
             <div className="budget-health-status">
-              <Badge tone={health.tone}>{health.label}</Badge>
-              <strong>{summary.totalPercentUsed === null ? 'No plan yet' : `${Math.round(summary.totalPercentUsed * 100)}% used`}</strong>
-              <p className="text-secondary">{health.copy}</p>
+              <Badge tone={health.tone}>{t(health.labelKey)}</Badge>
+              <strong>{summary.totalPercentUsed === null ? t('budgets.noPlanYet') : t('budgets.used', { percent: Math.round(summary.totalPercentUsed * 100) })}</strong>
+              <p className="text-secondary">{t(health.copyKey)}</p>
             </div>
             <div>
               <div className="summary-grid" style={{ marginBottom: '1rem' }}>
-                <div><span className="metric-label">Total budget</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget)}</span></div>
-                <div><span className="metric-label">Spent</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend)}</span></div>
-                <div><span className="metric-label">Remaining</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining)}</span></div>
+                <div><span className="metric-label">{t('budgets.totalBudget')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget)}</span></div>
+                <div><span className="metric-label">{t('budgets.spent')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend)}</span></div>
+                <div><span className="metric-label">{t('budgets.remaining')}</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining)}</span></div>
               </div>
-              <ProgressBar value={summary.totalPercentUsed} tone={health.tone} label="Monthly budget progress" />
-              {summary.totalRemaining < 0 && <p className="budget-note">Remaining is negative because posted budget-counting spending is above the configured budget.</p>}
+              <ProgressBar value={summary.totalPercentUsed} tone={health.tone} label={t('budgets.monthlyProgress')} />
+              {summary.totalRemaining < 0 && <p className="budget-note">{t('budgets.negativeRemaining')}</p>}
             </div>
           </Card>
 
@@ -203,16 +205,16 @@ export default function BudgetsPage() {
             <Card padding="md">
               <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '0.8rem' }}>
                 <div>
-                  <h3>Categories to watch</h3>
-                  <p className="card-subtitle">The categories closest to their monthly limit.</p>
+                  <h3>{t('budgets.categoriesToWatch')}</h3>
+                  <p className="card-subtitle">{t('budgets.categoriesToWatchSubtitle')}</p>
                 </div>
               </div>
               <div className="budget-risk-list">
                 {riskyCategories.map((category) => (
                   <div className="budget-risk-row" key={category.categoryId}>
                     <div>
-                      <strong>{category.categoryName}</strong>
-                      <span style={{ display: 'block' }}>{formatCurrency(category.actualSpend)} spent of {formatCurrency(category.baseBudget)}</span>
+                      <strong>{categoryName({ name: category.categoryName, name_zh: category.categoryNameZh })}</strong>
+                      <span style={{ display: 'block' }}>{t('budgets.spentOf', { spent: formatCurrency(category.actualSpend), budget: formatCurrency(category.baseBudget) })}</span>
                     </div>
                     <Badge tone={getStatusTone(category.status)}>{category.status.replace('_', ' ')}</Badge>
                   </div>
@@ -222,16 +224,16 @@ export default function BudgetsPage() {
           )}
 
           {visibleCategories.length === 0 ? (
-            <EmptyState title="No budgetable categories yet">Add an expense category first, then return here to set a spending limit for {formatMonthLabel(month)}.</EmptyState>
+            <EmptyState title={t('budgets.noCategoriesTitle')}>{t('budgets.noCategoriesCopy', { month: formatMonthLabel(month, locale === 'zh' ? 'zh-CN' : 'en-US') })}</EmptyState>
           ) : (
             <Card className="budget-table" padding="none">
               <div className="budget-row budget-row-heading" aria-hidden="true">
-                <span>Category</span>
-                <span>Budget</span>
-                <span>Spent</span>
-                <span>Left</span>
-                <span>Progress</span>
-                <span>Status</span>
+                <span>{t('budgets.category')}</span>
+                <span>{t('budgets.budget')}</span>
+                <span>{t('budgets.spent')}</span>
+                <span>{t('budgets.left')}</span>
+                <span>{t('budgets.progress')}</span>
+                <span>{t('budgets.status')}</span>
               </div>
               {visibleCategories.map((cat) => (
                 <CategoryRow
@@ -244,6 +246,9 @@ export default function BudgetsPage() {
                   onEditChange={(v) => setEditValue(v)}
                   onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
                   onCommit={() => commitEdit(cat.categoryId)}
+                  onAmountAria={t('budgets.amountAria')}
+                  displayCategoryName={categoryName({ name: cat.categoryName, name_zh: cat.categoryNameZh })}
+                  t={t}
                 />
               ))}
             </Card>
@@ -263,6 +268,9 @@ type CategoryRowProps = {
   onEditChange: (v: string) => void
   onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
   onCommit: () => void
+  onAmountAria: string
+  displayCategoryName: string
+  t: (key: string, params?: Record<string, string | number>) => string
 }
 
 function CategoryRow({
@@ -274,6 +282,9 @@ function CategoryRow({
   onEditChange,
   onEditKeyDown,
   onCommit,
+  onAmountAria,
+  displayCategoryName,
+  t,
 }: CategoryRowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -290,11 +301,11 @@ function CategoryRow({
   return (
     <div className="budget-row">
       <div>
-        <span className="budget-category-name">{cat.categoryName}</span>
-        {cat.remaining < 0 && <span className="budget-note" style={{ display: 'block' }}>Over by {formatCurrency(Math.abs(cat.remaining))}</span>}
+        <span className="budget-category-name">{displayCategoryName}</span>
+        {cat.remaining < 0 && <span className="budget-note" style={{ display: 'block' }}>{t('budgets.overBy', { amount: formatCurrency(Math.abs(cat.remaining)) })}</span>}
       </div>
       <div>
-        <span className="budget-cell-label">Budget</span>
+        <span className="budget-cell-label">{t('budgets.budget')}</span>
         {isEditing ? (
           <EditInput
             ref={inputRef}
@@ -303,18 +314,19 @@ function CategoryRow({
             onChange={(e) => onEditChange(e.target.value)}
             onKeyDown={onEditKeyDown}
             onBlur={onCommit}
+            ariaLabel={onAmountAria}
           />
         ) : (
-          <button className="budget-edit-button" type="button" onClick={onStartEdit} aria-label={`Edit monthly budget for ${cat.categoryName}`}>
+          <button className="budget-edit-button" type="button" onClick={onStartEdit} aria-label={t('budgets.editBudgetAria', { category: displayCategoryName })}>
             {formatCurrency(cat.baseBudget)}
           </button>
         )}
       </div>
-      <div><span className="budget-cell-label">Spent</span><span className="budget-cell-value">{formatCurrency(cat.actualSpend)}</span></div>
-      <div><span className="budget-cell-label">Left</span><span className="budget-cell-value" style={{ color: remainingColor }}>{formatCurrency(cat.remaining)}</span></div>
+      <div><span className="budget-cell-label">{t('budgets.spent')}</span><span className="budget-cell-value">{formatCurrency(cat.actualSpend)}</span></div>
+      <div><span className="budget-cell-label">{t('budgets.left')}</span><span className="budget-cell-value" style={{ color: remainingColor }}>{formatCurrency(cat.remaining)}</span></div>
       <div className="budget-progress-cell">
-        <span className="budget-cell-label">Progress</span>
-        <div style={{ marginTop: '0.45rem' }}><ProgressBar value={cat.percentUsed} tone={tone} label={`${cat.categoryName} budget progress`} /></div>
+        <span className="budget-cell-label">{t('budgets.progress')}</span>
+        <div style={{ marginTop: '0.45rem' }}><ProgressBar value={cat.percentUsed} tone={tone} label={t('budgets.categoryProgress', { category: displayCategoryName })} /></div>
       </div>
       <div className="budget-actions-cell"><Badge tone={tone}>{cat.status.replace('_', ' ')}</Badge></div>
     </div>
@@ -327,7 +339,8 @@ const EditInput = forwardRef<HTMLInputElement, {
   onChange: React.ChangeEventHandler<HTMLInputElement>
   onKeyDown: React.KeyboardEventHandler<HTMLInputElement>
   onBlur: React.FocusEventHandler<HTMLInputElement>
-}>(function EditInput({ value, disabled, onChange, onKeyDown, onBlur }, ref) {
+  ariaLabel: string
+}>(function EditInput({ value, disabled, onChange, onKeyDown, onBlur, ariaLabel }, ref) {
   return (
     <input
       ref={ref}
@@ -336,7 +349,7 @@ const EditInput = forwardRef<HTMLInputElement, {
       step="0.01"
       value={value}
       disabled={disabled}
-      aria-label="Budget amount"
+      aria-label={ariaLabel}
       onChange={onChange}
       onKeyDown={onKeyDown}
       onBlur={onBlur}

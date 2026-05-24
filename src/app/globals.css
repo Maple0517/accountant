@@ -194,6 +194,11 @@ a {
 .btn-ghost:hover:not(:disabled), .btn-ghost.active { background: var(--bg-muted); color: var(--text-primary); border-color: var(--border-strong); }
 .btn-danger { background: rgba(255, 92, 122, 0.12); border-color: rgba(255, 92, 122, 0.24); color: var(--danger); }
 .btn-danger:hover:not(:disabled) { background: rgba(255, 92, 122, 0.18); }
+.language-toggle {
+  min-width: 2.8rem;
+  letter-spacing: 0.04em;
+}
+
 
 .input {
   width: 100%;

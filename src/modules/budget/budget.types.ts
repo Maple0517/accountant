@@ -21,6 +21,7 @@ export interface BudgetEngineInput {
 export interface BudgetCategoryInput {
   id: string;
   name: string;
+  nameZh?: string | null;
   groupId?: string | null;
   type: 'expense' | 'income' | 'transfer' | 'hidden';
   isExcludedFromBudget: boolean;
@@ -58,6 +59,7 @@ export type BudgetStatus = 'under' | 'near' | 'over' | 'no_budget';
 export interface CategoryBudgetSummary {
   categoryId: string;
   categoryName: string;
+  categoryNameZh?: string | null;
   groupId?: string | null;
   baseBudget: number;
   actualSpend: number;

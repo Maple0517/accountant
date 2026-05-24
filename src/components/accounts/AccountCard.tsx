@@ -5,6 +5,7 @@ import type { Account } from '@/types'
 import { useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { StatusDot } from '@/components/ui/StatusDot'
+import { useI18n } from '@/i18n/client'
 
 interface AccountCardProps {
   account: Account
@@ -12,6 +13,7 @@ interface AccountCardProps {
 }
 
 export default function AccountCard({ account, onRefresh }: AccountCardProps) {
+  const { formatDate, t } = useI18n()
   const [refreshing, setRefreshing] = useState(false)
 
   const handleRefresh = async () => {
@@ -25,16 +27,18 @@ export default function AccountCard({ account, onRefresh }: AccountCardProps) {
   }
 
   const getSyncStatusText = () => {
-    if (account.last_sync_error) return 'Last sync failed. Try again later.'
+    if (account.last_sync_error) return t('accounts.lastSyncFailed')
     if (account.last_synced_at) {
-      return `Last checked ${new Intl.DateTimeFormat(undefined, {
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-      }).format(new Date(account.last_synced_at))}`
+      return t('accounts.lastChecked', {
+        time: formatDate(new Date(account.last_synced_at), {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+      })
     }
-    return account.is_manual ? 'Manual account' : 'Not checked yet'
+    return account.is_manual ? t('accounts.manualAccount') : t('accounts.notChecked')
   }
 
   const syncTone = account.last_sync_error ? 'warning' : account.last_synced_at ? 'success' : 'neutral'
@@ -56,13 +60,13 @@ export default function AccountCard({ account, onRefresh }: AccountCardProps) {
 
       <div className="card-body">
         <div className="balance-info">
-          <span className="balance-label">Current balance</span>
+          <span className="balance-label">{t('accounts.currentBalance')}</span>
           <span className="balance-amount">{formatCurrency(account.current_balance || 0, account.iso_currency_code || 'USD')}</span>
         </div>
 
         {account.available_balance !== null && account.available_balance !== undefined && (
           <div className="balance-info available">
-            <span className="balance-label">Available {isCredit ? 'credit' : 'balance'}</span>
+            <span className="balance-label">{isCredit ? t('accounts.availableCredit') : t('accounts.availableBalance')}</span>
             <span className="balance-amount-small">{formatCurrency(account.available_balance, account.iso_currency_code || 'USD')}</span>
           </div>
         )}
@@ -70,7 +74,7 @@ export default function AccountCard({ account, onRefresh }: AccountCardProps) {
         {utilization !== null && Number.isFinite(utilization) && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
-              <span className="balance-label">Utilization</span>
+              <span className="balance-label">{t('accounts.utilization')}</span>
               <span className="text-secondary text-xs">{Math.round(utilization * 100)}%</span>
             </div>
             <div className="progress"><div className="progress-fill progress-warning" style={{ width: `${Math.min(utilization * 100, 100)}%` }} /></div>
@@ -84,7 +88,7 @@ export default function AccountCard({ account, onRefresh }: AccountCardProps) {
 
       {account.plaid_item_id && onRefresh && (
         <button className={`btn btn-ghost btn-sm ${refreshing ? 'syncing' : ''}`} onClick={handleRefresh} disabled={refreshing} type="button">
-          {refreshing ? 'Checking...' : 'Check updates'}
+          {refreshing ? t('accounts.checkingUpdates') : t('accounts.checkUpdates')}
         </button>
       )}
     </div>

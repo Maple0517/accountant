@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/Card'
 import { ButtonLink } from '@/components/ui/Button'
+import { useI18n } from '@/i18n/client'
 
 export function NeedsReviewCard({
   counts,
@@ -12,23 +13,24 @@ export function NeedsReviewCard({
     pending: number
   }
 }) {
+  const { t } = useI18n()
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
   const rows = [
-    { label: 'AI pending', value: counts.aiPending, hint: 'Needs classifier confirmation' },
-    { label: 'Uncategorized', value: counts.uncategorized, hint: 'Missing budget category' },
-    { label: 'Refunds / reimbursements', value: counts.possibleRefunds, hint: 'Check linked purchase treatment' },
-    { label: 'Unmatched transfers', value: counts.unmatchedTransfers, hint: 'Confirm transfer pairs' },
-    { label: 'Pending', value: counts.pending, hint: 'Not posted yet' },
+    { label: t('transactions.aiPending'), value: counts.aiPending, hint: t('dashboard.aiPendingHint') },
+    { label: t('common.uncategorized'), value: counts.uncategorized, hint: t('dashboard.uncategorizedHint') },
+    { label: 'Refunds / reimbursements', value: counts.possibleRefunds, hint: t('dashboard.refundsHint') },
+    { label: t('common.unmatched') + ' transfers', value: counts.unmatchedTransfers, hint: t('dashboard.transfersHint') },
+    { label: t('common.pending'), value: counts.pending, hint: t('dashboard.pendingHint') },
   ]
 
   return (
     <Card padding="none" className="dashboard-panel">
       <div className="card-header">
         <div>
-          <h3>Needs Review</h3>
-          <p className="card-subtitle">{total === 0 ? 'No obvious review items this month.' : `${total} item${total === 1 ? '' : 's'} need attention.`}</p>
+          <h3>{t('dashboard.needsReview')}</h3>
+          <p className="card-subtitle">{total === 0 ? t('dashboard.noReviewItems') : t('dashboard.itemsNeedAttention', { count: total, plural: total === 1 ? '' : 's' })}</p>
         </div>
-        <ButtonLink href="/review" variant="ghost" size="sm">Open inbox</ButtonLink>
+        <ButtonLink href="/review" variant="ghost" size="sm">{t('dashboard.openInbox')}</ButtonLink>
       </div>
       <div className="review-list" style={{ padding: '1rem' }}>
         {rows.map((row) => (

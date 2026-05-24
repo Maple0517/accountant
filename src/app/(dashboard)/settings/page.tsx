@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import type { Profile, ReceiptApiKey } from '@/types'
+import { useI18n } from '@/i18n/client'
 
 type SafeProfile = Omit<Profile, 'notion_token'> & {
   notion_token?: never
@@ -40,6 +41,7 @@ function mergeProfile(base: SafeProfile | null, draft: Partial<SafeProfile>): Sa
 }
 
 export default function SettingsPage() {
+  const { formatDate, t } = useI18n()
   const { data: profileData, error: profileError, mutate: mutateProfile } = useSWR<NotionPayload>('/api/settings/notion', fetcher)
   const { data: apiKeysData, mutate: mutateApiKeys } = useSWR<ApiKeysPayload>('/api/settings/api-keys', fetcher)
 
@@ -62,7 +64,7 @@ export default function SettingsPage() {
 
   const apiKeys = apiKeysData?.api_keys || []
   const apiKeyMigrationRequired = Boolean(apiKeysData?.migration_required)
-  const visibleMessage = message || (profileError ? { text: profileError.message || 'Failed to load settings.', type: 'error' as const } : null)
+  const visibleMessage = message || (profileError ? { text: profileError.message || t('settings.loadSettingsError'), type: 'error' as const } : null)
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -88,15 +90,15 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setMessage({ text: data.error || 'Failed to save settings.', type: 'error' })
+        setMessage({ text: data.error || t('settings.saveError'), type: 'error' })
       } else {
         setProfileDraft({})
         setNotionTokenInput('')
         mutateProfile({ profile: data.profile }, false)
-        setMessage({ text: 'Settings saved successfully.', type: 'success' })
+        setMessage({ text: t('settings.saveSuccess'), type: 'success' })
       }
     } catch {
-      setMessage({ text: 'Failed to save settings.', type: 'error' })
+      setMessage({ text: t('settings.saveError'), type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -121,7 +123,7 @@ export default function SettingsPage() {
         })
         const saveData = await saveResponse.json()
         if (!saveResponse.ok) {
-          setMessage({ text: saveData.error || 'Failed to save Notion token.', type: 'error' })
+          setMessage({ text: saveData.error || t('settings.saveTokenError'), type: 'error' })
           return
         }
         setProfileDraft({})
@@ -139,11 +141,11 @@ export default function SettingsPage() {
       if (data.error) {
         setMessage({ text: data.error, type: 'error' })
       } else {
-        setMessage({ text: `Sync complete! Synced ${data.synced} transactions. ${data.failed > 0 ? `(${data.failed} failed)` : ''}`, type: 'success' })
+        setMessage({ text: t('settings.syncComplete', { synced: data.synced, failedPart: data.failed > 0 ? t('settings.syncFailedPart', { failed: data.failed }) : '' }), type: 'success' })
         mutateProfile()
       }
     } catch {
-      setMessage({ text: 'An unexpected error occurred.', type: 'error' })
+      setMessage({ text: t('settings.unexpectedError'), type: 'error' })
     } finally {
       setSyncing(false)
     }
@@ -162,15 +164,15 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setMessage({ text: data.error || 'Failed to create API key.', type: 'error' })
+        setMessage({ text: data.error || t('settings.createKeyError'), type: 'error' })
         return
       }
 
       setGeneratedApiKey(data.token)
       mutateApiKeys((current) => ({ api_keys: [data.api_key, ...(current?.api_keys || [])] }), false)
-      setMessage({ text: 'API key created. Copy it now; it will only be shown once.', type: 'success' })
+      setMessage({ text: t('settings.keyCreated'), type: 'success' })
     } catch {
-      setMessage({ text: 'Failed to create API key.', type: 'error' })
+      setMessage({ text: t('settings.createKeyError'), type: 'error' })
     } finally {
       setApiKeyBusy(false)
     }
@@ -189,7 +191,7 @@ export default function SettingsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        setMessage({ text: data.error || 'Failed to revoke API key.', type: 'error' })
+        setMessage({ text: data.error || t('settings.revokeKeyError'), type: 'error' })
         return
       }
 
@@ -197,9 +199,9 @@ export default function SettingsPage() {
         ...current,
         api_keys: (current?.api_keys || []).map((key) => key.id === id ? { ...key, revoked_at: new Date().toISOString() } : key),
       }), false)
-      setMessage({ text: 'API key revoked.', type: 'success' })
+      setMessage({ text: t('settings.keyRevoked'), type: 'success' })
     } catch {
-      setMessage({ text: 'Failed to revoke API key.', type: 'error' })
+      setMessage({ text: t('settings.revokeKeyError'), type: 'error' })
     } finally {
       setApiKeyBusy(false)
     }
@@ -209,33 +211,33 @@ export default function SettingsPage() {
     if (!text) return
     try {
       await navigator.clipboard.writeText(text)
-      setMessage({ text: `${label} copied.`, type: 'success' })
+      setMessage({ text: t('settings.copied', { label }), type: 'success' })
     } catch {
-      setMessage({ text: `Could not copy ${label.toLowerCase()}.`, type: 'error' })
+      setMessage({ text: t('settings.copyError', { label: label.toLowerCase() }), type: 'error' })
     }
   }
 
   const formatTimestamp = (value?: string | null) => {
-    if (!value) return 'Never'
-    return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(value))
+    if (!value) return t('common.never')
+    return formatDate(new Date(value), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
   }
 
   return (
     <div className="settings-page">
-      <PageHeader title="Integrations" subtitle="Manage profile settings, Notion sync, and iOS Shortcut capture without exposing raw internals by default." />
+      <PageHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
 
       {visibleMessage && <div className={`alert ${visibleMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>{visibleMessage.text}</div>}
 
       <form onSubmit={handleSave} className="settings-grid">
         <Card className="settings-card">
           <h2>Profile</h2>
-          <p className="settings-card-intro">Defaults used across the workspace.</p>
+          <p className="settings-card-intro">{t('settings.profileIntro')}</p>
           <div className="input-group">
-            <label className="input-label" htmlFor="settings-display-name">Display name</label>
+            <label className="input-label" htmlFor="settings-display-name">{t('settings.displayName')}</label>
             <input id="settings-display-name" type="text" className="input" value={profile?.display_name || ''} onChange={(e) => setProfileDraft((p) => ({ ...p, display_name: e.target.value }))} />
           </div>
           <div className="input-group">
-            <label className="input-label" htmlFor="settings-default-currency">Default currency</label>
+            <label className="input-label" htmlFor="settings-default-currency">{t('settings.defaultCurrency')}</label>
             <select id="settings-default-currency" className="input" value={profile?.default_currency || 'USD'} onChange={(e) => setProfileDraft((p) => ({ ...p, default_currency: e.target.value }))}>
               <option value="USD">USD ($)</option>
               <option value="CNY">CNY (¥)</option>
@@ -247,40 +249,40 @@ export default function SettingsPage() {
           <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
             <div>
               <h2>Notion</h2>
-              <p className="settings-card-intro" style={{ marginBottom: 0 }}>Single-direction transaction sync to your own database.</p>
+              <p className="settings-card-intro" style={{ marginBottom: 0 }}>{t('settings.notionIntro')}</p>
             </div>
-            <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? 'Connected' : 'Not connected'}</Badge>
+            <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? t('common.connected') : t('common.notConnected')}</Badge>
           </div>
 
           <div className="toggle-group mb-4">
             <label className="toggle-label">
               <input type="checkbox" className="toggle-checkbox" checked={profile?.notion_sync_enabled || false} onChange={(e) => setProfileDraft((p) => ({ ...p, notion_sync_enabled: e.target.checked }))} />
-              <span>Enable Notion sync</span>
+              <span>{t('settings.enableNotion')}</span>
             </label>
           </div>
 
           {profile?.notion_sync_enabled && (
             <>
               <div className="input-group">
-                <label className="input-label" htmlFor="settings-notion-token">Notion internal integration token</label>
-                <input id="settings-notion-token" type="password" className="input" placeholder={profile.notion_token_configured ? 'Leave blank to keep existing token' : 'secret_...'} value={notionTokenInput} onChange={(e) => setNotionTokenInput(e.target.value)} />
-                {profile.notion_token_configured && <p className="input-hint">Token saved: {profile.notion_token_masked || 'configured'}.</p>}
+                <label className="input-label" htmlFor="settings-notion-token">{t('settings.notionToken')}</label>
+                <input id="settings-notion-token" type="password" className="input" placeholder={profile.notion_token_configured ? t('settings.keepTokenPlaceholder') : 'secret_...'} value={notionTokenInput} onChange={(e) => setNotionTokenInput(e.target.value)} />
+                {profile.notion_token_configured && <p className="input-hint">{t('settings.tokenSaved', { token: profile.notion_token_masked || t('settings.configured') })}</p>}
               </div>
 
               {!profile?.notion_database_id ? (
                 <div className="input-group">
-                  <label className="input-label" htmlFor="settings-notion-parent-page">Initial setup parent page ID</label>
-                  <input type="text" id="settings-notion-parent-page" className="input" placeholder="Share a Notion page with the integration and paste its ID" value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} />
+                  <label className="input-label" htmlFor="settings-notion-parent-page">{t('settings.parentPage')}</label>
+                  <input type="text" id="settings-notion-parent-page" className="input" placeholder={t('settings.parentPagePlaceholder')} value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} />
                 </div>
               ) : (
                 <div className="input-group">
-                  <label className="input-label">Database</label>
-                  <div className="code-block">Configured database ending in …{profile.notion_database_id.slice(-6)}</div>
+                  <label className="input-label">{t('settings.database')}</label>
+                  <div className="code-block">{t('settings.databaseConfigured', { suffix: profile.notion_database_id.slice(-6) })}</div>
                 </div>
               )}
 
               <button type="button" className="btn btn-secondary" onClick={handleManualSync} disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}>
-                {syncing ? 'Syncing...' : 'Force sync'}
+                {syncing ? t('settings.syncing') : t('settings.forceSync')}
               </button>
             </>
           )}
@@ -289,58 +291,58 @@ export default function SettingsPage() {
         <Card className="settings-card full-width">
           <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
             <div>
-              <h2>iOS Shortcut Capture</h2>
-              <p className="settings-card-intro" style={{ marginBottom: 0 }}>Capture receipts or payment screenshots and convert them into transactions.</p>
+              <h2>{t('settings.iosCapture')}</h2>
+              <p className="settings-card-intro" style={{ marginBottom: 0 }}>{t('settings.iosCaptureIntro')}</p>
             </div>
-            <Badge tone={apiKeys.some((key) => !key.revoked_at) ? 'success' : 'muted'}>{apiKeys.some((key) => !key.revoked_at) ? 'Key active' : 'No active key'}</Badge>
+            <Badge tone={apiKeys.some((key) => !key.revoked_at) ? 'success' : 'muted'}>{apiKeys.some((key) => !key.revoked_at) ? t('settings.keyActive') : t('settings.noActiveKey')}</Badge>
           </div>
 
           {generatedApiKey && (
             <div className="api-key-reveal">
               <div>
-                <label className="input-label">New API key</label>
+                <label className="input-label">{t('settings.newApiKey')}</label>
                 <div className="code-block"><code>{generatedApiKey}</code></div>
-                <p className="input-hint mt-2">Copy this key now. It is stored as a hash and cannot be shown again.</p>
+                <p className="input-hint mt-2">{t('settings.copyNow')}</p>
               </div>
-              <button type="button" className="btn btn-ghost" onClick={() => handleCopy(generatedApiKey, 'API key')}>Copy key</button>
+              <button type="button" className="btn btn-ghost" onClick={() => handleCopy(generatedApiKey, t('settings.apiKeyLabel'))}>{t('settings.copyKey')}</button>
             </div>
           )}
 
-          {apiKeyMigrationRequired && <div className="alert alert-error mb-4">API key storage is not ready. Run <code>supabase/migrations/002_ios_receipt_api_keys.sql</code> in Supabase before generating Shortcut keys.</div>}
+          {apiKeyMigrationRequired && <div className="alert alert-error mb-4">{t('settings.apiKeyStorageNotReady')}</div>}
 
           <div className="api-key-actions">
             <div className="input-group api-key-name">
-              <label className="input-label" htmlFor="settings-api-key-name">Key name</label>
+              <label className="input-label" htmlFor="settings-api-key-name">{t('settings.keyName')}</label>
               <input id="settings-api-key-name" type="text" className="input" value={apiKeyName} onChange={(e) => setApiKeyName(e.target.value)} />
             </div>
-            <button type="button" className="btn btn-primary" onClick={handleCreateApiKey} disabled={apiKeyBusy || apiKeyMigrationRequired}>{apiKeyBusy ? 'Working...' : 'Generate key'}</button>
-            <button type="button" className="btn btn-ghost" onClick={() => handleCopy(receiptEndpoint, 'Endpoint')}>Copy endpoint</button>
+            <button type="button" className="btn btn-primary" onClick={handleCreateApiKey} disabled={apiKeyBusy || apiKeyMigrationRequired}>{apiKeyBusy ? t('common.working') : t('settings.generateKey')}</button>
+            <button type="button" className="btn btn-ghost" onClick={() => handleCopy(receiptEndpoint, t('settings.endpointLabel'))}>{t('settings.copyEndpoint')}</button>
           </div>
 
           <div className="api-key-list">
-            {apiKeys.length === 0 ? <p className="text-muted text-sm">No API keys yet.</p> : apiKeys.map((key) => (
+            {apiKeys.length === 0 ? <p className="text-muted text-sm">{t('settings.noApiKeys')}</p> : apiKeys.map((key) => (
               <div key={key.id} className="api-key-row">
                 <div>
-                  <div className="api-key-title"><span>{key.name}</span><Badge tone={key.revoked_at ? 'danger' : 'success'}>{key.revoked_at ? 'Revoked' : 'Active'}</Badge></div>
-                  <div className="api-key-meta"><code>{key.key_prefix}...</code><span>Created {formatTimestamp(key.created_at)}</span><span>Last used {formatTimestamp(key.last_used_at)}</span></div>
+                  <div className="api-key-title"><span>{key.name}</span><Badge tone={key.revoked_at ? 'danger' : 'success'}>{key.revoked_at ? t('common.revoked') : t('common.active')}</Badge></div>
+                  <div className="api-key-meta"><code>{key.key_prefix}...</code><span>{t('settings.created', { time: formatTimestamp(key.created_at) })}</span><span>{t('settings.lastUsed', { time: formatTimestamp(key.last_used_at) })}</span></div>
                 </div>
-                {!key.revoked_at && <button type="button" className="btn btn-danger" onClick={() => handleRevokeApiKey(key.id)} disabled={apiKeyBusy}>Revoke</button>}
+                {!key.revoked_at && <button type="button" className="btn btn-danger" onClick={() => handleRevokeApiKey(key.id)} disabled={apiKeyBusy}>{t('settings.revoke')}</button>}
               </div>
             ))}
           </div>
 
           <details className="advanced-details">
-            <summary>Advanced endpoint details</summary>
+            <summary>{t('settings.advancedEndpoint')}</summary>
             <div className="input-group mt-4">
-              <label className="input-label">Capture endpoint</label>
+              <label className="input-label">{t('settings.captureEndpoint')}</label>
               <div className="code-block"><code>{receiptEndpoint}</code></div>
-              <p className="input-hint">Put this URL in the Shortcut “Get Contents of URL” action.</p>
+              <p className="input-hint">{t('settings.shortcutHint')}</p>
             </div>
           </details>
         </Card>
 
         <div className="form-actions full-width">
-          <button type="submit" className="btn btn-primary" disabled={saving || !profile}>{saving ? 'Saving...' : 'Save settings'}</button>
+          <button type="submit" className="btn btn-primary" disabled={saving || !profile}>{saving ? t('settings.saving') : t('settings.saveSettings')}</button>
         </div>
       </form>
     </div>

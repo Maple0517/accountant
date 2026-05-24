@@ -2,12 +2,14 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { usePlaidLink } from 'react-plaid-link'
+import { useI18n } from '@/i18n/client'
 
 interface PlaidLinkButtonProps {
   onSuccess?: () => void
 }
 
 export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
+  const { t } = useI18n()
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -20,14 +22,14 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
         if (data.link_token) {
           setToken(data.link_token)
         } else {
-          setError('Failed to get link token')
+          setError(t('accounts.linkTokenError'))
         }
       } catch {
-        setError('Error initializing Plaid')
+        setError(t('accounts.plaidInitError'))
       }
     }
     createToken()
-  }, [])
+  }, [t])
 
   const handleOnSuccess = useCallback(
     async (public_token: string) => {
@@ -49,12 +51,12 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
           if (onSuccess) onSuccess()
         }
       } catch {
-        setError('Error linking account')
+        setError(t('accounts.linkError'))
       } finally {
         setLoading(false)
       }
     },
-    [onSuccess]
+    [onSuccess, t]
   )
 
   const { open, ready } = usePlaidLink({ token: token!, onSuccess: handleOnSuccess })
@@ -63,7 +65,7 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
     <div className="plaid-link-container">
       {error && <div className="error-message">{error}</div>}
       <button className="btn btn-primary btn-link-bank" onClick={() => open()} disabled={!ready || !token || loading} type="button">
-        {loading ? 'Connecting...' : 'Connect bank'}
+        {loading ? t('common.connecting') : t('accounts.connectBank')}
       </button>
     </div>
   )

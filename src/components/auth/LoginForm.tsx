@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { I18nProvider, useI18n } from '@/i18n/client'
 
-export default function LoginForm() {
+function LoginFormContent() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -11,6 +12,7 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null)
 
   const router = useRouter()
+  const { locale, toggleLocale, t } = useI18n()
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,7 +32,7 @@ export default function LoginForm() {
           },
         })
         if (error) throw error
-        setError('Check your email for the confirmation link.')
+        setError(t('auth.checkEmail'))
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -44,7 +46,7 @@ export default function LoginForm() {
       setError(
         error instanceof Error
           ? error.message
-          : 'An error occurred during authentication.'
+          : t('auth.genericError')
       )
     } finally {
       setLoading(false)
@@ -55,9 +57,18 @@ export default function LoginForm() {
     <div className="auth-container">
       <div className="auth-card card animate-slide-up">
         <div className="brand">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm language-toggle"
+            onClick={toggleLocale}
+            aria-label={locale === 'en' ? t('app.switchToChinese') : t('app.switchToEnglish')}
+            style={{ alignSelf: 'flex-end' }}
+          >
+            {locale === 'en' ? '中文' : 'EN'}
+          </button>
           <span className="logo-emoji">👛</span>
           <h1>Accountant</h1>
-          <p className="subtitle">Smart personal finance tracker</p>
+          <p className="subtitle">{t('auth.subtitle')}</p>
         </div>
 
         <form onSubmit={handleAuth} className="auth-form">
@@ -75,7 +86,7 @@ export default function LoginForm() {
 
           <div className="input-group">
             <label className="input-label" htmlFor="email">
-              Email
+              {t('auth.email')}
             </label>
             <input
               id="email"
@@ -90,7 +101,7 @@ export default function LoginForm() {
 
           <div className="input-group">
             <label className="input-label" htmlFor="password">
-              Password
+              {t('auth.password')}
             </label>
             <input
               id="password"
@@ -109,13 +120,13 @@ export default function LoginForm() {
             className="btn btn-primary w-full mt-4"
             disabled={loading}
           >
-            {loading ? 'Processing...' : isSignUp ? 'Create Account' : 'Sign In'}
+            {loading ? t('common.processing') : isSignUp ? t('auth.createAccount') : t('auth.signIn')}
           </button>
         </form>
 
         <div className="toggle-mode">
           <p className="text-secondary">
-            {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}
+            {isSignUp ? t('auth.haveAccount') : t('auth.noAccount')}{' '}
             <button
               type="button"
               className="text-btn"
@@ -124,11 +135,19 @@ export default function LoginForm() {
                 setError(null)
               }}
             >
-              {isSignUp ? 'Sign In' : 'Sign Up'}
+              {isSignUp ? t('auth.signIn') : t('auth.signUp')}
             </button>
           </p>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginForm() {
+  return (
+    <I18nProvider>
+      <LoginFormContent />
+    </I18nProvider>
   )
 }
