@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 
 
 export const dynamic = 'force-dynamic'
@@ -32,6 +33,10 @@ type AccountWithSyncMetadata = {
   } | null
 }
 
+type ProfileCurrency = {
+  default_currency?: string | null
+}
+
 export async function GET() {
   try {
     const supabase = await createClient()
@@ -41,9 +46,15 @@ export async function GET() {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: accounts, error } = await supabase
-      .from('accounts')
-      .select(`
+    const [{ data: profile }, { data: accounts, error }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('default_currency')
+        .eq('id', user.id)
+        .maybeSingle<ProfileCurrency>(),
+      supabase
+        .from('accounts')
+        .select(`
         id,
         user_id,
         plaid_item_id,
@@ -66,8 +77,9 @@ export async function GET() {
           last_sync_error
         )
       `)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false }),
+    ])
 
     if (error) {
       console.error('Error fetching accounts:', error)
@@ -75,6 +87,7 @@ export async function GET() {
     }
 
     const accountRows = (accounts || []) as AccountWithSyncMetadata[]
+    const defaultCurrency = normalizeCurrencyCode(profile?.default_currency)
     const connectionCounts = accountRows.reduce<Record<string, number>>((counts, account) => {
       if (account.plaid_item_id) {
         counts[account.plaid_item_id] = (counts[account.plaid_item_id] || 0) + 1
@@ -106,7 +119,7 @@ export async function GET() {
       }
     })
 
-    return Response.json({ accounts: normalized })
+    return Response.json({ accounts: normalized, defaultCurrency })
   } catch (error: unknown) {
     console.error('Error in accounts API:', error)
     const errorMessage =

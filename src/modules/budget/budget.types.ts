@@ -71,6 +71,7 @@ export interface CategoryBudgetSummary {
 export interface MonthlyBudgetSummary {
   userId: string;
   month: string;
+  currencyCode: string;
   budgetingEnabled: boolean;
   totalBaseBudget: number;
   totalActualSpend: number;
@@ -78,3 +79,5 @@ export interface MonthlyBudgetSummary {
   totalPercentUsed: number | null;
   categories: CategoryBudgetSummary[];
 }
+
+export type CalculatedMonthlyBudgetSummary = Omit<MonthlyBudgetSummary, 'currencyCode'>

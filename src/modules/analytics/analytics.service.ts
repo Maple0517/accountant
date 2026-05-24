@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_CATEGORIES } from '@/lib/categories'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
 
 type AnalyticsCategoryRelation = {
@@ -11,6 +12,7 @@ type AnalyticsCategoryRelation = {
 
 type AnalyticsTransactionRow = {
   amount: number | string
+  iso_currency_code?: string | null
   date: string
   category_id?: string | null
   budget_effective_date?: string | null
@@ -102,9 +104,10 @@ export async function getAnalyticsSummary(
   currencyCode = 'USD'
 ): Promise<AnalyticsData> {
   const dateFrom = getDateFrom(period)
+  const selectedCurrency = normalizeCurrencyCode(currencyCode)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, date, category_id, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
+    .select('amount, iso_currency_code, date, category_id, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
     .eq('user_id', userId)
     .gte('date', dateFrom)
     .order('date', { ascending: true })
@@ -115,6 +118,7 @@ export async function getAnalyticsSummary(
 
   let totalSpending = 0
   let totalIncome = 0
+  const availableCurrencies = new Set<string>()
   const categoryMap = new Map<
     string,
     { name: string; name_zh?: string | null; icon: string; color: string; total: number }
@@ -123,6 +127,13 @@ export async function getAnalyticsSummary(
   const dayMap = new Map<string, number>()
 
   for (const tx of (data || []) as AnalyticsTransactionRow[]) {
+    const transactionCurrency = normalizeCurrencyCode(tx.iso_currency_code)
+    availableCurrencies.add(transactionCurrency)
+
+    if (transactionCurrency !== selectedCurrency) {
+      continue
+    }
+
     const semanticAmounts = getSemanticAmounts(tx)
 
     totalSpending += semanticAmounts.spending
@@ -160,7 +171,8 @@ export async function getAnalyticsSummary(
   return {
     totalSpending,
     totalIncome,
-    currencyCode,
+    currencyCode: selectedCurrency,
+    availableCurrencies: Array.from(availableCurrencies),
     byCategory: Array.from(categoryMap.values()).sort(
       (a, b) => b.total - a.total
     ),

@@ -5,11 +5,13 @@ export type DashboardAccount = {
   type?: string | null
   current_balance?: number | string | null
   available_balance?: number | string | null
+  iso_currency_code?: string | null
 }
 
 export type DashboardMonthTransaction = {
   id?: string
   amount: number | string
+  iso_currency_code?: string | null
   pending?: boolean | null
   category_id?: string | null
   tags?: string[] | null
@@ -25,6 +27,7 @@ export type DashboardRecentTransaction = {
   merchant_name?: string | null
   description?: string | null
   amount: number | string
+  iso_currency_code?: string | null
   date: string
   source: string
   pending?: boolean | null
@@ -37,6 +40,7 @@ export type DashboardRecentTransaction = {
 }
 
 export type DashboardData = {
+  currencyCode: string
   accounts: DashboardAccount[]
   monthTx: DashboardMonthTransaction[]
   recentTx: DashboardRecentTransaction[]

@@ -81,7 +81,7 @@ export async function createTransactionDatabase(
       title: [{ type: 'text', text: { content: '💰 Transactions' } }],
       properties: {
         Name: { title: {} },
-        Amount: { number: { format: 'dollar' } },
+        Amount: { number: { format: 'number' } },
         Currency: {
           select: {
             options: [

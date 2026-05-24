@@ -1,4 +1,5 @@
 import { getCurrentUser } from '@/lib/auth/server'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 import { getMonthlySummary } from '@/modules/budget/budget.service'
 import { getAnalyticsSummary } from '@/modules/analytics/analytics.service'
 
@@ -32,6 +33,13 @@ export async function GET() {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('default_currency')
+      .eq('id', user.id)
+      .maybeSingle()
+    const currencyCode = normalizeCurrencyCode(profile?.default_currency)
+
     const now = new Date()
     const firstDayOfMonth = toMonthStart(now)
     const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -42,12 +50,12 @@ export async function GET() {
       await Promise.allSettled([
         supabase
           .from('accounts')
-          .select('type, current_balance, available_balance')
+          .select('type, current_balance, available_balance, iso_currency_code')
           .eq('user_id', user.id),
         supabase
           .from('transactions')
           .select(
-            'id, amount, pending, category_id, tags, transaction_kind, budget_behavior, budget_effective_date, date, transfer_match_status'
+            'id, amount, iso_currency_code, pending, category_id, tags, transaction_kind, budget_behavior, budget_effective_date, date, transfer_match_status'
           )
           .eq('user_id', user.id)
           .or(
@@ -56,12 +64,12 @@ export async function GET() {
         supabase
           .from('transactions')
           .select(
-            'id, merchant_name, description, amount, date, source, pending, tags, transaction_kind, budget_behavior, transfer_match_status, accounts!transactions_account_id_fkey ( name, mask ), categories!transactions_category_id_fkey ( name, name_zh, icon, color )'
+            'id, merchant_name, description, amount, iso_currency_code, date, source, pending, tags, transaction_kind, budget_behavior, transfer_match_status, accounts!transactions_account_id_fkey ( name, mask ), categories!transactions_category_id_fkey ( name, name_zh, icon, color )'
           )
           .eq('user_id', user.id)
           .order('date', { ascending: false })
           .limit(6),
-        getAnalyticsSummary(supabase, user.id, 'month'),
+        getAnalyticsSummary(supabase, user.id, 'month', currencyCode),
         getMonthlySummary(supabase, user.id, currentMonth),
       ])
 
@@ -92,7 +100,7 @@ export async function GET() {
     ) {
       const fallbackRecent = await supabase
         .from('transactions')
-        .select('id, merchant_name, description, amount, date, source')
+        .select('id, merchant_name, description, amount, iso_currency_code, date, source')
         .eq('user_id', user.id)
         .order('date', { ascending: false })
         .limit(6)
@@ -109,6 +117,7 @@ export async function GET() {
 
     return Response.json({
       data: {
+        currencyCode,
         accounts,
         monthTx,
         recentTx: recentTx.map((tx) => ({

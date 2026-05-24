@@ -12,12 +12,18 @@ import { Drawer } from '@/components/ui/Drawer'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { formatCurrency } from '@/lib/currency'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 import { useI18n } from '@/i18n/client'
 
 type AccountRow = Account
+type AccountsApiResponse = {
+  accounts?: AccountRow[]
+  defaultCurrency?: string
+  error?: string
+}
 type DisconnectMode = 'preserve_history' | 'delete_history'
 
-const fetcher = async (url: string): Promise<{ accounts?: AccountRow[]; error?: string }> => {
+const fetcher = async (url: string): Promise<AccountsApiResponse> => {
   const res = await fetch(url)
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || 'Failed to fetch accounts')
@@ -32,8 +38,10 @@ function latestSync(accounts: AccountRow[]) {
 
 export default function AccountsPage() {
   const { formatDate, t } = useI18n()
-  const { data: payload, error, mutate, isLoading } = useSWR<{ accounts?: AccountRow[]; error?: string }>('/api/plaid/accounts', fetcher)
+  const { data: payload, error, mutate, isLoading } = useSWR<AccountsApiResponse>('/api/plaid/accounts', fetcher)
   const accounts = payload?.accounts || []
+  const defaultCurrency = normalizeCurrencyCode(payload?.defaultCurrency)
+  const defaultCurrencyAccounts = accounts.filter((account) => normalizeCurrencyCode(account.iso_currency_code) === defaultCurrency)
   const [selectedConnection, setSelectedConnection] = useState<AccountRow | null>(null)
   const [disconnectingMode, setDisconnectingMode] = useState<DisconnectMode | null>(null)
   const [disconnectConfirmed, setDisconnectConfirmed] = useState(false)
@@ -106,8 +114,9 @@ export default function AccountsPage() {
   const creditAccounts = accounts.filter((a) => a.type === 'credit')
   const otherAccounts = accounts.filter((a) => a.type === 'other' || !a.type)
   const failedSyncCount = accounts.filter((account) => account.last_sync_error).length
-  const totalCash = accounts.filter((a) => a.type !== 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
-  const creditDebt = creditAccounts.reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
+  const totalCash = defaultCurrencyAccounts.filter((a) => a.type !== 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
+  const creditDebt = defaultCurrencyAccounts.filter((a) => a.type === 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
+  const hasMultipleCurrencies = new Set(accounts.map((account) => normalizeCurrencyCode(account.iso_currency_code))).size > 1
   const lastSync = latestSync(accounts)
 
   return (
@@ -137,13 +146,19 @@ export default function AccountsPage() {
           </Card>
           <Card padding="md" className="account-health-card">
             <span className="metric-label">{t('accounts.cashAssets')}</span>
-            <span className="metric-value">{formatCurrency(totalCash)}</span>
+            <span className="metric-value">{formatCurrency(totalCash, defaultCurrency)}</span>
           </Card>
           <Card padding="md" className="account-health-card">
             <span className="metric-label">{t('dashboard.cardDebt')}</span>
-            <span className="metric-value" style={{ color: creditDebt > 0 ? 'var(--expense)' : undefined }}>{formatCurrency(creditDebt)}</span>
+            <span className="metric-value" style={{ color: creditDebt > 0 ? 'var(--expense)' : undefined }}>{formatCurrency(creditDebt, defaultCurrency)}</span>
           </Card>
         </div>
+      )}
+
+      {accounts.length > 0 && hasMultipleCurrencies && (
+        <p className="text-secondary">
+          {t('accounts.defaultCurrencyOnly', { currency: defaultCurrency })}
+        </p>
       )}
 
       {isLoading ? (

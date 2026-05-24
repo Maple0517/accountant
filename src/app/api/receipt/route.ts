@@ -217,10 +217,7 @@ export async function POST(request: NextRequest) {
       receiptId = receipt.id
     }
 
-    const accountId = await getOrCreateIosCaptureAccount(
-      auth.userId,
-      parsed.currency
-    )
+    const accountId = await getOrCreateIosCaptureAccount(auth.userId, parsed.currency)
 
     if (!accountId) {
       await updateReceiptRecord(receiptId, {
@@ -454,32 +451,52 @@ async function findExistingReceiptByIdempotencyKey(
   return (data as { id: string; transaction_id: string | null } | null) || null
 }
 
-async function getOrCreateIosCaptureAccount(
-  userId: string,
-  currency: string
-): Promise<string | undefined> {
-  const supabase = createAdminClient()
+export function normalizeIosCaptureCurrency(currency: string | undefined) {
+  const normalized = currency?.trim().toUpperCase()
+  return normalized || 'USD'
+}
 
-  const { data: existingAccount } = await supabase
+export async function getOrCreateIosCaptureAccount(
+  userId: string,
+  currency: string,
+  supabase = createAdminClient()
+): Promise<string | undefined> {
+  const normalizedCurrency = normalizeIosCaptureCurrency(currency)
+  const accountNames = [`iOS Capture ${normalizedCurrency}`, 'iOS Capture']
+
+  const { data: existingAccounts, error: lookupError } = await supabase
     .from('accounts')
-    .select('id')
+    .select('id, name')
     .eq('user_id', userId)
     .eq('is_manual', true)
-    .eq('name', 'iOS Capture')
-    .maybeSingle()
+    .eq('iso_currency_code', normalizedCurrency)
+    .in('name', accountNames)
 
-  if (existingAccount?.id) {
-    return existingAccount.id
+  if (lookupError) {
+    console.error('Failed to look up iOS capture account:', lookupError)
+  } else {
+    const normalizedExistingAccounts = Array.isArray(existingAccounts)
+      ? existingAccounts
+      : existingAccounts
+        ? [existingAccounts]
+        : []
+    const existingAccount =
+      normalizedExistingAccounts.find((account) => account.name === accountNames[0]) ||
+      normalizedExistingAccounts[0]
+
+    if (existingAccount?.id) {
+      return existingAccount.id
+    }
   }
 
   const { data: newAccount, error } = await supabase
     .from('accounts')
     .insert({
       user_id: userId,
-      name: 'iOS Capture',
+      name: accountNames[0],
       type: 'cash',
       subtype: 'shortcut',
-      iso_currency_code: currency || 'USD',
+      iso_currency_code: normalizedCurrency,
       is_manual: true,
       current_balance: 0,
       available_balance: 0,
@@ -490,13 +507,22 @@ async function getOrCreateIosCaptureAccount(
   if (error) {
     console.error('Failed to create iOS capture account:', error)
 
-    const { data: recoveredAccount } = await supabase
+    const { data: recoveredAccounts } = await supabase
       .from('accounts')
-      .select('id')
+      .select('id, name')
       .eq('user_id', userId)
       .eq('is_manual', true)
-      .eq('name', 'iOS Capture')
-      .maybeSingle()
+      .eq('iso_currency_code', normalizedCurrency)
+      .in('name', accountNames)
+
+    const normalizedRecoveredAccounts = Array.isArray(recoveredAccounts)
+      ? recoveredAccounts
+      : recoveredAccounts
+        ? [recoveredAccounts]
+        : []
+    const recoveredAccount =
+      normalizedRecoveredAccounts.find((account) => account.name === accountNames[0]) ||
+      normalizedRecoveredAccounts[0]
 
     return recoveredAccount?.id
   }

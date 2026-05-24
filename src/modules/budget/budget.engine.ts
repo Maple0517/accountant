@@ -10,7 +10,7 @@ import type {
   BudgetTransactionInput,
   BudgetStatus,
   CategoryBudgetSummary,
-  MonthlyBudgetSummary,
+  CalculatedMonthlyBudgetSummary,
 } from './budget.types'
 
 /**
@@ -93,7 +93,7 @@ function deriveBudgetStatus(baseBudget: number, actualSpend: number): BudgetStat
 /**
  * Calculates a full monthly budget summary from the given inputs.
  */
-export function calculateMonthlySummary(input: BudgetEngineInput): MonthlyBudgetSummary {
+export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMonthlyBudgetSummary {
   const { userId, month, categories, transactions, budgetRules, settings } = input
 
   const monthStart = `${month}-01`

@@ -1,4 +1,5 @@
 import type { DashboardAccount, DashboardMonthTransaction } from './types'
+import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
@@ -28,11 +29,14 @@ export function getMonthlySemanticAmounts(tx: Pick<DashboardMonthTransaction, 'a
   return { spending: 0, income: 0 }
 }
 
-export function summarizeBalances(accounts: DashboardAccount[]) {
+export function summarizeBalances(accounts: DashboardAccount[], currencyCode: string) {
+  const selectedCurrency = normalizeCurrencyCode(currencyCode)
+
   return accounts.reduce(
     (summary, account) => {
       const balance = Number(account.current_balance || 0)
       if (!Number.isFinite(balance)) return summary
+      if (!isSameCurrency(account.iso_currency_code, selectedCurrency)) return summary
 
       if (account.type === 'credit' || account.type === 'loan') {
         summary.cardDebt += balance

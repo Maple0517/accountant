@@ -44,7 +44,7 @@ export async function loadTransactionsForBudgetMonth(
 ): Promise<Transaction[]> {
   const { data, error } = await supabase
     .from('transactions')
-    .select('id, user_id, account_id, category_id, amount, date, pending, source, description, created_at, updated_at, transaction_kind, budget_behavior, linked_transaction_id, budget_effective_date')
+    .select('id, user_id, account_id, category_id, amount, iso_currency_code, date, pending, source, description, created_at, updated_at, transaction_kind, budget_behavior, linked_transaction_id, budget_effective_date')
     .eq('user_id', userId)
     .or(
       `and(budget_effective_date.gte.${monthStart},budget_effective_date.lt.${monthEnd}),and(budget_effective_date.is.null,date.gte.${monthStart},date.lt.${monthEnd})`,

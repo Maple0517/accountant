@@ -53,7 +53,7 @@ export function RecentActivityCard({ transactions }: { transactions: DashboardRe
                 </span>
               </div>
               <span className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
-                {formatCurrency(-amount)}
+                {formatCurrency(-amount, tx.iso_currency_code || 'USD')}
               </span>
             </div>
           )

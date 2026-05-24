@@ -16,6 +16,7 @@ import {
   getReviewCounts,
   summarizeBalances,
 } from '@/features/dashboard/dashboard-utils'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 
 const fetcher = async (url: string): Promise<DashboardData> => {
   const res = await fetch(url)
@@ -28,9 +29,13 @@ export default function DashboardPage() {
   const { t } = useI18n()
   const { data, error, isLoading } = useSWR('/api/dashboard', fetcher)
 
-  const balances = summarizeBalances(data?.accounts ?? [])
+  const currencyCode = data?.currencyCode || 'USD'
+  const balances = summarizeBalances(data?.accounts ?? [], currencyCode)
   const monthlyTotals = (data?.monthTx ?? []).reduce(
     (totals, tx) => {
+      if (normalizeCurrencyCode(tx.iso_currency_code) !== currencyCode) {
+        return totals
+      }
       const amounts = getMonthlySemanticAmounts(tx)
       totals.spending += amounts.spending
       totals.income += amounts.income
@@ -71,6 +76,7 @@ export default function DashboardPage() {
             monthlySpending={monthlyTotals.spending}
             monthlyIncome={monthlyTotals.income}
             budgetLeft={data.budget?.totalRemaining ?? null}
+            currencyCode={currencyCode}
           />
 
           <div className="dashboard-grid">

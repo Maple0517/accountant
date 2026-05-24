@@ -1,4 +1,5 @@
 import { getCurrentUser } from '@/lib/auth/server'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 import { getAnalyticsSummary, parseAnalyticsPeriod } from '@/modules/analytics/analytics.service'
 
 export const dynamic = 'force-dynamic'
@@ -12,16 +13,18 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const periodParam = searchParams.get('period')
+    const requestedCurrency = searchParams.get('currency')
     const period = parseAnalyticsPeriod(periodParam)
     const { data: profile } = await supabase
       .from('profiles')
       .select('default_currency')
       .eq('id', user.id)
       .maybeSingle()
-    const currencyCode =
+    const defaultCurrency =
       typeof profile?.default_currency === 'string' && profile.default_currency
         ? profile.default_currency
         : 'USD'
+    const currencyCode = normalizeCurrencyCode(requestedCurrency || defaultCurrency)
 
     const data = await getAnalyticsSummary(supabase, user.id, period, currencyCode)
     

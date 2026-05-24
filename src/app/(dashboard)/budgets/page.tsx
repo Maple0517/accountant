@@ -192,9 +192,9 @@ export default function BudgetsPage() {
             </div>
             <div>
               <div className="summary-grid" style={{ marginBottom: '1rem' }}>
-                <div><span className="metric-label">{t('budgets.totalBudget')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget)}</span></div>
-                <div><span className="metric-label">{t('budgets.spent')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend)}</span></div>
-                <div><span className="metric-label">{t('budgets.remaining')}</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining)}</span></div>
+                <div><span className="metric-label">{t('budgets.totalBudget')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget, summary.currencyCode)}</span></div>
+                <div><span className="metric-label">{t('budgets.spent')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend, summary.currencyCode)}</span></div>
+                <div><span className="metric-label">{t('budgets.remaining')}</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining, summary.currencyCode)}</span></div>
               </div>
               <ProgressBar value={summary.totalPercentUsed} tone={health.tone} label={t('budgets.monthlyProgress')} />
               {summary.totalRemaining < 0 && <p className="budget-note">{t('budgets.negativeRemaining')}</p>}
@@ -214,7 +214,7 @@ export default function BudgetsPage() {
                   <div className="budget-risk-row" key={category.categoryId}>
                     <div>
                       <strong>{categoryName({ name: category.categoryName, name_zh: category.categoryNameZh })}</strong>
-                      <span style={{ display: 'block' }}>{t('budgets.spentOf', { spent: formatCurrency(category.actualSpend), budget: formatCurrency(category.baseBudget) })}</span>
+                      <span style={{ display: 'block' }}>{t('budgets.spentOf', { spent: formatCurrency(category.actualSpend, summary.currencyCode), budget: formatCurrency(category.baseBudget, summary.currencyCode) })}</span>
                     </div>
                     <Badge tone={getStatusTone(category.status)}>{category.status.replace('_', ' ')}</Badge>
                   </div>
@@ -248,6 +248,7 @@ export default function BudgetsPage() {
                   onCommit={() => commitEdit(cat.categoryId)}
                   onAmountAria={t('budgets.amountAria')}
                   displayCategoryName={categoryName({ name: cat.categoryName, name_zh: cat.categoryNameZh })}
+                  currencyCode={summary.currencyCode}
                   t={t}
                 />
               ))}
@@ -270,6 +271,7 @@ type CategoryRowProps = {
   onCommit: () => void
   onAmountAria: string
   displayCategoryName: string
+  currencyCode: string
   t: (key: string, params?: Record<string, string | number>) => string
 }
 
@@ -284,6 +286,7 @@ function CategoryRow({
   onCommit,
   onAmountAria,
   displayCategoryName,
+  currencyCode,
   t,
 }: CategoryRowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -302,7 +305,7 @@ function CategoryRow({
     <div className="budget-row">
       <div>
         <span className="budget-category-name">{displayCategoryName}</span>
-        {cat.remaining < 0 && <span className="budget-note" style={{ display: 'block' }}>{t('budgets.overBy', { amount: formatCurrency(Math.abs(cat.remaining)) })}</span>}
+        {cat.remaining < 0 && <span className="budget-note" style={{ display: 'block' }}>{t('budgets.overBy', { amount: formatCurrency(Math.abs(cat.remaining), currencyCode) })}</span>}
       </div>
       <div>
         <span className="budget-cell-label">{t('budgets.budget')}</span>
@@ -318,12 +321,12 @@ function CategoryRow({
           />
         ) : (
           <button className="budget-edit-button" type="button" onClick={onStartEdit} aria-label={t('budgets.editBudgetAria', { category: displayCategoryName })}>
-            {formatCurrency(cat.baseBudget)}
+            {formatCurrency(cat.baseBudget, currencyCode)}
           </button>
         )}
       </div>
-      <div><span className="budget-cell-label">{t('budgets.spent')}</span><span className="budget-cell-value">{formatCurrency(cat.actualSpend)}</span></div>
-      <div><span className="budget-cell-label">{t('budgets.left')}</span><span className="budget-cell-value" style={{ color: remainingColor }}>{formatCurrency(cat.remaining)}</span></div>
+      <div><span className="budget-cell-label">{t('budgets.spent')}</span><span className="budget-cell-value">{formatCurrency(cat.actualSpend, currencyCode)}</span></div>
+      <div><span className="budget-cell-label">{t('budgets.left')}</span><span className="budget-cell-value" style={{ color: remainingColor }}>{formatCurrency(cat.remaining, currencyCode)}</span></div>
       <div className="budget-progress-cell">
         <span className="budget-cell-label">{t('budgets.progress')}</span>
         <div style={{ marginTop: '0.45rem' }}><ProgressBar value={cat.percentUsed} tone={tone} label={t('budgets.categoryProgress', { category: displayCategoryName })} /></div>

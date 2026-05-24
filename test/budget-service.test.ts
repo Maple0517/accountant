@@ -319,3 +319,92 @@ test('getMonthlySummary propagates repository database errors', async () => {
     /loadCategoriesForBudget failed: RLS broke/
   )
 })
+
+
+test('getMonthlySummary filters budget transactions to the profile default currency', async () => {
+  const categories = [
+    {
+      id: 'cat_food',
+      user_id: 'user_1',
+      name: 'Food',
+      type: 'expense',
+      sort_order: 0,
+      is_excluded_from_budget: false,
+    },
+  ]
+  const monthlyTransactions = [
+    {
+      id: 'usd_tx',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_food',
+      amount: 100,
+      iso_currency_code: 'USD',
+      date: '2026-05-10',
+      budget_effective_date: '2026-05-10',
+      description: 'USD food',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'normal',
+      linked_transaction_id: null,
+    },
+    {
+      id: 'cny_tx',
+      user_id: 'user_1',
+      account_id: 'account_1',
+      category_id: 'cat_food',
+      amount: 100,
+      iso_currency_code: 'CNY',
+      date: '2026-05-11',
+      budget_effective_date: '2026-05-11',
+      description: 'CNY food',
+      pending: false,
+      source: 'plaid',
+      transaction_kind: 'normal',
+      linked_transaction_id: null,
+    },
+  ]
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq(column: string) {
+          if (table === 'categories' && column === 'user_id') {
+            return {
+              order() {
+                return Promise.resolve({ data: categories, error: null })
+              },
+            }
+          }
+          if (table === 'profiles' && column === 'id') {
+            return {
+              single() {
+                return Promise.resolve({ data: { default_currency: 'USD' }, error: null })
+              },
+            }
+          }
+          return chain
+        },
+        or() {
+          return Promise.resolve({ data: monthlyTransactions, error: null })
+        },
+        in() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        order() {
+          return Promise.resolve({ data: categories, error: null })
+        },
+        single() {
+          return Promise.resolve({ data: { default_currency: 'USD' }, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const summary = await getMonthlySummary(supabase as never, 'user_1', '2026-05')
+  assert.equal(summary.currencyCode, 'USD')
+  assert.equal(summary.totalActualSpend, 100)
+})

@@ -8,12 +8,14 @@ export function FinancialSnapshot({
   monthlySpending,
   monthlyIncome,
   budgetLeft,
+  currencyCode,
 }: {
   cash: number
   cardDebt: number
   monthlySpending: number
   monthlyIncome: number
   budgetLeft: number | null
+  currencyCode: string
 }) {
   const { t } = useI18n()
   const netWorth = cash - cardDebt
@@ -21,11 +23,11 @@ export function FinancialSnapshot({
 
   return (
     <div className="dashboard-snapshot-grid" aria-label={t('dashboard.netWorth')}>
-      <MetricCard label={t('dashboard.netWorth')} value={formatCurrency(netWorth)} helper={t('dashboard.netWorthHelper')} tone={netWorth >= 0 ? 'positive' : 'negative'} />
-      <MetricCard label={t('dashboard.cash')} value={formatCurrency(cash)} helper={t('dashboard.cashHelper')} tone="neutral" />
-      <MetricCard label={t('dashboard.cardDebt')} value={formatCurrency(cardDebt)} helper={t('dashboard.cardDebtHelper')} tone={cardDebt > 0 ? 'negative' : 'neutral'} />
-      <MetricCard label={t('dashboard.thisMonth')} value={formatCurrency(monthlySpending)} helper={savingsRate === null ? t('dashboard.noIncome') : t('dashboard.savingsRate', { rate: Math.round(savingsRate * 100) })} tone="warning" />
-      <MetricCard label={t('dashboard.budgetLeft')} value={budgetLeft === null ? t('dashboard.notSet') : formatCurrency(budgetLeft)} helper={t('dashboard.budgetAware')} tone={budgetLeft === null ? 'neutral' : budgetLeft >= 0 ? 'positive' : 'negative'} />
+      <MetricCard label={t('dashboard.netWorth')} value={formatCurrency(netWorth, currencyCode)} helper={t('dashboard.netWorthHelper')} tone={netWorth >= 0 ? 'positive' : 'negative'} />
+      <MetricCard label={t('dashboard.cash')} value={formatCurrency(cash, currencyCode)} helper={t('dashboard.cashHelper')} tone="neutral" />
+      <MetricCard label={t('dashboard.cardDebt')} value={formatCurrency(cardDebt, currencyCode)} helper={t('dashboard.cardDebtHelper')} tone={cardDebt > 0 ? 'negative' : 'neutral'} />
+      <MetricCard label={t('dashboard.thisMonth')} value={formatCurrency(monthlySpending, currencyCode)} helper={savingsRate === null ? t('dashboard.noIncome') : t('dashboard.savingsRate', { rate: Math.round(savingsRate * 100) })} tone="warning" />
+      <MetricCard label={t('dashboard.budgetLeft')} value={budgetLeft === null ? t('dashboard.notSet') : formatCurrency(budgetLeft, currencyCode)} helper={t('dashboard.budgetAware')} tone={budgetLeft === null ? 'neutral' : budgetLeft >= 0 ? 'positive' : 'negative'} />
     </div>
   )
 }

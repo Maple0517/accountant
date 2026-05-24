@@ -45,8 +45,8 @@ export function BudgetHealthCard({ summary }: { summary: MonthlyBudgetSummary | 
           <>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginBottom: '0.55rem' }}>
-                <span className="text-secondary">{t('dashboard.spent', { amount: formatCurrency(summary.totalActualSpend) })}</span>
-                <span className="text-secondary">{t('dashboard.planned', { amount: formatCurrency(summary.totalBaseBudget) })}</span>
+                <span className="text-secondary">{t('dashboard.spent', { amount: formatCurrency(summary.totalActualSpend, summary.currencyCode) })}</span>
+                <span className="text-secondary">{t('dashboard.planned', { amount: formatCurrency(summary.totalBaseBudget, summary.currencyCode) })}</span>
               </div>
               <ProgressBar value={summary.totalPercentUsed} tone={tone} label={t('dashboard.overallBudgetProgress')} />
             </div>
@@ -55,7 +55,7 @@ export function BudgetHealthCard({ summary }: { summary: MonthlyBudgetSummary | 
                 <div className="budget-risk-row" key={category.categoryId}>
                   <div>
                     <strong>{category.categoryName}</strong>
-                    <span style={{ display: 'block' }}>{t('dashboard.left', { amount: formatCurrency(category.remaining) })}</span>
+                    <span style={{ display: 'block' }}>{t('dashboard.left', { amount: formatCurrency(category.remaining, summary.currencyCode) })}</span>
                   </div>
                   <Badge tone={category.status === 'over' ? 'danger' : 'warning'}>
                     {Math.round((category.percentUsed ?? 0) * 100)}%

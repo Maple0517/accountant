@@ -98,3 +98,69 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     { date: '2026-05-03', total: 5 },
   ])
 })
+
+
+test('getAnalyticsSummary filters by selected currency and defaults null currencies to USD', async () => {
+  const rows = [
+    {
+      amount: 25,
+      iso_currency_code: 'USD',
+      date: '2026-05-01',
+      budget_behavior: 'count_as_spending',
+      budget_effective_date: null,
+      transaction_kind: 'normal',
+      category_id: 'food',
+      categories: { name: 'Food', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: 30,
+      iso_currency_code: 'CNY',
+      date: '2026-05-01',
+      budget_behavior: 'count_as_spending',
+      budget_effective_date: null,
+      transaction_kind: 'normal',
+      category_id: 'food',
+      categories: { name: 'Food', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: -40,
+      iso_currency_code: null,
+      date: '2026-05-02',
+      budget_behavior: 'count_as_income',
+      budget_effective_date: null,
+      transaction_kind: 'normal',
+      category_id: 'income',
+      categories: { name: 'Income', icon: '💰', color: '#4caf50' },
+    },
+  ]
+  const supabase = {
+    from() {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        order() {
+          return Promise.resolve({ data: rows, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const usdSummary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD')
+  assert.equal(usdSummary.currencyCode, 'USD')
+  assert.equal(usdSummary.totalSpending, 25)
+  assert.equal(usdSummary.totalIncome, 40)
+  assert.deepEqual(usdSummary.availableCurrencies, ['USD', 'CNY'])
+
+  const cnySummary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'CNY')
+  assert.equal(cnySummary.currencyCode, 'CNY')
+  assert.equal(cnySummary.totalSpending, 30)
+  assert.equal(cnySummary.totalIncome, 0)
+})

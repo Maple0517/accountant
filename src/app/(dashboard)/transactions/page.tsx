@@ -2,6 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatCurrency } from '@/lib/currency'
+import { formatCurrencyTotals, hasMultipleCurrencies, sumByCurrency } from '@/lib/money/totals'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
 import {
@@ -9,6 +10,7 @@ import {
   PLAID_FALLBACK_TAG,
   stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
+import { normalizeCurrencyCode } from '@/lib/money/currency'
 import type { AiClassificationJob, Category, Transaction } from '@/types'
 import { useI18n } from '@/i18n/client'
 
@@ -75,7 +77,7 @@ type CategoryTransactionGroup = {
   categoryColor?: string | null
   sortOrder: number
   transactions: TransactionWithRelations[]
-  total: number
+  totalsByCurrency: Map<string, number>
 }
 
 type SimilarCategorySuggestion = {
@@ -175,12 +177,8 @@ function formatShortDate(dateStr: string, locale = 'en-US') {
   })
 }
 
-function formatBudgetApplication(tx: TransactionWithRelations, t: (key: string, params?: Record<string, string | number>) => string, locale: string) {
-  if (!tx.budget_effective_date || tx.budget_effective_date === tx.date) {
-    return null
-  }
-
-  return t('transactions.budgetApplication', { posted: formatShortDate(tx.date, locale), applied: formatShortDate(tx.budget_effective_date, locale) })
+function totalOfCurrencyMap(totals: Map<string, number>) {
+  return Array.from(totals.values()).reduce((sum, amount) => sum + amount, 0)
 }
 
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
@@ -210,7 +208,6 @@ export default function TransactionsPage() {
   const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [refreshingAi, setRefreshingAi] = useState(false)
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
   const [aiJob, setAiJob] = useState<AiClassificationJob | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
@@ -348,8 +345,6 @@ export default function TransactionsPage() {
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
-      setRefreshingAi(true)
-
       try {
         let keepProcessing = true
 
@@ -392,8 +387,6 @@ export default function TransactionsPage() {
         setAiRefreshStatus(
           error instanceof Error ? error.message : t('transactions.processAiQueueError')
         )
-      } finally {
-        setRefreshingAi(false)
       }
     },
     [fetchTransactions, t]
@@ -689,13 +682,14 @@ export default function TransactionsPage() {
           categoryColor: category?.color || null,
           sortOrder: categoryId ? categorySortMap.get(categoryId) ?? 9999 : 10000,
           transactions: [],
-          total: 0,
+          totalsByCurrency: new Map(),
         })
       }
 
       const group = groupMap.get(key)!
       group.transactions.push(tx)
-      group.total += Number(tx.amount)
+      const currency = normalizeCurrencyCode(tx.iso_currency_code)
+      group.totalsByCurrency.set(currency, (group.totalsByCurrency.get(currency) || 0) + Number(tx.amount))
     }
 
     return Array.from(groupMap.values()).sort((a, b) => {
@@ -706,8 +700,10 @@ export default function TransactionsPage() {
 
   const pendingCount = serverViewCounts.pending || 0
   const needsReviewCount = serverViewCounts.needs_review || 0
-  const totalVisibleAmount = visibleTransactions.reduce((sum, tx) => sum + Number(tx.amount), 0)
-  const visibleCurrency = visibleTransactions.find((tx) => tx.iso_currency_code)?.iso_currency_code || 'USD'
+  const visibleTotalsByCurrency = useMemo(
+    () => sumByCurrency(visibleTransactions, (tx) => Number(tx.amount), (tx) => tx.iso_currency_code),
+    [visibleTransactions]
+  )
   const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
 
@@ -807,7 +803,6 @@ export default function TransactionsPage() {
         onSaveRefundMetadata={handleRefundMetadataSave}
         onSaveSemantics={handleSemanticsSave}
         categoryName={categoryName}
-        localeCode={localeCode}
         t={t}
       />
     ),
@@ -823,7 +818,6 @@ export default function TransactionsPage() {
       handleSemanticsSave,
       handleToggleCategoryPicker,
       categoryName,
-      localeCode,
       linkCandidatesByTransactionId,
       t,
       savingTransactionId,
@@ -842,7 +836,7 @@ export default function TransactionsPage() {
         <div className="card card-pad-sm"><span className="metric-label">{t('transactions.loaded')}</span><span className="metric-value">{transactions.length}</span></div>
         <div className="card card-pad-sm"><span className="metric-label">{t('transactions.needsReview')}</span><span className="metric-value">{needsReviewCount}</span></div>
         <div className="card card-pad-sm"><span className="metric-label">{t('common.pending')}</span><span className="metric-value">{pendingCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.visibleNet')}</span><span className="metric-value">{formatCurrency(-totalVisibleAmount, visibleCurrency)}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.visibleNet')}</span><span className="metric-value">{formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)}</span></div>
       </div>
 
       {(aiRefreshStatus || aiJob) && (
@@ -989,21 +983,13 @@ export default function TransactionsPage() {
         <div className="transaction-groups">
           {groupBy === 'date'
             ? Object.entries(visibleTransactionsGroupedByDate).map(([date, txs]) => {
-                const dayTotal = txs.reduce(
-                  (sum, tx) => sum + Number(tx.amount),
-                  0
-                )
+                const dayTotals = sumByCurrency(txs, (tx) => Number(tx.amount), (tx) => tx.iso_currency_code)
                 return (
                   <div key={date} className="transaction-group">
                     <div className="group-header">
                       <span className="group-date">{formatDate(date)}</span>
-                      <span
-                        className={`group-total ${dayTotal <= 0 ? 'income' : 'expense'}`}
-                      >
-                        {formatCurrency(
-                          -dayTotal,
-                          txs[0]?.iso_currency_code || 'USD'
-                        )}
+                      <span className={`group-total ${hasMultipleCurrencies(dayTotals) ? '' : totalOfCurrencyMap(dayTotals) <= 0 ? 'income' : 'expense'}`}>
+                        {formatCurrencyTotals(dayTotals, (amount) => -amount)}
                       </span>
                     </div>
                     <div className="card transaction-list-card">
@@ -1012,28 +998,33 @@ export default function TransactionsPage() {
                   </div>
                 )
               })
-            : visibleTransactionsGroupedByCategory.map((group) => (
-                <div key={group.key} className="transaction-group">
-                  <div className="group-header">
-                    <span className="group-date">
-                      <span
-                        className="group-category-icon"
-                        style={group.categoryColor ? { color: group.categoryColor } : undefined}
-                      >
-                        {group.categoryIcon}
-                      </span>{' '}
-                      {group.categoryName}
-                      <span className="group-count"> · {t('transactions.transactionCount', { count: group.transactions.length, plural: group.transactions.length === 1 ? '' : 's' })}</span>
-                    </span>
-                    <span className={`group-total ${group.total <= 0 ? 'income' : 'expense'}`}>
-                      {formatCurrency(-group.total, group.transactions[0]?.iso_currency_code || 'USD')}
-                    </span>
+            : visibleTransactionsGroupedByCategory.map((group) => {
+                const groupTotal = totalOfCurrencyMap(group.totalsByCurrency)
+                const groupHasMultipleCurrencies = hasMultipleCurrencies(group.totalsByCurrency)
+
+                return (
+                  <div key={group.key} className="transaction-group">
+                    <div className="group-header">
+                      <span className="group-date">
+                        <span
+                          className="group-category-icon"
+                          style={group.categoryColor ? { color: group.categoryColor } : undefined}
+                        >
+                          {group.categoryIcon}
+                        </span>{' '}
+                        {group.categoryName}
+                        <span className="group-count"> · {t('transactions.transactionCount', { count: group.transactions.length, plural: group.transactions.length === 1 ? '' : 's' })}</span>
+                      </span>
+                      <span className={`group-total ${groupHasMultipleCurrencies ? '' : groupTotal <= 0 ? 'income' : 'expense'}`}>
+                        {formatCurrencyTotals(group.totalsByCurrency, (amount) => -amount)}
+                      </span>
+                    </div>
+                    <div className="card transaction-list-card">
+                      {group.transactions.map(renderTransactionItem)}
+                    </div>
                   </div>
-                  <div className="card transaction-list-card">
-                    {group.transactions.map(renderTransactionItem)}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
           {hasMoreTransactions && (
             <div style={{ display: 'flex', justifyContent: 'center' }}>
               <button
@@ -1069,7 +1060,6 @@ const TransactionItem = memo(function TransactionItem({
   onSaveRefundMetadata,
   onSaveSemantics,
   categoryName,
-  localeCode,
   t,
 }: {
   transaction: TransactionWithRelations
@@ -1116,7 +1106,6 @@ const TransactionItem = memo(function TransactionItem({
     }
   ) => void
   categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
-  localeCode: string
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const amount = Number(tx.amount)

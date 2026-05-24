@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { filterByCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import type { MonthlyBudgetSummary, CategoryBudgetSummary } from './budget.types'
 import { calculateMonthlySummary } from './budget.engine'
 import { adaptCategories, adaptTransactions, adaptBudgetRules, adaptSettings } from './budget.adapter'
@@ -68,9 +69,15 @@ export async function getMonthlySummary(
     loadBudgetRulesForMonth(supabase, userId, numericMonth, numericYear),
     loadBudgetSettings(supabase, userId),
   ])
+  const budgetCurrency = normalizeCurrencyCode(profile?.default_currency)
+  const currencyTransactions = filterByCurrency(
+    transactions,
+    budgetCurrency,
+    (tx) => tx.iso_currency_code
+  )
   const linkedTransactionIds = Array.from(
     new Set(
-      transactions
+      currencyTransactions
         .filter(
           (tx) =>
             (tx.transaction_kind === 'refund' ||
@@ -91,7 +98,7 @@ export async function getMonthlySummary(
     linkedOriginals.map((tx) => [tx.id, tx.category_id ?? null])
   )
   const budgetCategoryByTransactionId = new Map(
-    transactions
+    currencyTransactions
       .filter(
         (tx) =>
           (tx.transaction_kind === 'refund' ||
@@ -107,21 +114,24 @@ export async function getMonthlySummary(
 
   const adaptedCategories = adaptCategories(categories)
   const adaptedTransactions = adaptTransactions(
-    transactions,
+    currencyTransactions,
     categoryMap,
     budgetCategoryByTransactionId
   )
   const adaptedRules = adaptBudgetRules(budgetRules)
   const settings = adaptSettings(profile)
 
-  return calculateMonthlySummary({
-    userId,
-    month,
-    categories: adaptedCategories,
-    transactions: adaptedTransactions,
-    budgetRules: adaptedRules,
-    settings,
-  })
+  return {
+    ...calculateMonthlySummary({
+      userId,
+      month,
+      categories: adaptedCategories,
+      transactions: adaptedTransactions,
+      budgetRules: adaptedRules,
+      settings,
+    }),
+    currencyCode: budgetCurrency,
+  }
 }
 
 export async function getCategorySummary(

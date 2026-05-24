@@ -17,8 +17,12 @@ const PERIOD_LABEL_KEYS: Record<AnalyticsPeriod, string> = {
   year: 'analytics.year',
 }
 
-function periodHref(period: AnalyticsPeriod) {
-  return period === 'month' ? '/analytics' : `/analytics?period=${period}`
+function periodHref(period: AnalyticsPeriod, currency?: string) {
+  const params = new URLSearchParams()
+  if (period !== 'month') params.set('period', period)
+  if (currency) params.set('currency', currency)
+  const query = params.toString()
+  return query ? `/analytics?${query}` : '/analytics'
 }
 
 const fetcher = async (url: string): Promise<AnalyticsData> => {
@@ -32,8 +36,12 @@ export default function AnalyticsPage() {
   const { categoryName, t } = useI18n()
   const searchParams = useSearchParams()
   const periodParam = searchParams.get('period')
+  const currencyParam = searchParams.get('currency')
   const period: AnalyticsPeriod = periodParam === 'week' || periodParam === 'year' ? periodParam : 'month'
-  const { data, error, isLoading } = useSWR(`/api/analytics?period=${period}`, fetcher)
+  const selectedCurrency = currencyParam === 'CNY' ? 'CNY' : currencyParam === 'USD' ? 'USD' : ''
+  const query = new URLSearchParams({ period })
+  if (selectedCurrency) query.set('currency', selectedCurrency)
+  const { data, error, isLoading } = useSWR(`/api/analytics?${query.toString()}`, fetcher)
   const hasData = data && (data.totalSpending > 0 || data.totalIncome > 0)
   const topCategory = data?.byCategory[0]
   const topDay = data?.byDay.reduce((max, day) => day.total > max.total ? day : max, { date: '', total: 0 })
@@ -46,12 +54,25 @@ export default function AnalyticsPage() {
         title={t('analytics.title')}
         subtitle={t('analytics.subtitle')}
         actions={
-          <div className="period-toggle">
-            {(['week', 'month', 'year'] as const).map((p) => (
-              <Link key={p} className={`btn btn-ghost ${period === p ? 'active' : ''}`} href={periodHref(p)}>
-                {t(PERIOD_LABEL_KEYS[p])}
-              </Link>
-            ))}
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="period-toggle">
+              {(['week', 'month', 'year'] as const).map((p) => (
+                <Link key={p} className={`btn btn-ghost ${period === p ? 'active' : ''}`} href={periodHref(p, selectedCurrency || undefined)}>
+                  {t(PERIOD_LABEL_KEYS[p])}
+                </Link>
+              ))}
+            </div>
+            <div className="period-toggle" aria-label={t('analytics.currencyScope')}>
+              {(['USD', 'CNY'] as const).map((currency) => (
+                <Link
+                  key={currency}
+                  className={`btn btn-ghost ${currencyCode === currency ? 'active' : ''}`}
+                  href={periodHref(period, currency)}
+                >
+                  {currency}
+                </Link>
+              ))}
+            </div>
           </div>
         }
       />
