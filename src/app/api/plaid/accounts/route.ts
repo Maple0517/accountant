@@ -21,9 +21,14 @@ type AccountWithSyncMetadata = {
   updated_at: string
   last_synced_at?: string | null
   last_sync_error?: string | null
+  institution_name?: string | null
+  institution_id?: string | null
+  connection_account_count?: number
   plaid_items?: {
     institution_name?: string | null
     institution_id?: string | null
+    last_synced_at?: string | null
+    last_sync_error?: string | null
   } | null
 }
 
@@ -69,7 +74,16 @@ export async function GET() {
       return Response.json({ error: 'Failed to fetch accounts' }, { status: 500 })
     }
 
-    const normalized = ((accounts || []) as AccountWithSyncMetadata[]).map((account) => {
+    const accountRows = (accounts || []) as AccountWithSyncMetadata[]
+    const connectionCounts = accountRows.reduce<Record<string, number>>((counts, account) => {
+      if (account.plaid_item_id) {
+        counts[account.plaid_item_id] = (counts[account.plaid_item_id] || 0) + 1
+      }
+
+      return counts
+    }, {})
+
+    const normalized = accountRows.map((account) => {
       const plaidItem = Array.isArray(account.plaid_items)
         ? account.plaid_items[0]
         : account.plaid_items
@@ -84,6 +98,11 @@ export async function GET() {
           : null,
         last_synced_at: plaidItem?.last_synced_at ?? null,
         last_sync_error: plaidItem?.last_sync_error ?? null,
+        institution_name: plaidItem?.institution_name ?? null,
+        institution_id: plaidItem?.institution_id ?? null,
+        connection_account_count: account.plaid_item_id
+          ? connectionCounts[account.plaid_item_id] || 1
+          : 0,
       }
     })
 

@@ -1,19 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPlaidClient } from '@/lib/plaid/client'
+import { mapPlaidType } from '@/lib/plaid/account-selection'
 import { CountryCode } from 'plaid'
 
 export const dynamic = 'force-dynamic'
-
-export function mapPlaidType(type: string, subtype: string | null) {
-  if (type === 'depository') {
-    if (subtype === 'savings') return 'savings'
-    return 'checking'
-  }
-  if (type === 'credit') return 'credit'
-  if (type === 'investment') return 'investment'
-  return 'other'
-}
 
 export async function POST(request: Request) {
   try {

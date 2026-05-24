@@ -64,6 +64,9 @@ export type Account = {
   is_manual: boolean
   last_synced_at?: string | null
   last_sync_error?: string | null
+  institution_name?: string | null
+  institution_id?: string | null
+  connection_account_count?: number
   created_at: string
   updated_at: string
 }
