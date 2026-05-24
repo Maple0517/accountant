@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useI18n } from '@/i18n/client'
 import {
   AccountsIcon,
   BudgetsIcon,
@@ -13,25 +14,26 @@ import {
 } from './icons'
 
 const NAV_ITEMS = [
-  { name: 'Overview', href: '/dashboard', icon: OverviewIcon },
-  { name: 'Review', href: '/review', icon: ReviewIcon },
-  { name: 'Transactions', href: '/transactions', icon: TransactionsIcon },
-  { name: 'Budgets', href: '/budgets', icon: BudgetsIcon },
-  { name: 'Insights', href: '/analytics', icon: InsightsIcon },
-  { name: 'Accounts', href: '/accounts', icon: AccountsIcon },
-  { name: 'Integrations', href: '/settings', icon: IntegrationsIcon },
+  { labelKey: 'nav.overview', href: '/dashboard', icon: OverviewIcon },
+  { labelKey: 'nav.review', href: '/review', icon: ReviewIcon },
+  { labelKey: 'nav.transactions', href: '/transactions', icon: TransactionsIcon },
+  { labelKey: 'nav.budgets', href: '/budgets', icon: BudgetsIcon },
+  { labelKey: 'nav.insights', href: '/analytics', icon: InsightsIcon },
+  { labelKey: 'nav.accounts', href: '/accounts', icon: AccountsIcon },
+  { labelKey: 'nav.integrations', href: '/settings', icon: IntegrationsIcon },
 ]
 
 export default function Sidebar({ userEmail }: { userEmail: string | null }) {
   const pathname = usePathname()
+  const { t } = useI18n()
 
   return (
-    <aside className="sidebar" aria-label="Primary navigation">
+    <aside className="sidebar" aria-label={t('nav.primary')}>
       <div className="sidebar-header">
         <span className="brand-mark">A</span>
         <div>
-          <span className="sidebar-kicker">AI money cockpit</span>
-          <h2>Accountant</h2>
+          <span className="sidebar-kicker">{t('app.kicker')}</span>
+          <h2>{t('app.brand')}</h2>
         </div>
       </div>
 
@@ -44,13 +46,13 @@ export default function Sidebar({ userEmail }: { userEmail: string | null }) {
           const Icon = item.icon
           return (
             <Link
-              key={item.name}
+              key={item.href}
               href={item.href}
               className={`nav-item ${isActive ? 'active' : ''}`}
               aria-current={isActive ? 'page' : undefined}
             >
               <span className="nav-icon"><Icon /></span>
-              <span className="nav-label">{item.name}</span>
+              <span className="nav-label">{t(item.labelKey)}</span>
             </Link>
           )
         })}
@@ -60,7 +62,7 @@ export default function Sidebar({ userEmail }: { userEmail: string | null }) {
         <div className="user-info">
           <div className="avatar">{userEmail ? userEmail.charAt(0).toUpperCase() : 'U'}</div>
           <div className="user-details">
-            <span className="user-email">{userEmail || 'User'}</span>
+            <span className="user-email">{userEmail || t('app.user')}</span>
           </div>
         </div>
       </div>

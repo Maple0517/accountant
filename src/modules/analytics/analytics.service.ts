@@ -94,7 +94,7 @@ export async function getAnalyticsSummary(
   let totalIncome = 0
   const categoryMap = new Map<
     string,
-    { name: string; icon: string; color: string; total: number }
+    { name: string; name_zh?: string | null; icon: string; color: string; total: number }
   >()
   const monthMap = new Map<string, { spending: number; income: number }>()
   const dayMap = new Map<string, number>()
@@ -111,6 +111,7 @@ export async function getAnalyticsSummary(
       const catName = cat?.name_zh || cat?.name || 'Other'
       const existing = categoryMap.get(catName) || {
         name: catName,
+        ...(cat?.name_zh ? { name_zh: cat.name_zh } : {}),
         icon: cat?.icon || '📦',
         color: cat?.color || '#8888a0',
         total: 0,

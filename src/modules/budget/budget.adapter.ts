@@ -25,7 +25,8 @@ import type {
 export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
   return rows.map((row) => ({
     id: row.id,
-    name: row.name_zh || row.name,
+    name: row.name,
+    nameZh: row.name_zh ?? null,
     groupId: null,
     type: row.type,
     isExcludedFromBudget:

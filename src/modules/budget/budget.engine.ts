@@ -170,6 +170,7 @@ export function calculateMonthlySummary(input: BudgetEngineInput): MonthlyBudget
     return {
       categoryId: cat.id,
       categoryName: cat.name,
+      categoryNameZh: cat.nameZh ?? null,
       groupId: cat.groupId ?? null,
       baseBudget,
       actualSpend,

@@ -10,6 +10,7 @@ import { BudgetHealthCard } from '@/features/dashboard/BudgetHealthCard'
 import { SpendingTrendCard } from '@/features/dashboard/SpendingTrendCard'
 import { RecentActivityCard } from '@/features/dashboard/RecentActivityCard'
 import type { DashboardData } from '@/features/dashboard/types'
+import { useI18n } from '@/i18n/client'
 import {
   getMonthlySemanticAmounts,
   getReviewCounts,
@@ -24,6 +25,7 @@ const fetcher = async (url: string): Promise<DashboardData> => {
 }
 
 export default function DashboardPage() {
+  const { t } = useI18n()
   const { data, error, isLoading } = useSWR('/api/dashboard', fetcher)
 
   const balances = summarizeBalances(data?.accounts ?? [])
@@ -41,8 +43,8 @@ export default function DashboardPage() {
   return (
     <div className="dashboard">
       <PageHeader
-        title="Overview"
-        subtitle="Understand your current financial state and what needs attention."
+        title={t('dashboard.title')}
+        subtitle={t('dashboard.subtitle')}
       />
 
       {isLoading && !data && (

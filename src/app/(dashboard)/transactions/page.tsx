@@ -11,6 +11,7 @@ import {
   stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
 import type { AiClassificationJob, Category, Transaction } from '@/types'
+import { useI18n } from '@/i18n/client'
 
 type TransactionFilter = {
   search: string
@@ -24,15 +25,15 @@ type TransactionFilter = {
 type TransactionGroupBy = 'date' | 'category'
 type SavedView = 'all' | 'needs_review' | 'uncategorized' | 'ai_pending' | 'refunds' | 'transfers' | 'pending' | 'large'
 
-const SAVED_VIEWS: Array<{ id: SavedView; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'needs_review', label: 'Needs Review' },
-  { id: 'uncategorized', label: 'Uncategorized' },
-  { id: 'ai_pending', label: 'AI Pending' },
-  { id: 'refunds', label: 'Refunds' },
-  { id: 'transfers', label: 'Transfers' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'large', label: 'Large' },
+const SAVED_VIEWS: Array<{ id: SavedView; labelKey: string }> = [
+  { id: 'all', labelKey: 'transactions.all' },
+  { id: 'needs_review', labelKey: 'transactions.needsReview' },
+  { id: 'uncategorized', labelKey: 'common.uncategorized' },
+  { id: 'ai_pending', labelKey: 'transactions.aiPending' },
+  { id: 'refunds', labelKey: 'transactions.refunds' },
+  { id: 'transfers', labelKey: 'transactions.transfers' },
+  { id: 'pending', labelKey: 'common.pending' },
+  { id: 'large', labelKey: 'transactions.large' },
 ]
 
 
@@ -146,18 +147,18 @@ function getCategoryButtonStyle(category: Category, selected: boolean) {
   }
 }
 
-function formatAccountSourceLabel(account: TransactionAccountRelation) {
+function formatAccountSourceLabel(account: TransactionAccountRelation, manualLabel = 'Manual', accountFallback = 'Account') {
   const institutionName = account.plaid_items?.institution_name
   const accountName =
     account.official_name ||
     account.name ||
     account.subtype ||
     account.type ||
-    'Account'
+    accountFallback
   const mask = account.mask ? ` ••••${account.mask}` : ''
 
   if (account.is_manual) {
-    return `Manual · ${accountName}${mask}`
+    return `${manualLabel} · ${accountName}${mask}`
   }
 
   if (institutionName) {
@@ -167,20 +168,20 @@ function formatAccountSourceLabel(account: TransactionAccountRelation) {
   return `${accountName}${mask}`
 }
 
-function formatShortDate(dateStr: string) {
+function formatShortDate(dateStr: string, locale = 'en-US') {
   const date = new Date(`${dateStr}T00:00:00`)
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString(locale, {
     month: 'short',
     day: 'numeric',
   })
 }
 
-function formatBudgetApplication(tx: TransactionWithRelations) {
+function formatBudgetApplication(tx: TransactionWithRelations, t: (key: string, params?: Record<string, string | number>) => string, locale: string) {
   if (!tx.budget_effective_date || tx.budget_effective_date === tx.date) {
     return null
   }
 
-  return `Posted ${formatShortDate(tx.date)} · Applied to ${formatShortDate(tx.budget_effective_date)} budget`
+  return t('transactions.budgetApplication', { posted: formatShortDate(tx.date, locale), applied: formatShortDate(tx.budget_effective_date, locale) })
 }
 
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
@@ -203,6 +204,8 @@ type TransactionsApiResponse = {
 }
 
 export default function TransactionsPage() {
+  const { categoryName, locale, t } = useI18n()
+  const localeCode = locale === 'zh' ? 'zh-CN' : 'en-US'
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
@@ -307,7 +310,7 @@ export default function TransactionsPage() {
           (payload.accounts || [])
             .map((account) => ({
               id: account.id || '',
-              label: formatAccountSourceLabel(account),
+              label: formatAccountSourceLabel(account, t('common.manual')),
               institutionName: account.plaid_items?.institution_name ?? null,
               accountName: account.name ?? account.official_name ?? null,
               mask: account.mask ?? null,
@@ -333,7 +336,7 @@ export default function TransactionsPage() {
         }
       }
     },
-    [queryFilters, savedView]
+    [queryFilters, savedView, t]
   )
 
   useEffect(() => {
@@ -364,19 +367,19 @@ export default function TransactionsPage() {
 
           if (!response.ok) {
             if (data.retryable) {
-              setAiRefreshStatus(`${data.error}. Retrying shortly...`)
+              setAiRefreshStatus(t('transactions.retrying', { error: data.error }))
               await delay(10000)
               continue
             }
 
-            throw new Error(data.error || 'Failed to process AI queue')
+            throw new Error(data.error || t('transactions.processAiQueueError'))
           }
 
           const nextJob = data.job as AiClassificationJob | null
           if (nextJob) {
             setAiJob(nextJob)
             setAiRefreshStatus(
-              `AI queue: ${nextJob.completed_count}/${nextJob.total_count} done, ${nextJob.pending_count} pending, ${nextJob.failed_count} failed.`
+              t('transactions.aiQueue', { done: nextJob.completed_count, total: nextJob.total_count, pending: nextJob.pending_count, failed: nextJob.failed_count })
             )
             keepProcessing = isActiveAiJob(nextJob)
           } else {
@@ -388,13 +391,13 @@ export default function TransactionsPage() {
       } catch (error) {
         console.error('Failed to process AI queue:', error)
         setAiRefreshStatus(
-          error instanceof Error ? error.message : 'Failed to process AI queue'
+          error instanceof Error ? error.message : t('transactions.processAiQueueError')
         )
       } finally {
         setRefreshingAi(false)
       }
     },
-    [fetchTransactions]
+    [fetchTransactions, t]
   )
 
   const fetchLatestAiJob = useCallback(async () => {
@@ -404,12 +407,12 @@ export default function TransactionsPage() {
 
       if (data.queue_unavailable) {
         setAiJob(null)
-        setAiRefreshStatus(data.error || 'AI queue is not available yet.')
+        setAiRefreshStatus(data.error || t('transactions.aiQueueUnavailable'))
         return
       }
 
       if (!response.ok) {
-        setAiRefreshStatus(data.error || 'Failed to load AI queue')
+        setAiRefreshStatus(data.error || t('transactions.loadAiQueueError'))
         return
       }
 
@@ -418,17 +421,17 @@ export default function TransactionsPage() {
 
       if (isActiveAiJob(job)) {
         setAiRefreshStatus(
-          `AI queue: ${job.completed_count}/${job.total_count} done, ${job.pending_count} pending, ${job.failed_count} failed.`
+          t('transactions.aiQueue', { done: job.completed_count, total: job.total_count, pending: job.pending_count, failed: job.failed_count })
         )
         processAiQueue(job.id)
       }
     } catch (error) {
       console.warn('Failed to load AI queue:', error)
       setAiRefreshStatus(
-        error instanceof Error ? error.message : 'Failed to load AI queue'
+        error instanceof Error ? error.message : t('transactions.loadAiQueueError')
       )
     }
-  }, [processAiQueue])
+  }, [processAiQueue, t])
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -449,29 +452,29 @@ export default function TransactionsPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create AI queue')
+        throw new Error(data.error || t('transactions.createAiQueueError'))
       }
 
       const job = data.job as AiClassificationJob
       setAiJob(job)
 
       if (job.total_count === 0) {
-        setAiRefreshStatus('No pending AI classifications.')
+        setAiRefreshStatus(t('transactions.noPendingAi'))
       } else {
         setAiRefreshStatus(
-          `AI queue started: ${job.total_count} transaction${job.total_count === 1 ? '' : 's'} queued.`
+          t('transactions.aiQueueStarted', { count: job.total_count, plural: job.total_count === 1 ? '' : 's' })
         )
         await processAiQueue(job.id)
       }
     } catch (error) {
       console.error('Failed to create AI queue:', error)
       setAiRefreshStatus(
-        error instanceof Error ? error.message : 'Failed to create AI queue'
+        error instanceof Error ? error.message : t('transactions.createAiQueueError')
       )
     } finally {
       setRefreshingAi(false)
     }
-  }, [processAiQueue])
+  }, [processAiQueue, t])
 
   const handleCategorySave = useCallback(
     async (
@@ -500,19 +503,17 @@ export default function TransactionsPage() {
               'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
             >
           | undefined
-        const categoryName =
-          updatedCategory?.name_zh ||
-          updatedCategory?.name ||
-          categories.find((category) => category.id === categoryId)?.name_zh ||
-          categories.find((category) => category.id === categoryId)?.name ||
-          'Selected category'
+        const displayCategoryName = categoryName(
+          updatedCategory || categories.find((category) => category.id === categoryId),
+          t('transactions.selectedCategory')
+        )
 
         setEditingTransactionId(null)
 
         if (applyMode === 'similar') {
           setCategorySaveStatus({
             transactionId,
-            message: `已将 ${categoryName} 同步到 ${data.updated_count || 0} 笔同名交易。`,
+            message: t('transactions.categoryUpdatedSimilar', { category: displayCategoryName, count: data.updated_count || 0 }),
           })
           setSimilarSuggestion(null)
           await fetchTransactions()
@@ -534,18 +535,18 @@ export default function TransactionsPage() {
             setSimilarSuggestion({
               transactionId,
               categoryId,
-              categoryName,
+              categoryName: displayCategoryName,
               similarCount: data.similar_count,
             })
             setCategorySaveStatus({
               transactionId,
-              message: `已改为 ${categoryName}。`,
+              message: t('transactions.categoryUpdated', { category: displayCategoryName }),
             })
           } else {
             setSimilarSuggestion(null)
             setCategorySaveStatus({
               transactionId,
-              message: `已改为 ${categoryName}。`,
+              message: t('transactions.categoryUpdated', { category: displayCategoryName }),
             })
           }
         }
@@ -560,7 +561,7 @@ export default function TransactionsPage() {
         setSavingTransactionId(null)
       }
     },
-    [categories, fetchTransactions]
+    [categories, categoryName, fetchTransactions, t]
   )
 
   const handleCreateCategory = useCallback(
@@ -586,13 +587,13 @@ export default function TransactionsPage() {
         console.error('Failed to create category:', error)
         setCategorySaveStatus({
           transactionId,
-          message: error instanceof Error ? error.message : 'Failed to create category',
+          message: error instanceof Error ? error.message : t('transactions.createCategoryError'),
         })
       } finally {
         setSavingTransactionId(null)
       }
     },
-    [handleCategorySave]
+    [handleCategorySave, t]
   )
 
   const handleRefundMetadataSave = useCallback(
@@ -625,20 +626,20 @@ export default function TransactionsPage() {
         )
         setCategorySaveStatus({
           transactionId,
-          message: 'Refund settings saved.',
+          message: t('transactions.refundSettingsSaved'),
         })
       } catch (error) {
         console.error('Failed to update refund metadata:', error)
         setCategorySaveStatus({
           transactionId,
           message:
-            error instanceof Error ? error.message : 'Failed to update refund metadata',
+            error instanceof Error ? error.message : t('transactions.refundMetadataError'),
         })
       } finally {
         setSavingTransactionId(null)
       }
     },
-    []
+    [t]
   )
 
   const handleSemanticsSave = useCallback(
@@ -672,20 +673,20 @@ export default function TransactionsPage() {
         )
         setCategorySaveStatus({
           transactionId,
-          message: 'Treatment saved.',
+          message: t('transactions.treatmentSaved'),
         })
       } catch (error) {
         console.error('Failed to update transaction treatment:', error)
         setCategorySaveStatus({
           transactionId,
           message:
-            error instanceof Error ? error.message : 'Failed to update treatment',
+            error instanceof Error ? error.message : t('transactions.treatmentError'),
         })
       } finally {
         setSavingTransactionId(null)
       }
     },
-    []
+    [t]
   )
 
   const visibleTransactions = transactions
@@ -719,7 +720,7 @@ export default function TransactionsPage() {
         groupMap.set(key, {
           key,
           categoryId,
-          categoryName: category?.name_zh || category?.name || 'Uncategorized',
+          categoryName: categoryName(category),
           categoryIcon: category?.icon || '•',
           categoryColor: category?.color || null,
           sortOrder: categoryId ? categorySortMap.get(categoryId) ?? 9999 : 10000,
@@ -737,7 +738,7 @@ export default function TransactionsPage() {
       if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
       return a.categoryName.localeCompare(b.categoryName)
     })
-  }, [visibleTransactions, categories])
+  }, [visibleTransactions, categories, categoryName])
 
   const pendingCount = serverViewCounts.pending || 0
   const needsReviewCount = serverViewCounts.needs_review || 0
@@ -792,15 +793,15 @@ export default function TransactionsPage() {
     const yesterday = new Date(today)
     yesterday.setDate(yesterday.getDate() - 1)
 
-    if (dateStr === today.toISOString().split('T')[0]) return 'Today'
-    if (dateStr === yesterday.toISOString().split('T')[0]) return 'Yesterday'
+    if (dateStr === today.toISOString().split('T')[0]) return t('common.today')
+    if (dateStr === yesterday.toISOString().split('T')[0]) return t('common.yesterday')
 
-    return date.toLocaleDateString('en-US', {
+    return date.toLocaleDateString(localeCode, {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
     })
-  }, [])
+  }, [localeCode, t])
 
   const handleToggleCategoryPicker = useCallback((transactionId: string) => {
     setCategorySaveStatus(null)
@@ -841,6 +842,9 @@ export default function TransactionsPage() {
         onCreateCategory={handleCreateCategory}
         onSaveRefundMetadata={handleRefundMetadataSave}
         onSaveSemantics={handleSemanticsSave}
+        categoryName={categoryName}
+        localeCode={localeCode}
+        t={t}
       />
     ),
     [
@@ -854,7 +858,10 @@ export default function TransactionsPage() {
       handleRefundMetadataSave,
       handleSemanticsSave,
       handleToggleCategoryPicker,
+      categoryName,
+      localeCode,
       linkCandidatesByTransactionId,
+      t,
       savingTransactionId,
       similarSuggestion,
     ]
@@ -863,26 +870,26 @@ export default function TransactionsPage() {
   return (
     <div className="transactions-page">
       <PageHeader
-        title="Transactions"
-        subtitle={`Showing ${visibleTransactions.length} of ${transactions.length}${totalCount > transactions.length ? ` loaded / ${totalCount} total` : ''} transactions`}
+        title={t('transactions.title')}
+        subtitle={t('transactions.subtitle', { visible: visibleTransactions.length, loaded: transactions.length, totalPart: totalCount > transactions.length ? t('transactions.loadedTotalPart', { loaded: transactions.length, total: totalCount }) : '' })}
         actions={
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={handleRefreshAiClassification}
             disabled={refreshingAi || isActiveAiJob(aiJob)}
-            title="Queue all pending Plaid fallback classifications for AI"
+            title={t('transactions.queueAiTitle')}
           >
-            {refreshingAi || isActiveAiJob(aiJob) ? 'Processing AI...' : 'Queue AI refresh'}
+            {refreshingAi || isActiveAiJob(aiJob) ? t('transactions.processingAi') : t('transactions.queueAiRefresh')}
           </button>
         }
       />
 
       <div className="transactions-summary-grid">
-        <div className="card card-pad-sm"><span className="metric-label">Loaded</span><span className="metric-value">{transactions.length}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">Needs review</span><span className="metric-value">{needsReviewCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">Pending</span><span className="metric-value">{pendingCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">Visible net</span><span className="metric-value">{formatCurrency(-totalVisibleAmount, visibleCurrency)}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.loaded')}</span><span className="metric-value">{transactions.length}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.needsReview')}</span><span className="metric-value">{needsReviewCount}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('common.pending')}</span><span className="metric-value">{pendingCount}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.visibleNet')}</span><span className="metric-value">{formatCurrency(-totalVisibleAmount, visibleCurrency)}</span></div>
       </div>
 
       {(aiRefreshStatus || aiJob) && (
@@ -890,14 +897,13 @@ export default function TransactionsPage() {
           <span>{aiRefreshStatus}</span>
           {aiJob && (
             <span>
-              Total {aiJob.total_count} · Pending {aiJob.pending_count} · Done{' '}
-              {aiJob.completed_count} · Failed {aiJob.failed_count}
+              {t('transactions.total')} {aiJob.total_count} · {t('common.pending')} {aiJob.pending_count} · {t('transactions.done')} {aiJob.completed_count} · Failed {aiJob.failed_count}
             </span>
           )}
         </div>
       )}
 
-      <div className="saved-view-row" aria-label="Saved transaction views">
+      <div className="saved-view-row" aria-label={t('transactions.savedViewsAria')}>
         {SAVED_VIEWS.map((view) => (
           <button
             key={view.id}
@@ -905,7 +911,7 @@ export default function TransactionsPage() {
             className={`btn btn-sm ${savedView === view.id ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => setSavedView(view.id)}
           >
-            {view.label}
+            {t(view.labelKey)}
             <span className="badge badge-muted">{serverViewCounts[view.id] ?? 0}</span>
           </button>
         ))}
@@ -916,8 +922,8 @@ export default function TransactionsPage() {
           <input
             type="text"
             className="input"
-            aria-label="Search transactions"
-            placeholder="Search merchant or description..."
+            aria-label={t('transactions.searchAria')}
+            placeholder={t('transactions.searchPlaceholder')}
             value={filters.search}
             onChange={(e) =>
               setFilters((f) => ({ ...f, search: e.target.value }))
@@ -927,53 +933,53 @@ export default function TransactionsPage() {
         <div className="filter-row">
           <select
             className="input"
-            aria-label="Filter by account or source"
+            aria-label={t('transactions.accountFilterAria')}
             value={filters.sourceOrAccount}
             onChange={(e) =>
               setFilters((f) => ({ ...f, sourceOrAccount: e.target.value }))
             }
           >
-            <option value="all">All accounts</option>
+            <option value="all">{t('transactions.allAccounts')}</option>
             {accountOptions.map((account) => (
               <option key={account.id} value={`account:${account.id}`}>
                 {account.label}
               </option>
             ))}
-            <option value="manual">Manual</option>
-            <option value="receipt">Receipt</option>
+            <option value="manual">{t('common.manual')}</option>
+            <option value="receipt">{t('common.receipt')}</option>
           </select>
           <select
             className="input"
-            aria-label="Filter by category"
+            aria-label={t('transactions.categoryFilterAria')}
             value={filters.category}
             onChange={(e) =>
               setFilters((f) => ({ ...f, category: e.target.value }))
             }
           >
-            <option value="all">All categories</option>
+            <option value="all">{t('transactions.allCategories')}</option>
             {categories.map((category) => (
               <option key={category.id} value={category.id}>
-                {category.icon || '•'} {category.name_zh || category.name}
+                {category.icon || '•'} {categoryName(category)}
               </option>
             ))}
-            <option value="uncategorized">Uncategorized</option>
+            <option value="uncategorized">{t('common.uncategorized')}</option>
           </select>
           <select
             className="input"
-            aria-label="Filter by currency"
+            aria-label={t('transactions.currencyFilterAria')}
             value={filters.currency}
             onChange={(e) =>
               setFilters((f) => ({ ...f, currency: e.target.value }))
             }
           >
-            <option value="all">All currencies</option>
+            <option value="all">{t('transactions.allCurrencies')}</option>
             <option value="USD">USD</option>
             <option value="CNY">CNY</option>
           </select>
           <input
             type="date"
             className="input"
-            aria-label="Filter transactions from date"
+            aria-label={t('transactions.fromDateAria')}
             value={filters.dateFrom}
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateFrom: e.target.value }))
@@ -982,7 +988,7 @@ export default function TransactionsPage() {
           <input
             type="date"
             className="input"
-            aria-label="Filter transactions to date"
+            aria-label={t('transactions.toDateAria')}
             value={filters.dateTo}
             onChange={(e) =>
               setFilters((f) => ({ ...f, dateTo: e.target.value }))
@@ -990,8 +996,8 @@ export default function TransactionsPage() {
           />
         </div>
         <div className="view-toggle-row">
-          <span className="text-secondary">Group by</span>
-          <div className="segmented-control" aria-label="Group transactions by">
+          <span className="text-secondary">{t('transactions.groupBy')}</span>
+          <div className="segmented-control" aria-label={t('transactions.groupByAria')}>
             <button
               type="button"
               className={groupBy === 'date' ? 'active' : ''}
@@ -1021,9 +1027,9 @@ export default function TransactionsPage() {
         </div>
       ) : !hasTransactions ? (
         <div className="card empty-state">
-          <h3>No transactions in this view</h3>
+          <h3>{t('transactions.emptyTitle')}</h3>
           <p className="text-secondary">
-            Try another saved view or adjust filters.
+            {t('transactions.emptyCopy')}
           </p>
         </div>
       ) : (
@@ -1064,7 +1070,7 @@ export default function TransactionsPage() {
                         {group.categoryIcon}
                       </span>{' '}
                       {group.categoryName}
-                      <span className="group-count"> · {group.transactions.length} transaction{group.transactions.length === 1 ? '' : 's'}</span>
+                      <span className="group-count"> · {t('transactions.transactionCount', { count: group.transactions.length, plural: group.transactions.length === 1 ? '' : 's' })}</span>
                     </span>
                     <span className={`group-total ${group.total <= 0 ? 'income' : 'expense'}`}>
                       {formatCurrency(-group.total, group.transactions[0]?.iso_currency_code || 'USD')}
@@ -1083,7 +1089,7 @@ export default function TransactionsPage() {
                 onClick={handleLoadMore}
                 disabled={loadingMore}
               >
-                {loadingMore ? 'Loading...' : 'Load more'}
+                {loadingMore ? t('common.loading') : t('transactions.loadMore')}
               </button>
             </div>
           )}
@@ -1109,6 +1115,9 @@ const TransactionItem = memo(function TransactionItem({
   onCreateCategory,
   onSaveRefundMetadata,
   onSaveSemantics,
+  categoryName,
+  localeCode,
+  t,
 }: {
   transaction: TransactionWithRelations
   linkCandidates: RefundLinkCandidate[]
@@ -1153,14 +1162,17 @@ const TransactionItem = memo(function TransactionItem({
       existing_debt_payment?: boolean
     }
   ) => void
+  categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
+  localeCode: string
+  t: (key: string, params?: Record<string, string | number>) => string
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
   const displayAmount = -amount
   const categoryIcon = tx.categories?.icon || '📦'
-  const categoryName = tx.categories?.name_zh || tx.categories?.name || 'Uncategorized'
+  const displayCategoryName = categoryName(tx.categories)
   const merchantName = tx.merchant_name || tx.description
-  const accountLabel = tx.accounts ? formatAccountSourceLabel(tx.accounts) : null
+  const accountLabel = tx.accounts ? formatAccountSourceLabel(tx.accounts, t('common.manual')) : null
   const tags = Array.isArray(tx.tags) ? tx.tags : []
   const [showNewCategoryForm, setShowNewCategoryForm] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -1185,26 +1197,26 @@ const TransactionItem = memo(function TransactionItem({
 
   let classificationStatus: string | null = null
   if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
-    classificationStatus = 'AI Pending'
+    classificationStatus = t('transactions.aiPending')
   } else if (tags.includes(AI_CLASSIFIED_TAG)) {
-    classificationStatus = 'AI Classified'
+    classificationStatus = t('transactions.aiClassified')
   }
 
   const badgeParts: Array<{ label: string; tone: 'accent' | 'success' | 'warning' | 'info' | 'muted' }> = []
   if (classificationStatus) {
     badgeParts.push({ label: classificationStatus, tone: classificationStatus === 'AI Pending' ? 'accent' : 'success' })
   }
-  if (tx.pending) badgeParts.push({ label: 'Pending', tone: 'warning' })
-  if (tx.transaction_kind === 'refund') badgeParts.push({ label: 'Refund', tone: 'success' })
-  if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: 'Reimbursement', tone: 'success' })
-  if (tx.transaction_kind === 'transfer') badgeParts.push({ label: 'Transfer', tone: 'info' })
-  if (tx.budget_behavior === 'count_as_spending') badgeParts.push({ label: 'Counts spending', tone: 'warning' })
-  if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: 'Counts income', tone: 'success' })
-  if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: 'Excluded transfer', tone: 'muted' })
-  if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: 'Excluded', tone: 'muted' })
-  if (tx.transfer_match_status === 'auto_matched' || tx.transfer_match_status === 'manually_matched') badgeParts.push({ label: 'Matched', tone: 'success' })
-  if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: 'Suggested', tone: 'warning' })
-  if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: 'Unmatched', tone: 'warning' })
+  if (tx.pending) badgeParts.push({ label: t('common.pending'), tone: 'warning' })
+  if (tx.transaction_kind === 'refund') badgeParts.push({ label: t('common.refund'), tone: 'success' })
+  if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: t('common.reimbursement'), tone: 'success' })
+  if (tx.transaction_kind === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
+  if (tx.budget_behavior === 'count_as_spending') badgeParts.push({ label: t('transactions.countsSpending'), tone: 'warning' })
+  if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
+  if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
+  if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
+  if (tx.transfer_match_status === 'auto_matched' || tx.transfer_match_status === 'manually_matched') badgeParts.push({ label: t('common.matched'), tone: 'success' })
+  if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: t('common.suggested'), tone: 'warning' })
+  if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: t('common.unmatched'), tone: 'warning' })
 
   const metaParts: string[] = []
 
@@ -1222,36 +1234,36 @@ const TransactionItem = memo(function TransactionItem({
     metaParts.push('Manual')
   }
   if (tx.pending) {
-    metaParts.push('Pending')
+    metaParts.push(t('common.pending'))
   }
   if (tx.transaction_kind === 'refund') {
-    metaParts.push('Refund')
+    metaParts.push(t('common.refund'))
   } else if (tx.transaction_kind === 'reimbursement') {
-    metaParts.push('Reimbursement')
+    metaParts.push(t('common.reimbursement'))
   } else if (tx.transaction_kind === 'transfer') {
-    metaParts.push('Transfer')
+    metaParts.push(t('common.transfer'))
   }
   if (tx.budget_behavior === 'count_as_spending') {
-    metaParts.push('Counts as spending')
+    metaParts.push(t('transactions.countsAsSpending'))
   } else if (tx.budget_behavior === 'count_as_income') {
-    metaParts.push('Counts as income')
+    metaParts.push(t('transactions.countsAsIncome'))
   } else if (tx.budget_behavior === 'exclude_as_transfer') {
-    metaParts.push('Excluded transfer')
+    metaParts.push(t('transactions.excludedTransfer'))
   } else if (tx.budget_behavior === 'exclude_manual') {
-    metaParts.push('Excluded')
+    metaParts.push(t('common.excluded'))
   }
   if (tx.transfer_match_status === 'auto_matched') {
-    metaParts.push('Matched')
+    metaParts.push(t('common.matched'))
   } else if (tx.transfer_match_status === 'manually_matched') {
-    metaParts.push('Matched')
+    metaParts.push(t('common.matched'))
   } else if (tx.transfer_match_status === 'suggested') {
-    metaParts.push('Suggested')
+    metaParts.push(t('common.suggested'))
   } else if (tx.transfer_match_status === 'unmatched') {
-    metaParts.push('Unmatched')
+    metaParts.push(t('common.unmatched'))
   } else if (tx.transfer_match_status === 'ignored') {
-    metaParts.push('Not transfer')
+    metaParts.push(t('common.notTransfer'))
   }
-  const budgetApplication = formatBudgetApplication(tx)
+  const budgetApplication = formatBudgetApplication(tx, t, localeCode)
   if (budgetApplication) {
     metaParts.push(budgetApplication)
   }
@@ -1278,7 +1290,7 @@ const TransactionItem = memo(function TransactionItem({
           style={getCategoryButtonStyle(
             (tx.categories || {
               id: tx.category_id || 'uncategorized',
-              name: 'Uncategorized',
+              name: t('common.uncategorized'),
               user_id: '',
               type: 'expense',
               sort_order: 0,
@@ -1287,11 +1299,11 @@ const TransactionItem = memo(function TransactionItem({
             true
           )}
           aria-expanded={isEditing}
-          aria-label={`Change category for ${merchantName}`}
+          aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
           onClick={() => onToggleCategoryPicker(tx.id)}
         >
           <span className="tx-category-pill-icon">{categoryIcon}</span>
-          <span className="tx-category-pill-label">{categoryName}</span>
+          <span className="tx-category-pill-label">{displayCategoryName}</span>
         </button>
         <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
           {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
@@ -1300,11 +1312,11 @@ const TransactionItem = memo(function TransactionItem({
       {isEditing && (
         <div className="tx-category-popover">
           <div className="tx-category-popover-header">
-            <span>Pick a category</span>
-            {isSaving && <span>Saving...</span>}
+            <span>{t('transactions.pickCategory')}</span>
+            {isSaving && <span>{t('common.saving')}</span>}
           </div>
           {categoriesLoading ? (
-            <p className="text-secondary">Loading categories...</p>
+            <p className="text-secondary">{t('transactions.loadingCategories')}</p>
           ) : (
             <div className="tx-category-options">
               {categories.map((category) => {
@@ -1320,10 +1332,10 @@ const TransactionItem = memo(function TransactionItem({
                   >
                     <span className="category-chip-icon">{category.icon || '📦'}</span>
                     <span className="category-chip-label">
-                      {category.name_zh || category.name}
+                      {categoryName(category)}
                     </span>
                     {category.is_excluded_from_budget && (
-                      <span className="category-chip-badge">不计入预算</span>
+                      <span className="category-chip-badge">{t('transactions.excludedFromBudget')}</span>
                     )}
                   </button>
                 )
@@ -1332,8 +1344,8 @@ const TransactionItem = memo(function TransactionItem({
           )}
           <div className="refund-tools">
             <div className="tx-category-popover-header">
-              <span>Refund handling</span>
-              {isSaving && <span>Saving...</span>}
+              <span>{t('transactions.refundHandling')}</span>
+              {isSaving && <span>{t('common.saving')}</span>}
             </div>
             <div className="refund-kind-actions">
               <button
@@ -1363,22 +1375,22 @@ const TransactionItem = memo(function TransactionItem({
             </div>
             {tx.linked_transaction_id && (
               <p className="refund-hint">
-                Applied to original purchase budget month
+                {t('transactions.appliedOriginalBudget')}
                 {tx.refund_match_confidence != null &&
                   tx.refund_match_confidence < 0.8 &&
                   tx.refund_match_reason &&
-                  ` · Possible refund match: ${tx.refund_match_reason}`}
+                  ` · ${t('transactions.possibleRefundMatch', { reason: tx.refund_match_reason })}`}
               </p>
             )}
             <div className="refund-link-row">
               <select
                 className="input"
-                aria-label={`Linked purchase for ${merchantName}`}
+                aria-label={t('transactions.linkedPurchaseAria', { merchant: merchantName })}
                 value={selectedLinkId}
                 disabled={isSaving}
                 onChange={(e) => setSelectedLinkId(e.target.value)}
               >
-                <option value="">No linked purchase</option>
+                <option value="">{t('transactions.noLinkedPurchase')}</option>
                 {linkCandidates.map((candidate) => (
                   <option key={candidate.id} value={candidate.id}>
                     {candidate.label}
@@ -1415,7 +1427,7 @@ const TransactionItem = memo(function TransactionItem({
               <input
                 type="date"
                 className="input"
-                aria-label={`Budget effective date for ${merchantName}`}
+                aria-label={t('transactions.budgetDateAria', { merchant: merchantName })}
                 value={budgetEffectiveDate}
                 disabled={isSaving}
                 onChange={(e) => setBudgetEffectiveDate(e.target.value)}
@@ -1436,8 +1448,8 @@ const TransactionItem = memo(function TransactionItem({
           </div>
           <div className="refund-tools">
             <div className="tx-category-popover-header">
-              <span>Budget treatment</span>
-              {isSaving && <span>Saving...</span>}
+              <span>{t('transactions.budgetTreatment')}</span>
+              {isSaving && <span>{t('common.saving')}</span>}
             </div>
             <div className="refund-kind-actions">
               <button
@@ -1547,7 +1559,7 @@ const TransactionItem = memo(function TransactionItem({
                 <input
                   type="text"
                   className="input new-category-input"
-                  placeholder="New category name..."
+                  placeholder={t('transactions.newCategoryPlaceholder')}
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   onKeyDown={(e) => {
@@ -1565,7 +1577,7 @@ const TransactionItem = memo(function TransactionItem({
                       key={icon}
                       type="button"
                       className={`icon-option ${selectedNewIcon === icon ? 'selected' : ''}`}
-                      aria-label={`Use ${icon} as category icon`}
+                      aria-label={t('transactions.iconAria', { icon })}
                       onClick={() => setSelectedNewIcon(icon)}
                     >
                       {icon}
@@ -1579,7 +1591,7 @@ const TransactionItem = memo(function TransactionItem({
                       type="button"
                       className={`color-option ${selectedNewColor === color ? 'selected' : ''}`}
                       style={{ backgroundColor: color }}
-                      aria-label={`Use ${color} as category color`}
+                      aria-label={t('transactions.colorAria', { color })}
                       onClick={() => setSelectedNewColor(color)}
                     />
                   ))}
@@ -1595,7 +1607,7 @@ const TransactionItem = memo(function TransactionItem({
                       setShowNewCategoryForm(false)
                     }}
                   >
-                    {isSaving ? 'Creating...' : 'Create'}
+                    {isSaving ? t('transactions.creating') : t('common.create')}
                   </button>
                   <button
                     type="button"
@@ -1619,7 +1631,7 @@ const TransactionItem = memo(function TransactionItem({
                   setSelectedNewColor(CATEGORY_COLORS[5])
                 }}
               >
-                + New Category
+                {t('transactions.newCategory')}
               </button>
             )}
           </div>
@@ -1630,8 +1642,7 @@ const TransactionItem = memo(function TransactionItem({
           <div className="similar-suggestion-copy">
             {similarSuggestion ? (
               <span className="similar-suggestion-text">
-                已改为 <strong>{similarSuggestion.categoryName}</strong>，是否同步到{' '}
-                {similarSuggestion.similarCount} 笔同名交易？
+                {t('transactions.similarPrompt', { category: similarSuggestion.categoryName, count: similarSuggestion.similarCount })}
               </span>
             ) : statusMessage && (
               <span className="category-save-status">{statusMessage}</span>
@@ -1651,14 +1662,14 @@ const TransactionItem = memo(function TransactionItem({
                   )
                 }
               >
-                同步同名
+                {t('transactions.syncSimilar')}
               </button>
               <button
                 type="button"
                 className="btn btn-ghost"
                 onClick={onDismissSimilar}
               >
-                仅此一笔
+                {t('transactions.onlyThis')}
               </button>
             </div>
           )}
