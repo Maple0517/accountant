@@ -181,6 +181,34 @@ function totalOfCurrencyMap(totals: Map<string, number>) {
   return Array.from(totals.values()).reduce((sum, amount) => sum + amount, 0)
 }
 
+function formatGroupSummary(
+  txs: TransactionWithRelations[],
+  totals: Map<string, number>,
+  t: (key: string, params?: Record<string, string | number>) => string
+) {
+  const count = txs.length
+  const noun = t('transactions.transactionCount', {
+    count,
+    plural: count === 1 ? '' : 's',
+  })
+
+  const amountSummaries =
+    totals.size === 0
+      ? [
+          `${formatCurrency(0, 'USD')} ${t('transactions.spentSummaryLabel')}`,
+        ]
+      : Array.from(totals.entries()).map(([currency, amount]) => {
+          const direction =
+            amount <= 0
+              ? t('transactions.incomeSummaryLabel')
+              : t('transactions.spentSummaryLabel')
+
+          return `${formatCurrency(Math.abs(amount), currency)} ${direction}`
+        })
+
+  return `${noun} · ${amountSummaries.join(' · ')}`
+}
+
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 const TRANSACTIONS_PAGE_SIZE = 50
@@ -988,8 +1016,8 @@ export default function TransactionsPage() {
                   <div key={date} className="transaction-group">
                     <div className="group-header">
                       <span className="group-date">{formatDate(date)}</span>
-                      <span className={`group-total ${hasMultipleCurrencies(dayTotals) ? '' : totalOfCurrencyMap(dayTotals) <= 0 ? 'income' : 'expense'}`}>
-                        {formatCurrencyTotals(dayTotals, (amount) => -amount)}
+                      <span className="group-summary">
+                        {formatGroupSummary(txs, dayTotals, t)}
                       </span>
                     </div>
                     <div className="card transaction-list-card">
