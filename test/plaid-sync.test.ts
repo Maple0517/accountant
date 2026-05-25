@@ -12,6 +12,11 @@ import {
 } from '@/lib/plaid/classification'
 import { getCategoryFromPlaid } from '@/lib/categories'
 import {
+  applyPlaidUpdateToSplitParentForTrustedSync,
+  resolvePendingSplitParentReplacement,
+  softDeletePlaidRemovedTransactions,
+} from '@/lib/plaid/transactions-sync'
+import {
   findLikelyOriginalPurchase,
   isLikelyRefundCandidate,
 } from '@/lib/transactions/refund-matching'
@@ -196,6 +201,213 @@ test('getCategoryFromPlaid maps current Plaid personal finance categories', () =
   assert.equal(getCategoryFromPlaid('GENERAL_MERCHANDISE').name, 'Shopping')
   assert.equal(getCategoryFromPlaid('Rent & Utilities').name, 'Bills & Utilities')
   assert.equal(getCategoryFromPlaid('TRANSFER_OUT').name, 'Transfer')
+})
+
+test('Plaid removed transactions are soft-deleted through trusted RPC', async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
+  const supabase = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve({ data: 2, error: null })
+    },
+  }
+
+  const count = await softDeletePlaidRemovedTransactions({
+    supabase: supabase as never,
+    userId: 'user_1',
+    plaidTransactionIds: ['plaid_removed_1', 'plaid_removed_2'],
+  })
+
+  assert.equal(count, 2)
+  assert.deepEqual(rpcCalls, [
+    {
+      fn: 'soft_delete_transactions_for_trusted_sync',
+      args: {
+        p_user_id: 'user_1',
+        p_transaction_ids: null,
+        p_plaid_transaction_ids: ['plaid_removed_1', 'plaid_removed_2'],
+        p_deleted_reason: 'plaid_removed',
+      },
+    },
+  ])
+})
+
+test('Plaid split parent updates use trusted split-parent RPC', async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
+  const supabase = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve({ data: { ok: true }, error: null })
+    },
+  }
+
+  await applyPlaidUpdateToSplitParentForTrustedSync({
+    supabase: supabase as never,
+    parentTransactionId: 'parent_1',
+    plaidTransactionId: 'plaid_1',
+    amount: 123.45,
+    date: '2026-05-25',
+    authorizedDate: '2026-05-24',
+    merchantName: 'Merchant',
+    description: 'Raw description',
+    paymentChannel: 'online',
+    pending: false,
+    isoCurrencyCode: 'USD',
+  })
+
+  assert.deepEqual(rpcCalls, [
+    {
+      fn: 'apply_plaid_update_to_split_parent_for_trusted_sync',
+      args: {
+        p_parent_transaction_id: 'parent_1',
+        p_plaid_transaction_id: 'plaid_1',
+        p_amount: 123.45,
+        p_date: '2026-05-25',
+        p_authorized_date: '2026-05-24',
+        p_merchant_name: 'Merchant',
+        p_description: 'Raw description',
+        p_payment_channel: 'online',
+        p_pending: false,
+        p_iso_currency_code: 'USD',
+        p_event_type: 'plaid_modified',
+        p_pending_transaction_id: null,
+      },
+    },
+  ])
+})
+
+test('Plaid split parent replacement can audit pending replacement event', async () => {
+  const rpcCalls: Array<{ fn: string; args: Record<string, unknown> }> = []
+  const supabase = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      rpcCalls.push({ fn, args })
+      return Promise.resolve({ data: { ok: true }, error: null })
+    },
+  }
+
+  await applyPlaidUpdateToSplitParentForTrustedSync({
+    supabase: supabase as never,
+    parentTransactionId: 'parent_1',
+    plaidTransactionId: 'posted_1',
+    amount: 123.45,
+    date: '2026-05-25',
+    authorizedDate: null,
+    merchantName: 'Merchant',
+    description: 'Posted description',
+    paymentChannel: 'online',
+    pending: false,
+    isoCurrencyCode: 'USD',
+    eventType: 'plaid_pending_replaced',
+  })
+
+  assert.equal(rpcCalls[0].args.p_event_type, 'plaid_pending_replaced')
+  assert.equal(rpcCalls[0].args.p_pending_transaction_id, null)
+})
+
+test('Plaid pending replacement resolves exact pending_transaction_id for split parents', () => {
+  const accountMap = new Map([['plaid_account_1', 'account_1']])
+  const replacement = resolvePendingSplitParentReplacement({
+    removedPlaidTransactionId: 'pending_plaid_1',
+    removedTransaction: {
+      id: 'parent_1',
+      plaid_transaction_id: 'pending_plaid_1',
+      account_id: 'account_1',
+      amount: 72.5,
+      date: '2026-05-20',
+      description: 'Coffee Shop',
+      split_role: 'parent',
+      split_group_id: 'group_1',
+      category_id: null,
+      merchant_name: 'Coffee Shop',
+    },
+    candidates: [
+      {
+        account_id: 'plaid_account_1',
+        amount: 72.5,
+        date: '2026-05-21',
+        merchant_name: 'Other Merchant',
+        name: 'Other Merchant',
+        pending: false,
+        pending_transaction_id: null,
+        transaction_id: 'posted_other',
+      },
+      {
+        account_id: 'plaid_account_1',
+        amount: 72.5,
+        date: '2026-05-21',
+        merchant_name: 'Coffee Shop',
+        name: 'COFFEE SHOP',
+        pending: false,
+        pending_transaction_id: 'pending_plaid_1',
+        transaction_id: 'posted_plaid_1',
+      },
+    ],
+    accountMap,
+  })
+
+  assert.equal(replacement?.transaction_id, 'posted_plaid_1')
+})
+
+test('Plaid pending replacement resolves one fuzzy candidate but rejects ambiguity', () => {
+  const accountMap = new Map([['plaid_account_1', 'account_1']])
+  const removedTransaction = {
+    id: 'parent_1',
+    plaid_transaction_id: 'pending_plaid_1',
+    account_id: 'account_1',
+    amount: 30,
+    date: '2026-05-20',
+    description: 'Cafe Nero',
+    split_role: 'parent',
+    split_group_id: 'group_1',
+    category_id: null,
+    merchant_name: 'Cafe Nero',
+  }
+
+  const fuzzy = resolvePendingSplitParentReplacement({
+    removedPlaidTransactionId: 'pending_plaid_1',
+    removedTransaction,
+    candidates: [
+      {
+        account_id: 'plaid_account_1',
+        amount: 30,
+        date: '2026-05-22',
+        merchant_name: 'Cafe Nero',
+        name: 'CAFE NERO',
+        pending: false,
+        transaction_id: 'posted_fuzzy',
+      },
+    ],
+    accountMap,
+  })
+
+  const ambiguous = resolvePendingSplitParentReplacement({
+    removedPlaidTransactionId: 'pending_plaid_1',
+    removedTransaction,
+    candidates: [
+      {
+        account_id: 'plaid_account_1',
+        amount: 30,
+        date: '2026-05-22',
+        merchant_name: 'Cafe Nero',
+        name: 'CAFE NERO',
+        pending: false,
+        transaction_id: 'posted_fuzzy_1',
+      },
+      {
+        account_id: 'plaid_account_1',
+        amount: 30,
+        date: '2026-05-22',
+        merchant_name: 'Cafe Nero',
+        name: 'CAFE NERO',
+        pending: false,
+        transaction_id: 'posted_fuzzy_2',
+      },
+    ],
+    accountMap,
+  })
+
+  assert.equal(fuzzy?.transaction_id, 'posted_fuzzy')
+  assert.equal(ambiguous, null)
 })
 
 test('refund candidate detection accepts negative merchant credits and excludes income or transfer-like rows', () => {

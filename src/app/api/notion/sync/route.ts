@@ -81,6 +81,10 @@ export async function POST(request: Request) {
       `
       )
       .eq('user_id', user.id)
+      .is('deleted_at', null)
+      .eq('is_hidden_from_reports', false)
+      .neq('split_role', 'parent')
+      .order('effective_date', { ascending: false })
       .order('date', { ascending: false })
 
     if (!fullSync) {

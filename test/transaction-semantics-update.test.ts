@@ -12,7 +12,7 @@ type Operation = {
   columns?: string
   payload?: Record<string, unknown>
   filters: Array<{
-    method: 'eq' | 'neq'
+    method: 'eq' | 'neq' | 'is'
     column: string
     value: unknown
   }>
@@ -26,6 +26,11 @@ type MockTransaction = {
   category_id: string | null
   transaction_kind: string | null
   transfer_group_id: string | null
+  deleted_at?: string | null
+  is_hidden_from_reports?: boolean | null
+  split_role?: 'none' | 'parent' | 'child' | null
+  split_group_id?: string | null
+  split_parent_id?: string | null
   categories: {
     type: 'income' | 'expense' | 'transfer' | null
     is_excluded_from_budget: boolean | null
@@ -60,6 +65,10 @@ function createQuery(
     },
     neq(column: string, value: unknown) {
       operation.filters.push({ method: 'neq', column, value })
+      return query
+    },
+    is(column: string, value: null) {
+      operation.filters.push({ method: 'is', column, value })
       return query
     },
     single() {
@@ -205,6 +214,8 @@ test('confirming a suggested transfer updates the matching group leg', async () 
     { method: 'eq', column: 'user_id', value: 'user_1' },
     { method: 'eq', column: 'transfer_group_id', value: 'group_1' },
     { method: 'neq', column: 'id', value: 'tx_current' },
+    { method: 'is', column: 'deleted_at', value: null },
+    { method: 'neq', column: 'split_role', value: 'parent' },
   ])
 })
 
@@ -302,4 +313,28 @@ test('invalid semantic values are rejected before database access', async () => 
     error: 'Invalid budget_behavior',
   })
   assert.equal(operations.length, 0)
+})
+
+test('semantics update rejects split parent transactions', async () => {
+  const { supabase, updatePayloads } = createSupabaseMock({
+    transaction: {
+      ...baseTransaction,
+      split_role: 'parent',
+    },
+  })
+
+  const result = await updateTransactionSemantics({
+    supabase,
+    userId: 'user_1',
+    transactionId: 'tx_current',
+    body: { transaction_kind: 'refund' },
+    ensureCategory: async () => null,
+  })
+
+  assert.deepEqual(result, {
+    ok: false,
+    status: 409,
+    error: 'Split parent transactions cannot be edited directly',
+  })
+  assert.equal(updatePayloads.length, 0)
 })

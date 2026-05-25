@@ -70,8 +70,8 @@ export function adaptTransactions(
       type,
       budgetBehavior: row.budget_behavior ?? null,
       status: row.pending ? ('pending' as const) : ('posted' as const),
-      isHidden: false,
-      isDeleted: false,
+      isHidden: row.is_hidden_from_reports === true,
+      isDeleted: row.deleted_at != null,
     };
   });
 }

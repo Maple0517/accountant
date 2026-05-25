@@ -16,6 +16,15 @@ type ExecutableQuery<T = unknown> = PromiseLike<QueryResult<T>> & {
 }
 
 export type PlaidItemDisconnectClient = {
+  rpc(
+    fn: 'soft_delete_transactions_for_trusted_sync',
+    args: {
+      p_user_id: string
+      p_transaction_ids: string[] | null
+      p_plaid_transaction_ids: string[] | null
+      p_deleted_reason: string
+    }
+  ): PromiseLike<QueryResult<number>>
   from(table: string): {
     select(columns: string): ExecutableQuery
     update(payload: Record<string, unknown>): ExecutableQuery
@@ -187,19 +196,22 @@ async function deleteConnectionHistory({
   if (transactionIds.length > 0) {
     await clearLinkedTransactionReferences(supabase, userId, transactionIds)
     await deleteAiClassificationJobItems(supabase, userId, transactionIds)
-    await deleteTransactions(supabase, userId, transactionIds)
+    await softDeleteTransactions(supabase, userId, transactionIds)
   }
 
   if (accountIds.length > 0) {
     const { error } = await supabase
       .from('accounts')
-      .delete()
+      .update({
+        plaid_item_id: null,
+        plaid_account_id: null,
+      })
       .eq('user_id', userId)
       .eq('plaid_item_id', plaidItemId)
 
     if (error) {
       throw new PlaidItemDisconnectError(
-        `Failed to delete connected accounts: ${error.message || 'unknown error'}`,
+        `Failed to preserve connected accounts: ${error.message || 'unknown error'}`,
         500
       )
     }
@@ -248,20 +260,24 @@ async function deleteAiClassificationJobItems(
   }
 }
 
-async function deleteTransactions(
+async function softDeleteTransactions(
   supabase: PlaidItemDisconnectClient,
   userId: string,
   transactionIds: string[]
 ) {
-  const { error } = await supabase
-    .from('transactions')
-    .delete()
-    .eq('user_id', userId)
-    .in('id', transactionIds)
+  const { error } = await supabase.rpc(
+    'soft_delete_transactions_for_trusted_sync',
+    {
+      p_user_id: userId,
+      p_transaction_ids: transactionIds,
+      p_plaid_transaction_ids: null,
+      p_deleted_reason: 'plaid_disconnect_delete_history',
+    }
+  )
 
   if (error) {
     throw new PlaidItemDisconnectError(
-      `Failed to delete connection transactions: ${error.message || 'unknown error'}`,
+      `Failed to soft-delete connection transactions: ${error.message || 'unknown error'}`,
       500
     )
   }

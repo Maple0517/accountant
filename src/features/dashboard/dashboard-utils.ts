@@ -1,32 +1,18 @@
 import type { DashboardAccount, DashboardMonthTransaction } from './types'
 import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
+import { getTransactionSemanticAmounts } from '@/lib/transactions/effective'
 import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
 } from '@/lib/plaid/classification'
 
 export function getMonthlySemanticAmounts(tx: Pick<DashboardMonthTransaction, 'amount' | 'budget_behavior'>) {
-  const amount = Number(tx.amount)
+  const semanticAmounts = getTransactionSemanticAmounts(tx)
 
-  if (!Number.isFinite(amount)) {
-    return { spending: 0, income: 0 }
+  return {
+    spending: semanticAmounts.netSpending,
+    income: semanticAmounts.income,
   }
-
-  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') {
-    return { spending: 0, income: 0 }
-  }
-
-  if (tx.budget_behavior === 'count_as_income') {
-    return { spending: 0, income: Math.abs(amount) }
-  }
-
-  if (tx.budget_behavior === 'count_as_spending') {
-    return { spending: amount, income: 0 }
-  }
-
-  if (amount > 0) return { spending: amount, income: 0 }
-  if (amount < 0) return { spending: 0, income: Math.abs(amount) }
-  return { spending: 0, income: 0 }
 }
 
 export function summarizeBalances(accounts: DashboardAccount[], currencyCode: string) {

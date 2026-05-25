@@ -11,7 +11,7 @@ import {
   stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
-import type { AiClassificationJob, Category, Transaction } from '@/types'
+import type { AiClassificationJob, BudgetBehavior, Category, Transaction, TransactionKind, TransactionSplitGroup } from '@/types'
 import { useI18n } from '@/i18n/client'
 
 type TransactionFilter = {
@@ -102,6 +102,44 @@ type RefundFormDraft = {
 
 const EMPTY_LINK_CANDIDATES: RefundLinkCandidate[] = []
 
+type SplitLineDraft = {
+  id?: string
+  amount_decimal: string
+  category_id: string
+  allocation_date: string
+  transaction_kind: TransactionKind
+  budget_behavior: BudgetBehavior
+  merchant_name: string
+  description: string
+  notes: string
+}
+
+type SplitPreviewResponse = {
+  balanced: boolean
+  parentAmountDecimal: string
+  childAmountSumDecimal: string
+  remainingAmountDecimal: string
+  budgetImpactByMonth: Array<{
+    month: string
+    netSpendingDeltaDecimal: string
+    incomeDeltaDecimal: string
+  }>
+  warnings: string[]
+}
+
+type SplitStateResponse = {
+  parent: TransactionWithRelations
+  group: TransactionSplitGroup | null
+  children: TransactionWithRelations[]
+  canSplit: boolean
+  issues: string[]
+  notionSchemaReady?: boolean
+  notionSchemaStatus?: 'disabled' | 'ready' | 'not_configured' | 'schema_update_failed'
+  warnings?: string[]
+  error?: string
+  code?: string
+}
+
 function getRefundDraftFromTransaction(tx: TransactionWithRelations): RefundFormDraft {
   const serverSelectedLinkId = tx.linked_transaction_id || ''
   const serverBudgetEffectiveDate = tx.budget_effective_date || tx.date
@@ -111,6 +149,93 @@ function getRefundDraftFromTransaction(tx: TransactionWithRelations): RefundForm
     serverBudgetEffectiveDate,
     selectedLinkId: serverSelectedLinkId,
     budgetEffectiveDate: serverBudgetEffectiveDate,
+  }
+}
+
+function decimalPlaces(value: number) {
+  return Math.abs(value % 1) > 0 ? 2 : 0
+}
+
+function toSplitDecimal(value: number) {
+  return value.toFixed(decimalPlaces(value)).replace(/\.?0+$/, '')
+}
+
+function splitAmountEvenly(amount: number, count: number) {
+  const cents = Math.round(amount * 100)
+  const base = Math.trunc(cents / count)
+  let remainder = cents - base * count
+
+  return Array.from({ length: count }, () => {
+    let centsForLine = base
+    if (remainder !== 0) {
+      centsForLine += remainder > 0 ? 1 : -1
+      remainder += remainder > 0 ? -1 : 1
+    }
+    return toSplitDecimal(centsForLine / 100)
+  })
+}
+
+function addMonths(dateStr: string, offset: number) {
+  const date = new Date(`${dateStr}T00:00:00`)
+  date.setMonth(date.getMonth() + offset)
+  return date.toISOString().slice(0, 10)
+}
+
+function createSplitLineDraft(
+  tx: TransactionWithRelations,
+  amountDecimal: string,
+  index: number,
+  allocationDate = tx.effective_date || tx.budget_effective_date || tx.date
+): SplitLineDraft {
+  return {
+    amount_decimal: amountDecimal,
+    category_id: tx.category_id || '',
+    allocation_date: allocationDate,
+    transaction_kind: tx.transaction_kind || 'normal',
+    budget_behavior: tx.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+    merchant_name: tx.merchant_name || '',
+    description: index === 0 ? tx.description || '' : '',
+    notes: '',
+  }
+}
+
+function buildInitialSplitLines(
+  tx: TransactionWithRelations,
+  existingChildren?: TransactionWithRelations[]
+) {
+  if (existingChildren && existingChildren.length > 0) {
+    return existingChildren.map((child) => ({
+      id: child.id,
+      amount_decimal: toSplitDecimal(Number(child.amount)),
+      category_id: child.category_id || '',
+      allocation_date: child.effective_date || child.budget_effective_date || child.date,
+      transaction_kind: child.transaction_kind || 'normal',
+      budget_behavior: child.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+      merchant_name: child.merchant_name || '',
+      description: child.description || '',
+      notes: child.notes || '',
+    }))
+  }
+
+  return splitAmountEvenly(Number(tx.amount), 2).map((amount, index) =>
+    createSplitLineDraft(tx, amount, index)
+  )
+}
+
+function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | null) {
+  return {
+    expected_version: expectedVersion ?? null,
+    children: lines.map((line) => ({
+      id: line.id,
+      amount_decimal: line.amount_decimal,
+      category_id: line.category_id || null,
+      allocation_date: line.allocation_date || null,
+      transaction_kind: line.transaction_kind,
+      budget_behavior: line.budget_behavior,
+      merchant_name: line.merchant_name || null,
+      description: line.description || null,
+      notes: line.notes || null,
+    })),
   }
 }
 
@@ -212,6 +337,7 @@ function formatGroupSummary(
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 const TRANSACTIONS_PAGE_SIZE = 50
+const DEFAULT_SPLIT_BEHAVIOR: BudgetBehavior = 'count_as_spending'
 
 function emptyViewCounts(): Record<SavedView, number> {
   return Object.fromEntries(SAVED_VIEWS.map((view) => [view.id, 0])) as Record<SavedView, number>
@@ -251,6 +377,8 @@ export default function TransactionsPage() {
   } | null>(null)
   const [similarSuggestion, setSimilarSuggestion] =
     useState<SimilarCategorySuggestion | null>(null)
+  const [splitEditorTransaction, setSplitEditorTransaction] =
+    useState<TransactionWithRelations | null>(null)
   const [filters, setFilters] = useState<TransactionFilter>({
     search: '',
     sourceOrAccount: 'all',
@@ -674,6 +802,18 @@ export default function TransactionsPage() {
     [t]
   )
 
+  const handleOpenSplitEditor = useCallback((tx: TransactionWithRelations) => {
+    setCategorySaveStatus(null)
+    setSimilarSuggestion(null)
+    setEditingTransactionId(null)
+    setSplitEditorTransaction(tx)
+  }, [])
+
+  const handleSplitSaved = useCallback(async () => {
+    setSplitEditorTransaction(null)
+    await fetchTransactions()
+  }, [fetchTransactions])
+
   const visibleTransactions = transactions
 
   const visibleTransactionsGroupedByDate = useMemo(
@@ -830,6 +970,7 @@ export default function TransactionsPage() {
         onCreateCategory={handleCreateCategory}
         onSaveRefundMetadata={handleRefundMetadataSave}
         onSaveSemantics={handleSemanticsSave}
+        onOpenSplitEditor={handleOpenSplitEditor}
         categoryName={categoryName}
         t={t}
       />
@@ -844,6 +985,7 @@ export default function TransactionsPage() {
       handleDismissSimilar,
       handleRefundMetadataSave,
       handleSemanticsSave,
+      handleOpenSplitEditor,
       handleToggleCategoryPicker,
       categoryName,
       linkCandidatesByTransactionId,
@@ -1067,6 +1209,16 @@ export default function TransactionsPage() {
           )}
         </div>
       )}
+      {splitEditorTransaction && (
+        <SplitEditorDrawer
+          transaction={splitEditorTransaction}
+          categories={categories}
+          categoryName={categoryName}
+          t={t}
+          onClose={() => setSplitEditorTransaction(null)}
+          onSaved={handleSplitSaved}
+        />
+      )}
     </div>
   )
 }
@@ -1087,6 +1239,7 @@ const TransactionItem = memo(function TransactionItem({
   onCreateCategory,
   onSaveRefundMetadata,
   onSaveSemantics,
+  onOpenSplitEditor,
   categoryName,
   t,
 }: {
@@ -1133,6 +1286,7 @@ const TransactionItem = memo(function TransactionItem({
       existing_debt_payment?: boolean
     }
   ) => void
+  onOpenSplitEditor: (transaction: TransactionWithRelations) => void
   categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
   t: (key: string, params?: Record<string, string | number>) => string
 }) {
@@ -1178,6 +1332,8 @@ const TransactionItem = memo(function TransactionItem({
   if (tx.transaction_kind === 'refund') badgeParts.push({ label: t('common.refund'), tone: 'success' })
   if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: t('common.reimbursement'), tone: 'success' })
   if (tx.transaction_kind === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
+  if (tx.split_role === 'child') badgeParts.push({ label: `Split ${tx.split_sequence || ''}`.trim(), tone: 'accent' })
+  if (tx.split_status === 'out_of_balance') badgeParts.push({ label: t('transactions.splitOutOfBalance'), tone: 'warning' })
   if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
   if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
   if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
@@ -1263,6 +1419,18 @@ const TransactionItem = memo(function TransactionItem({
         <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
           {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
         </div>
+      </div>
+      <div className="tx-row-actions">
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+          aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+          disabled={tx.pending}
+          onClick={() => onOpenSplitEditor(tx)}
+        >
+          Split
+        </button>
       </div>
       {isEditing && (
         <div className="tx-category-popover">
@@ -1633,3 +1801,361 @@ const TransactionItem = memo(function TransactionItem({
     </div>
   )
 })
+
+function SplitEditorDrawer({
+  transaction,
+  categories,
+  categoryName,
+  t,
+  onClose,
+  onSaved,
+}: {
+  transaction: TransactionWithRelations
+  categories: Category[]
+  categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
+  t: (key: string, params?: Record<string, string | number>) => string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [splitState, setSplitState] = useState<SplitStateResponse | null>(null)
+  const [lines, setLines] = useState<SplitLineDraft[]>(() =>
+    buildInitialSplitLines(transaction)
+  )
+  const [preview, setPreview] = useState<SplitPreviewResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const parent = splitState?.parent || transaction
+  const currency = parent.iso_currency_code || 'USD'
+  const hasExistingSplit = Boolean(splitState?.group && splitState.children.length > 0)
+  const notionSchemaBlocked =
+    splitState?.notionSchemaReady === false ||
+    splitState?.issues?.includes('NOTION_SCHEMA_NOT_READY')
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadSplit() {
+      setLoading(true)
+      setMessage(null)
+      try {
+        const response = await fetch(`/api/transactions/${transaction.id}/split`)
+        const data = (await response.json()) as SplitStateResponse
+        if (cancelled) return
+        if (!response.ok) {
+          throw new Error(data.error || t('transactions.splitLoadError'))
+        }
+        setSplitState(data)
+        setLines(buildInitialSplitLines(data.parent, data.children))
+      } catch (error) {
+        if (!cancelled) {
+          setMessage(error instanceof Error ? error.message : t('transactions.splitLoadError'))
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    loadSplit()
+    return () => {
+      cancelled = true
+    }
+  }, [transaction.id, t])
+
+  useEffect(() => {
+    if (loading || parent.pending || notionSchemaBlocked) return
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/transactions/${parent.id}/split/preview`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildSplitPayload(lines, splitState?.group?.version)),
+          signal: controller.signal,
+        })
+        const data = (await response.json()) as SplitPreviewResponse & { error?: string }
+        if (!response.ok) {
+          setPreview(null)
+          return
+        }
+        setPreview(data)
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn('Failed to preview split:', error)
+        }
+      }
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      controller.abort()
+    }
+  }, [lines, loading, notionSchemaBlocked, parent.id, parent.pending, splitState?.group?.version])
+
+  const setLine = (index: number, patch: Partial<SplitLineDraft>) => {
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, ...patch } : line
+      )
+    )
+  }
+
+  const addLine = () => {
+    setLines((current) => [
+      ...current,
+      createSplitLineDraft(parent, '0', current.length),
+    ])
+  }
+
+  const removeLine = (index: number) => {
+    setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))
+  }
+
+  const applyEqualSplit = () => {
+    const amounts = splitAmountEvenly(Number(parent.amount), Math.max(lines.length, 2))
+    setLines((current) =>
+      (current.length >= 2 ? current : buildInitialSplitLines(parent)).map(
+        (line, index) => ({ ...line, amount_decimal: amounts[index] || '0' })
+      )
+    )
+  }
+
+  const applyMonthlySpread = () => {
+    const startDate = parent.effective_date || parent.budget_effective_date || parent.date
+    setLines((current) =>
+      current.map((line, index) => ({
+        ...line,
+        allocation_date: addMonths(startDate, index),
+      }))
+    )
+  }
+
+  const saveSplit = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const response = await fetch(`/api/transactions/${parent.id}/split`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildSplitPayload(lines, splitState?.group?.version)),
+      })
+      const data = (await response.json()) as SplitStateResponse
+      if (!response.ok) {
+        throw new Error(data.error || t('transactions.splitSaveError'))
+      }
+      onSaved()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t('transactions.splitSaveError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const restoreSplit = async () => {
+    setSaving(true)
+    setMessage(null)
+    try {
+      const response = await fetch(`/api/transactions/${parent.id}/split`, {
+        method: 'DELETE',
+      })
+      const data = (await response.json()) as SplitStateResponse
+      if (!response.ok) {
+        throw new Error(data.error || t('transactions.splitRestoreError'))
+      }
+      onSaved()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t('transactions.splitRestoreError'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="drawer-backdrop" role="dialog" aria-modal="true">
+      <div className="drawer-panel split-editor-panel">
+        <div className="drawer-header">
+          <div>
+            <h2>{t('transactions.splitEditorTitle')}</h2>
+            <p className="card-subtitle">
+              {parent.merchant_name || parent.description}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="drawer-close"
+            aria-label={t('common.cancel')}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <div className="drawer-content">
+          {loading ? (
+            <p className="text-secondary">{t('common.loading')}</p>
+          ) : parent.pending ? (
+            <div className="split-editor-status warning">
+              {t('transactions.splitPendingDisabled')}
+            </div>
+          ) : notionSchemaBlocked ? (
+            <div className="split-editor-status warning">
+              {t('transactions.splitNotionSchemaNotReady')}
+            </div>
+          ) : (
+            <>
+              <div className="split-editor-summary">
+                <span>{formatCurrency(-Number(parent.amount), currency)}</span>
+                <span>
+                  {preview
+                    ? t('transactions.splitRemaining', {
+                        amount: formatCurrency(
+                          -Number(preview.remainingAmountDecimal),
+                          currency
+                        ),
+                      })
+                    : t('common.loading')}
+                </span>
+              </div>
+              {parent.split_status === 'out_of_balance' && (
+                <div className="split-editor-status warning">
+                  {t('transactions.splitOutOfBalance')}
+                </div>
+              )}
+              {message && (
+                <div className="split-editor-status danger">{message}</div>
+              )}
+              <div className="split-editor-toolbar">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={applyEqualSplit}>
+                  {t('transactions.splitEqual')}
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={applyMonthlySpread}>
+                  {t('transactions.splitMonthly')}
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={addLine}>
+                  {t('transactions.splitAddLine')}
+                </button>
+              </div>
+              <div className="split-lines">
+                {lines.map((line, index) => (
+                  <div key={`${line.id || 'new'}-${index}`} className="split-line">
+                    <div className="split-line-header">
+                      <span>{t('transactions.splitLine', { index: index + 1 })}</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        disabled={lines.length <= 2}
+                        onClick={() => removeLine(index)}
+                      >
+                        {t('transactions.clear')}
+                      </button>
+                    </div>
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      aria-label={t('transactions.splitAmountAria', { index: index + 1 })}
+                      value={line.amount_decimal}
+                      onChange={(event) => setLine(index, { amount_decimal: event.target.value })}
+                    />
+                    <select
+                      className="input"
+                      aria-label={t('transactions.category')}
+                      value={line.category_id}
+                      onChange={(event) => setLine(index, { category_id: event.target.value })}
+                    >
+                      <option value="">{t('common.uncategorized')}</option>
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.icon || '•'} {categoryName(category)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      className="input"
+                      aria-label={t('transactions.splitAllocationDate')}
+                      value={line.allocation_date}
+                      onChange={(event) => setLine(index, { allocation_date: event.target.value })}
+                    />
+                    <input
+                      className="input"
+                      aria-label={t('transactions.splitNote')}
+                      placeholder={t('transactions.splitNote')}
+                      value={line.notes}
+                      onChange={(event) => setLine(index, { notes: event.target.value })}
+                    />
+                    <div className="split-advanced-row">
+                      <select
+                        className="input"
+                        value={line.transaction_kind}
+                        onChange={(event) =>
+                          setLine(index, {
+                            transaction_kind: event.target.value as TransactionKind,
+                          })
+                        }
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="refund">Refund</option>
+                        <option value="reimbursement">Reimbursement</option>
+                        <option value="transfer">Transfer</option>
+                      </select>
+                      <select
+                        className="input"
+                        value={line.budget_behavior}
+                        onChange={(event) =>
+                          setLine(index, {
+                            budget_behavior: event.target.value as BudgetBehavior,
+                          })
+                        }
+                      >
+                        <option value="count_as_spending">{t('transactions.countSpending')}</option>
+                        <option value="count_as_income">{t('transactions.countIncome')}</option>
+                        <option value="exclude_as_transfer">{t('common.transfer')}</option>
+                        <option value="exclude_manual">{t('transactions.exclude')}</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {preview && (
+                <div className={`split-preview ${preview.balanced ? 'balanced' : 'unbalanced'}`}>
+                  <span>
+                    {preview.balanced
+                      ? t('transactions.splitBalanced')
+                      : t('transactions.splitUnbalanced')}
+                  </span>
+                  {preview.budgetImpactByMonth.map((month) => (
+                    <span key={month.month}>
+                      {month.month}: {formatCurrency(-Number(month.netSpendingDeltaDecimal), currency)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="split-editor-actions">
+                {hasExistingSplit && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    disabled={saving}
+                    onClick={restoreSplit}
+                  >
+                    {t('transactions.splitRestore')}
+                  </button>
+                )}
+                <button type="button" className="btn btn-ghost" onClick={onClose}>
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={saving || !preview?.balanced}
+                  onClick={saveSplit}
+                >
+                  {saving ? t('common.saving') : t('transactions.splitSave')}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

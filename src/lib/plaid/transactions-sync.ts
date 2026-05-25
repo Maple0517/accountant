@@ -38,6 +38,7 @@ type PlaidSyncTransaction = PlaidCategorySource & {
   name: string
   payment_channel?: string
   pending: boolean
+  pending_transaction_id?: string | null
   transaction_id: string
 }
 
@@ -48,6 +49,12 @@ type PlaidRemovedTransaction = {
 type ExistingPlaidTransaction = {
   id: string
   plaid_transaction_id: string
+  account_id?: string | null
+  amount?: number | null
+  date?: string | null
+  description?: string | null
+  split_role?: string | null
+  split_group_id?: string | null
   category_id: string | null
   merchant_name: string | null
   tags?: string[] | null
@@ -62,6 +69,16 @@ type ExistingPlaidTransaction = {
   transfer_match_confidence?: number | null
   transfer_match_reason?: string | null
   semantic_override_source?: SemanticOverrideSource | null
+}
+
+type TrustedSoftDeleteRpcResult = {
+  data: number | null
+  error: { message?: string } | null
+}
+
+type TrustedPlaidSplitParentRpcResult = {
+  data: unknown | null
+  error: { message?: string } | null
 }
 
 type PlaidSyncAccount = TransferAccountContext & {
@@ -85,6 +102,92 @@ export type SyncPlaidItemTransactionsResult = {
   uncategorized_before_sync: number
 }
 
+export async function softDeletePlaidRemovedTransactions({
+  supabase,
+  userId,
+  plaidTransactionIds,
+  deletedReason = 'plaid_removed',
+}: {
+  supabase: Pick<SupabaseClient, 'rpc'>
+  userId: string
+  plaidTransactionIds: string[]
+  deletedReason?: string
+}) {
+  if (plaidTransactionIds.length === 0) {
+    return 0
+  }
+
+  const { data, error } = (await supabase.rpc(
+    'soft_delete_transactions_for_trusted_sync',
+    {
+      p_user_id: userId,
+      p_transaction_ids: null,
+      p_plaid_transaction_ids: plaidTransactionIds,
+      p_deleted_reason: deletedReason,
+    }
+  )) as TrustedSoftDeleteRpcResult
+
+  if (error) {
+    throw new Error(
+      `Failed to soft-delete removed Plaid transactions: ${error.message}`
+    )
+  }
+
+  return data ?? 0
+}
+
+export async function applyPlaidUpdateToSplitParentForTrustedSync({
+  supabase,
+  parentTransactionId,
+  plaidTransactionId,
+  amount,
+  date,
+  authorizedDate,
+  merchantName,
+  description,
+  paymentChannel,
+  pending,
+  isoCurrencyCode,
+  eventType = 'plaid_modified',
+}: {
+  supabase: Pick<SupabaseClient, 'rpc'>
+  parentTransactionId: string
+  plaidTransactionId: string
+  amount: number
+  date: string
+  authorizedDate?: string | null
+  merchantName?: string | null
+  description: string
+  paymentChannel?: string | null
+  pending: boolean
+  isoCurrencyCode?: string | null
+  eventType?: 'plaid_modified' | 'plaid_pending_replaced'
+}) {
+  const { error } = (await supabase.rpc(
+    'apply_plaid_update_to_split_parent_for_trusted_sync',
+    {
+      p_parent_transaction_id: parentTransactionId,
+      p_plaid_transaction_id: plaidTransactionId,
+      p_amount: amount,
+      p_date: date,
+      p_authorized_date: authorizedDate ?? null,
+      p_merchant_name: merchantName ?? null,
+      p_description: description,
+      p_payment_channel: paymentChannel ?? null,
+      p_pending: pending,
+      p_iso_currency_code: isoCurrencyCode || 'USD',
+      p_event_type: eventType,
+      p_pending_transaction_id: null,
+    }
+  )) as TrustedPlaidSplitParentRpcResult
+
+  if (error) {
+    throw new Error(
+      `Failed to apply Plaid update to split parent: ${error.message}`
+    )
+  }
+}
+
 export function getSafePlaidSyncError(error: unknown) {
   if (error instanceof Error && error.message === 'Item not found') {
     return error.message
@@ -95,6 +198,72 @@ export function getSafePlaidSyncError(error: unknown) {
 
 function shouldPreserveSemanticTreatment(source: SemanticOverrideSource | null | undefined) {
   return source === 'user' || source === 'rule'
+}
+
+function normalizePlaidMatchText(value: string | null | undefined) {
+  return (value || '')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function daysBetween(a: string | null | undefined, b: string | null | undefined) {
+  if (!a || !b) return Number.POSITIVE_INFINITY
+  const left = new Date(`${a}T00:00:00`).getTime()
+  const right = new Date(`${b}T00:00:00`).getTime()
+  return Math.abs(left - right) / 86_400_000
+}
+
+export function isLikelyPendingReplacement(
+  candidate: PlaidSyncTransaction,
+  removed: ExistingPlaidTransaction,
+  accountMap: Map<string, string>
+) {
+  const localAccountId = accountMap.get(candidate.account_id)
+  if (!localAccountId || localAccountId !== removed.account_id) return false
+
+  const amountDelta = Math.abs(Number(candidate.amount) - Number(removed.amount ?? 0))
+  if (amountDelta > 0.01) return false
+  if (daysBetween(candidate.date, removed.date) > 7) return false
+
+  const candidateName = normalizePlaidMatchText(candidate.merchant_name || candidate.name)
+  const removedName = normalizePlaidMatchText(removed.merchant_name || removed.description)
+  return Boolean(
+    candidateName &&
+      removedName &&
+      (candidateName.includes(removedName) || removedName.includes(candidateName))
+  )
+}
+
+export function resolvePendingSplitParentReplacement({
+  removedPlaidTransactionId,
+  removedTransaction,
+  candidates,
+  accountMap,
+}: {
+  removedPlaidTransactionId: string
+  removedTransaction: ExistingPlaidTransaction | undefined
+  candidates: PlaidSyncTransaction[]
+  accountMap: Map<string, string>
+}) {
+  if (removedTransaction?.split_role !== 'parent') {
+    return null
+  }
+
+  const exactCandidate = candidates.find(
+    (candidate) =>
+      candidate.pending_transaction_id === removedPlaidTransactionId &&
+      accountMap.get(candidate.account_id) === removedTransaction.account_id
+  )
+  if (exactCandidate) {
+    return exactCandidate
+  }
+
+  const fuzzyCandidates = candidates.filter((candidate) =>
+    isLikelyPendingReplacement(candidate, removedTransaction, accountMap)
+  )
+
+  return fuzzyCandidates.length === 1 ? fuzzyCandidates[0] : null
 }
 
 export async function syncPlaidItemTransactions({
@@ -185,9 +354,90 @@ export async function syncPlaidItemTransactions({
     cursor = data.next_cursor
   }
 
-  const upsertList = [...added, ...modified].filter(tx => accountMap.has(tx.account_id))
+  let upsertList = [...added, ...modified].filter(tx => accountMap.has(tx.account_id))
+  const replacementRemovedIds = new Set<string>()
 
   if (upsertList.length > 0) {
+    const removedIds = removed.map((tx) => tx.transaction_id)
+    const removedExistingMap = new Map<string, ExistingPlaidTransaction>()
+    if (removedIds.length > 0) {
+      const { data: removedExisting, error: removedExistingError } = await supabase
+        .from('transactions')
+        .select(`
+          id,
+          account_id,
+          amount,
+          date,
+          merchant_name,
+          description,
+          plaid_transaction_id,
+          split_role,
+          split_group_id,
+          category_id,
+          tags,
+          transaction_kind,
+          budget_behavior,
+          linked_transaction_id,
+          budget_effective_date,
+          refund_match_confidence,
+          refund_match_reason,
+          transfer_group_id,
+          transfer_match_status,
+          transfer_match_confidence,
+          transfer_match_reason,
+          semantic_override_source,
+          pending_transaction_id
+        `)
+        .eq('user_id', itemUserId)
+        .in('plaid_transaction_id', removedIds)
+
+      if (removedExistingError) {
+        console.error('Error loading removed Plaid transactions:', removedExistingError)
+      } else {
+        for (const tx of (removedExisting || []) as ExistingPlaidTransaction[]) {
+          removedExistingMap.set(tx.plaid_transaction_id, tx)
+        }
+      }
+    }
+
+    const replacementCandidateIds = new Set<string>()
+    for (const removedTx of removed) {
+      const existingRemoved = removedExistingMap.get(removedTx.transaction_id)
+      const replacement = resolvePendingSplitParentReplacement({
+        removedPlaidTransactionId: removedTx.transaction_id,
+        removedTransaction: existingRemoved,
+        candidates: upsertList,
+        accountMap,
+      })
+      if (!replacement || !existingRemoved) {
+        continue
+      }
+
+      await applyPlaidUpdateToSplitParentForTrustedSync({
+        supabase,
+        parentTransactionId: existingRemoved.id,
+        plaidTransactionId: replacement.transaction_id,
+        amount: Number(replacement.amount),
+        date: replacement.date,
+        authorizedDate: replacement.authorized_date ?? null,
+        merchantName: replacement.merchant_name ?? null,
+        description: replacement.name,
+        paymentChannel: replacement.payment_channel ?? null,
+        pending: replacement.pending,
+        isoCurrencyCode: replacement.iso_currency_code ?? 'USD',
+        eventType: 'plaid_pending_replaced',
+      })
+
+      replacementRemovedIds.add(removedTx.transaction_id)
+      replacementCandidateIds.add(replacement.transaction_id)
+    }
+
+    if (replacementCandidateIds.size > 0) {
+      upsertList = upsertList.filter(
+        (tx) => !replacementCandidateIds.has(tx.transaction_id)
+      )
+    }
+
     const userCategories = await getUserCategories(supabase, itemUserId)
     const transferTreatments = detectTransferSemantics(
       upsertList
@@ -232,6 +482,8 @@ export async function syncPlaidItemTransactions({
       .select(`
         id,
         plaid_transaction_id,
+        split_role,
+        split_group_id,
         category_id,
         merchant_name,
         tags,
@@ -245,7 +497,8 @@ export async function syncPlaidItemTransactions({
         transfer_match_status,
         transfer_match_confidence,
         transfer_match_reason,
-        semantic_override_source
+        semantic_override_source,
+        pending_transaction_id
       `)
       .eq('user_id', itemUserId)
       .in('plaid_transaction_id', existingPlaidIds)
@@ -263,9 +516,14 @@ export async function syncPlaidItemTransactions({
 
     const classMap = new Map(classified.map((c) => [c.id, c]))
     const transactionsToUpsert = []
+    const splitParentUpdates: PlaidSyncTransaction[] = []
 
     for (const tx of upsertList) {
       const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+      if (existingTransaction?.split_role === 'parent') {
+        splitParentUpdates.push(tx)
+        continue
+      }
       const preserveSemanticTreatment = shouldPreserveSemanticTreatment(
         existingTransaction?.semantic_override_source
       )
@@ -462,53 +720,76 @@ export async function syncPlaidItemTransactions({
         transfer_match_confidence: transferMatchConfidence,
         transfer_match_reason: transferMatchReason,
         semantic_override_source: semanticOverrideSource,
+        pending_transaction_id: tx.pending_transaction_id ?? null,
       })
     }
 
-    const { error: upsertError } = await supabase
-      .from('transactions')
-      .upsert(transactionsToUpsert, { onConflict: 'plaid_transaction_id' })
+    for (const tx of splitParentUpdates) {
+      const existingTransaction = existingTransactionMap.get(tx.transaction_id)
+      if (!existingTransaction) continue
+
+      await applyPlaidUpdateToSplitParentForTrustedSync({
+        supabase,
+        parentTransactionId: existingTransaction.id,
+        plaidTransactionId: tx.transaction_id,
+        amount: Number(tx.amount),
+        date: tx.date,
+        authorizedDate: tx.authorized_date ?? null,
+        merchantName: tx.merchant_name ?? null,
+        description: tx.name,
+        paymentChannel: tx.payment_channel ?? null,
+        pending: tx.pending,
+        isoCurrencyCode: tx.iso_currency_code ?? 'USD',
+      })
+    }
+
+    const { error: upsertError } =
+      transactionsToUpsert.length > 0
+        ? await supabase
+            .from('transactions')
+            .upsert(transactionsToUpsert, { onConflict: 'plaid_transaction_id' })
+        : { error: null }
 
     if (upsertError) {
       throw new Error(`Failed to persist Plaid transactions: ${upsertError.message}`)
     }
 
     const upsertedPlaidIds = transactionsToUpsert.map((tx) => tx.plaid_transaction_id)
-    const { data: dbTransactions, error: dbTransactionsError } = await supabase
-      .from('transactions')
-      .select('id')
-      .eq('user_id', itemUserId)
-      .in('plaid_transaction_id', upsertedPlaidIds)
+    if (upsertedPlaidIds.length > 0) {
+      const { data: dbTransactions, error: dbTransactionsError } = await supabase
+        .from('transactions')
+        .select('id')
+        .eq('user_id', itemUserId)
+        .in('plaid_transaction_id', upsertedPlaidIds)
 
-    if (dbTransactionsError) {
-      throw new Error(
-        `Failed to load persisted Plaid transactions: ${dbTransactionsError.message}`
+      if (dbTransactionsError) {
+        throw new Error(
+          `Failed to load persisted Plaid transactions: ${dbTransactionsError.message}`
+        )
+      }
+
+      const notionResults = await syncTransactionsIfEnabled(
+        itemUserId,
+        (dbTransactions || []).map((transaction) => transaction.id)
       )
-    }
-
-    const notionResults = await syncTransactionsIfEnabled(
-      itemUserId,
-      (dbTransactions || []).map((transaction) => transaction.id)
-    )
-    const failedNotionSyncs = notionResults.filter(
-      (result) => result.status === 'failed'
-    )
-    if (failedNotionSyncs.length > 0) {
-      console.warn('Some Plaid transactions failed to sync to Notion:', failedNotionSyncs)
+      const failedNotionSyncs = notionResults.filter(
+        (result) => result.status === 'failed'
+      )
+      if (failedNotionSyncs.length > 0) {
+        console.warn('Some Plaid transactions failed to sync to Notion:', failedNotionSyncs)
+      }
     }
   }
 
   if (removed.length > 0) {
-    const removedIds = removed.map(tx => tx.transaction_id)
-    const { error: deleteError } = await supabase
-      .from('transactions')
-      .delete()
-      .eq('user_id', itemUserId)
-      .in('plaid_transaction_id', removedIds)
-
-    if (deleteError) {
-      throw new Error(`Failed to delete removed Plaid transactions: ${deleteError.message}`)
-    }
+    const removedIds = removed
+      .map(tx => tx.transaction_id)
+      .filter((id) => !replacementRemovedIds.has(id))
+    await softDeletePlaidRemovedTransactions({
+      supabase,
+      userId: itemUserId,
+      plaidTransactionIds: removedIds,
+    })
   }
 
   const { error: cursorUpdateError } = await supabase

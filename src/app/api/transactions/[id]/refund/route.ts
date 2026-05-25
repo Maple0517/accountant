@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateRefundedCategory } from '@/lib/categories-db'
+import { getTransactionMutationBlockReason } from '@/lib/transactions/mutation-guard'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 import type { TransactionKind } from '@/types'
 
@@ -67,6 +68,11 @@ export async function PATCH(
         date,
         category_id,
         transaction_kind,
+        deleted_at,
+        is_hidden_from_reports,
+        split_role,
+        split_group_id,
+        split_parent_id,
         categories!transactions_category_id_fkey (
           type,
           is_excluded_from_budget
@@ -78,6 +84,11 @@ export async function PATCH(
 
     if (transactionError || !transaction) {
       return Response.json({ error: 'Transaction not found' }, { status: 404 })
+    }
+
+    const blockReason = getTransactionMutationBlockReason(transaction)
+    if (blockReason) {
+      return Response.json({ error: blockReason }, { status: 409 })
     }
 
     const update: Record<string, unknown> = {}
