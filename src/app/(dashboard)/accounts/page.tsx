@@ -23,11 +23,20 @@ type AccountsApiResponse = {
 }
 type DisconnectMode = 'preserve_history' | 'delete_history'
 
+const REQUEST_TIMEOUT_MS = 30_000
+
 const fetcher = async (url: string): Promise<AccountsApiResponse> => {
-  const res = await fetch(url)
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json.error || 'Failed to fetch accounts')
-  return json
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(json.error || 'Failed to fetch accounts')
+    return json
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 function latestSync(accounts: AccountRow[]) {
@@ -48,12 +57,16 @@ export default function AccountsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const handleRefresh = async (plaidItemId: string) => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
     setMessage(null)
     try {
       const response = await fetch('/api/plaid/sync-transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaid_item_id: plaidItemId }),
+        signal: controller.signal,
       })
       const json = await response.json().catch(() => ({}))
 
@@ -61,14 +74,21 @@ export default function AccountsPage() {
         throw new Error(json.error || t('accounts.refreshError'))
       }
 
-      await mutate()
       setMessage({ type: 'success', text: json.message || t('accounts.refreshSuccess') })
+      void mutate().catch((error) => {
+        console.error(t('accounts.fetchError'), error)
+      })
     } catch (e) {
       console.error(t('accounts.refreshError'), e)
+      const isAbortError = e instanceof DOMException && e.name === 'AbortError'
       setMessage({
         type: 'error',
-        text: e instanceof Error ? e.message : t('accounts.refreshError'),
+        text: isAbortError
+          ? t('accounts.refreshTimeout')
+          : e instanceof Error ? e.message : t('accounts.refreshError'),
       })
+    } finally {
+      window.clearTimeout(timeout)
     }
   }
 
