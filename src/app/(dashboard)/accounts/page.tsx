@@ -48,15 +48,27 @@ export default function AccountsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const handleRefresh = async (plaidItemId: string) => {
+    setMessage(null)
     try {
-      await fetch('/api/plaid/sync-transactions', {
+      const response = await fetch('/api/plaid/sync-transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plaid_item_id: plaidItemId }),
       })
-      mutate()
+      const json = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(json.error || t('accounts.refreshError'))
+      }
+
+      await mutate()
+      setMessage({ type: 'success', text: json.message || t('accounts.refreshSuccess') })
     } catch (e) {
       console.error(t('accounts.refreshError'), e)
+      setMessage({
+        type: 'error',
+        text: e instanceof Error ? e.message : t('accounts.refreshError'),
+      })
     }
   }
 
