@@ -209,6 +209,8 @@ test('disconnectPlaidItem preserves historical accounts and transactions', async
   assert.equal(result.deleted_transactions, 0)
   assert.equal(db.plaid_items.some((item) => item.id === 'item_1'), false)
   assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_1'), true)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_at, undefined)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_reason, undefined)
   assert.deepEqual(
     db.accounts
       .filter((account) => account.user_id === 'user_1')
@@ -234,6 +236,7 @@ test('disconnectPlaidItem soft-deletes selected connection history without delet
   assert.equal(result.deleted_transactions, 2)
   assert.equal(db.plaid_items.some((item) => item.id === 'item_1'), false)
   assert.equal(db.accounts.some((account) => account.id === 'account_1'), true)
+  assert.equal(db.accounts.some((account) => account.id === 'account_2'), true)
   assert.equal(db.accounts.find((account) => account.id === 'account_1')?.plaid_item_id, null)
   assert.equal(db.accounts.find((account) => account.id === 'account_1')?.plaid_account_id, null)
   assert.equal(db.accounts.some((account) => account.id === 'account_other'), true)
@@ -244,6 +247,7 @@ test('disconnectPlaidItem soft-deletes selected connection history without delet
   assert.equal(typeof db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_at, 'string')
   assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_other'), true)
   assert.equal(db.ai_classification_job_items.some((item) => item.transaction_id === 'tx_1'), false)
+  assert.equal(db.accounts.find((account) => account.id === 'account_1')?.deleted_at, undefined)
   assert.equal(
     db.transactions.find((transaction) => transaction.id === 'tx_external_link')?.linked_transaction_id,
     null
