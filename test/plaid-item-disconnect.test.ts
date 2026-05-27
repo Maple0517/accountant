@@ -254,6 +254,34 @@ test('disconnectPlaidItem soft-deletes selected connection history without delet
   )
 })
 
+
+test('disconnectPlaidItem treats Plaid ITEM_NOT_FOUND as already removed and cleans local data', async () => {
+  const { supabase, db } = createSupabaseMock(baseDb)
+
+  const result = await disconnectPlaidItem({
+    supabase,
+    userId: 'user_1',
+    plaidItemId: 'item_1',
+    mode: 'preserve_history',
+    removePlaidItem: async () => {
+      throw { response: { data: { error_code: 'ITEM_NOT_FOUND' } } }
+    },
+  })
+
+  assert.equal(result.success, true)
+  assert.equal(result.disconnected_accounts, 2)
+  assert.equal(db.plaid_items.some((item) => item.id === 'item_1'), false)
+  assert.deepEqual(
+    db.accounts
+      .filter((account) => account.user_id === 'user_1')
+      .map((account) => [account.plaid_item_id, account.plaid_account_id]),
+    [
+      [null, null],
+      [null, null],
+    ]
+  )
+})
+
 test('disconnectPlaidItem does not mutate local data when Plaid removal fails', async () => {
   const { supabase, db } = createSupabaseMock(baseDb)
 
