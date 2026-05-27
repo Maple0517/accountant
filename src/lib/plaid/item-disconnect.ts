@@ -4,6 +4,34 @@ type QueryError = {
   message?: string
 }
 
+type PlaidApiErrorLike = {
+  error_code?: unknown
+  response?: {
+    data?: {
+      error_code?: unknown
+    }
+  }
+}
+
+export function getPlaidApiErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null
+  }
+
+  const plaidError = error as PlaidApiErrorLike
+  const directCode = plaidError.error_code
+  if (typeof directCode === 'string') {
+    return directCode
+  }
+
+  const responseCode = plaidError.response?.data?.error_code
+  return typeof responseCode === 'string' ? responseCode : null
+}
+
+export function isPlaidItemNotFoundError(error: unknown) {
+  return getPlaidApiErrorCode(error) === 'ITEM_NOT_FOUND'
+}
+
 type QueryResult<T> = {
   data: T | null
   error: QueryError | null
@@ -112,7 +140,13 @@ export async function disconnectPlaidItem({
       ? await loadTransactionIdsForAccounts(supabase, userId, accountIds)
       : []
 
-  await removePlaidItem(plaidItem.access_token)
+  try {
+    await removePlaidItem(plaidItem.access_token)
+  } catch (error) {
+    if (!isPlaidItemNotFoundError(error)) {
+      throw error
+    }
+  }
 
   if (mode === 'preserve_history') {
     await preserveAccountHistory(supabase, userId, plaidItem.id)

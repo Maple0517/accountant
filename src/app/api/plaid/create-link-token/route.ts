@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getPlaidClient } from '@/lib/plaid/client'
+import { isPlaidItemNotFoundError } from '@/lib/plaid/item-disconnect'
 import { CountryCode, Products, type LinkTokenCreateRequest } from 'plaid'
 
 export const dynamic = 'force-dynamic'
@@ -101,6 +102,13 @@ export async function POST(request: Request) {
 
     return Response.json({ link_token: createTokenResponse.data.link_token })
   } catch (error: unknown) {
+    if (isPlaidItemNotFoundError(error)) {
+      return Response.json(
+        { error: 'Plaid connection is no longer available. Disconnect and reconnect this bank.' },
+        { status: 409 }
+      )
+    }
+
     console.error('Error creating link token:', error)
     const errorMessage =
       error instanceof Error ? error.message : 'Failed to create link token'

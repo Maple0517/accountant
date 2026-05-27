@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from 'react-plaid-link'
 import { useI18n } from '@/i18n/client'
 
@@ -13,8 +13,9 @@ export default function PlaidManageAccountsButton({
 }) {
   const { t } = useI18n()
   const [token, setToken] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const shouldOpenWhenReady = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const requestLinkToken = useCallback(async () => {
@@ -46,31 +47,6 @@ export default function PlaidManageAccountsButton({
       setError(error instanceof Error ? error.message : t('accounts.manageSharedAccountsError'))
     } finally {
       setLoading(false)
-    }
-  }, [requestLinkToken, t])
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadLinkToken() {
-      try {
-        const linkToken = await requestLinkToken()
-        if (cancelled) return
-        setToken(linkToken)
-        setError(null)
-      } catch (error) {
-        if (cancelled) return
-        setToken(null)
-        setError(error instanceof Error ? error.message : t('accounts.manageSharedAccountsError'))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-
-    void loadLinkToken()
-
-    return () => {
-      cancelled = true
     }
   }, [requestLinkToken, t])
 
@@ -111,20 +87,29 @@ export default function PlaidManageAccountsButton({
     onSuccess: handleOnSuccess,
     onExit: () => {
       setToken(null)
-      void createLinkToken()
+      shouldOpenWhenReady.current = false
     },
   })
 
+  useEffect(() => {
+    if (!shouldOpenWhenReady.current || !token || !ready) return
+
+    shouldOpenWhenReady.current = false
+    open()
+  }, [open, ready, token])
+
   const handleOpen = async () => {
     setError(null)
-    if (!token || !ready) {
+    if (!token) {
+      shouldOpenWhenReady.current = true
       await createLinkToken()
       return
     }
+    if (!ready) return
     open()
   }
 
-  const disabled = updating || loading || (!error && (!token || !ready))
+  const disabled = updating || loading || Boolean(token && !ready)
 
   return (
     <div className="plaid-link-container">
