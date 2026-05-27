@@ -239,13 +239,15 @@ async function deleteConnectionHistory({
       .update({
         plaid_item_id: null,
         plaid_account_id: null,
+        archived_at: new Date().toISOString(),
+        archived_reason: 'plaid_disconnect_delete_history',
       })
       .eq('user_id', userId)
       .eq('plaid_item_id', plaidItemId)
 
     if (error) {
       throw new PlaidItemDisconnectError(
-        `Failed to preserve connected accounts: ${error.message || 'unknown error'}`,
+        `Failed to archive connected accounts: ${error.message || 'unknown error'}`,
         500
       )
     }

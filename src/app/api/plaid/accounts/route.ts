@@ -25,6 +25,8 @@ type AccountWithSyncMetadata = {
   institution_name?: string | null
   institution_id?: string | null
   connection_account_count?: number
+  archived_at?: string | null
+  archived_reason?: string | null
   plaid_items?: {
     institution_name?: string | null
     institution_id?: string | null
@@ -70,6 +72,8 @@ export async function GET() {
         is_manual,
         created_at,
         updated_at,
+        archived_at,
+        archived_reason,
         plaid_items (
           institution_name,
           institution_id,
@@ -78,6 +82,7 @@ export async function GET() {
         )
       `)
         .eq('user_id', user.id)
+        .is('archived_at', null)
         .order('created_at', { ascending: false }),
     ])
 

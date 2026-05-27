@@ -256,6 +256,8 @@ test('reconcilePlaidItemAccounts reconnects a previously disconnected matching a
         subtype: 'credit card',
         mask: '2222',
         is_manual: false,
+        archived_at: '2026-05-27T00:00:00Z',
+        archived_reason: 'plaid_disconnect_delete_history',
       },
     ],
   })
@@ -273,6 +275,8 @@ test('reconcilePlaidItemAccounts reconnects a previously disconnected matching a
   assert.equal(db.accounts.length, 1)
   assert.equal(db.accounts[0].plaid_item_id, 'item_1')
   assert.equal(db.accounts[0].plaid_account_id, 'pa_credit')
+  assert.equal(db.accounts[0].archived_at, null)
+  assert.equal(db.accounts[0].archived_reason, null)
 })
 
 test('PATCH Plaid item accounts route forwards the selected account ids to reconciliation', async () => {

@@ -41,6 +41,8 @@ type LocalAccountRow = {
   subtype?: string | null
   mask?: string | null
   is_manual?: boolean | null
+  archived_at?: string | null
+  archived_reason?: string | null
 }
 
 export type ReconcilePlaidItemAccountsResult = {
@@ -118,7 +120,7 @@ export async function reconcilePlaidItemAccounts({
 
   const { data: existingAccounts, error: existingError } = await supabase
     .from('accounts')
-    .select('id, user_id, plaid_item_id, plaid_account_id, name, official_name, type, subtype, mask, is_manual')
+    .select('id, user_id, plaid_item_id, plaid_account_id, name, official_name, type, subtype, mask, is_manual, archived_at, archived_reason')
     .eq('user_id', userId)
 
   if (existingError) {
@@ -220,6 +222,8 @@ function toAccountRow(userId: string, plaidItemId: string, account: AccountBase)
     available_balance: account.balances.available || null,
     iso_currency_code: account.balances.iso_currency_code || 'USD',
     is_manual: false,
+    archived_at: null,
+    archived_reason: null,
   }
 }
 

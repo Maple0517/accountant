@@ -247,7 +247,11 @@ test('disconnectPlaidItem soft-deletes selected connection history without delet
   assert.equal(typeof db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_at, 'string')
   assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_other'), true)
   assert.equal(db.ai_classification_job_items.some((item) => item.transaction_id === 'tx_1'), false)
-  assert.equal(db.accounts.find((account) => account.id === 'account_1')?.deleted_at, undefined)
+  assert.equal(typeof db.accounts.find((account) => account.id === 'account_1')?.archived_at, 'string')
+  assert.equal(
+    db.accounts.find((account) => account.id === 'account_1')?.archived_reason,
+    'plaid_disconnect_delete_history'
+  )
   assert.equal(
     db.transactions.find((transaction) => transaction.id === 'tx_external_link')?.linked_transaction_id,
     null

@@ -123,6 +123,8 @@ export type Account = {
   institution_name?: string | null
   institution_id?: string | null
   connection_account_count?: number
+  archived_at?: string | null
+  archived_reason?: string | null
   created_at: string
   updated_at: string
 }

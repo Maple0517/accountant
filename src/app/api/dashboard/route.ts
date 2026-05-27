@@ -51,7 +51,8 @@ export async function GET() {
         supabase
           .from('accounts')
           .select('type, current_balance, available_balance, iso_currency_code')
-          .eq('user_id', user.id),
+          .eq('user_id', user.id)
+          .is('archived_at', null),
         supabase
           .from('transactions')
           .select(
