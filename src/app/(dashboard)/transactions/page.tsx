@@ -360,6 +360,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
+  const [viewCountsLoading, setViewCountsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
@@ -410,6 +411,26 @@ export default function TransactionsPage() {
 
   const transactionsRequestIdRef = useRef(0)
 
+  const buildTransactionQueryParams = useCallback(
+    (options: { offset?: number; savedViewOverride?: SavedView } = {}) => {
+      const params = new URLSearchParams({
+        limit: String(TRANSACTIONS_PAGE_SIZE),
+        offset: String(options.offset ?? 0),
+        sourceOrAccount: queryFilters.sourceOrAccount,
+        category: queryFilters.category,
+        currency: queryFilters.currency,
+        savedView: options.savedViewOverride ?? savedView,
+      })
+
+      if (queryFilters.search) params.set('search', queryFilters.search)
+      if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
+      if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
+
+      return params
+    },
+    [queryFilters, savedView]
+  )
+
   const fetchTransactions = useCallback(
     async (options: { append?: boolean; offset?: number } = {}) => {
       const append = options.append ?? false
@@ -423,18 +444,7 @@ export default function TransactionsPage() {
         setLoading(true)
       }
 
-      const params = new URLSearchParams({
-        limit: String(TRANSACTIONS_PAGE_SIZE),
-        offset: String(offset),
-        sourceOrAccount: queryFilters.sourceOrAccount,
-        category: queryFilters.category,
-        currency: queryFilters.currency,
-        savedView,
-      })
-
-      if (queryFilters.search) params.set('search', queryFilters.search)
-      if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
-      if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
+      const params = buildTransactionQueryParams({ offset })
 
       try {
         const response = await fetch(`/api/transactions?${params.toString()}`)
@@ -452,10 +462,12 @@ export default function TransactionsPage() {
           append ? [...current, ...nextTransactions] : nextTransactions
         )
         setTotalCount(payload.totalCount || 0)
-        setServerViewCounts((current) => ({
-          ...current,
-          ...(payload.viewCounts || {}),
-        }))
+        if (payload.viewCounts) {
+          setServerViewCounts((current) => ({
+            ...current,
+            ...payload.viewCounts,
+          }))
+        }
         setCategories(payload.categories || [])
         setCategoriesLoading(false)
         setAccountOptions(
@@ -488,8 +500,46 @@ export default function TransactionsPage() {
         }
       }
     },
-    [queryFilters, savedView, t]
+    [buildTransactionQueryParams, t]
   )
+
+  const viewCountsRequestIdRef = useRef(0)
+
+  const fetchViewCounts = useCallback(async () => {
+    const requestId = viewCountsRequestIdRef.current + 1
+    viewCountsRequestIdRef.current = requestId
+    setViewCountsLoading(true)
+
+    const params = buildTransactionQueryParams()
+
+    try {
+      const response = await fetch(`/api/transactions/view-counts?${params.toString()}`)
+      const payload = (await response.json()) as {
+        viewCounts?: Record<SavedView, number>
+        error?: string
+      }
+
+      if (viewCountsRequestIdRef.current !== requestId) return
+
+      if (!response.ok) {
+        console.error('Error fetching transaction view counts:', payload.error)
+        return
+      }
+
+      setServerViewCounts((current) => ({
+        ...current,
+        ...(payload.viewCounts || {}),
+      }))
+    } catch (error) {
+      if (viewCountsRequestIdRef.current === requestId) {
+        console.error('Error fetching transaction view counts:', error)
+      }
+    } finally {
+      if (viewCountsRequestIdRef.current === requestId) {
+        setViewCountsLoading(false)
+      }
+    }
+  }, [buildTransactionQueryParams])
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -498,6 +548,14 @@ export default function TransactionsPage() {
 
     return () => window.clearTimeout(timeoutId)
   }, [fetchTransactions])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      fetchViewCounts()
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [fetchViewCounts])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
@@ -1029,7 +1087,7 @@ export default function TransactionsPage() {
             onClick={() => setSavedView(view.id)}
           >
             {t(view.labelKey)}
-            <span className="badge badge-muted">{serverViewCounts[view.id] ?? 0}</span>
+            <span className="badge badge-muted">{viewCountsLoading ? '…' : serverViewCounts[view.id] ?? 0}</span>
           </button>
         ))}
       </div>

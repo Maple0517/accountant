@@ -1,15 +1,23 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
-import AnalyticsCharts from '@/components/analytics/AnalyticsCharts'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { formatCurrency } from '@/lib/currency'
 import type { AnalyticsData, AnalyticsPeriod } from '@/modules/analytics/analytics.types'
 import { useI18n } from '@/i18n/client'
+
+
+const AnalyticsCharts = dynamic(
+  () => import('@/components/analytics/AnalyticsCharts'),
+  {
+    loading: () => <div className="skeleton-card chart-loading-card" aria-hidden="true" />,
+  }
+)
 
 const PERIOD_LABEL_KEYS: Record<AnalyticsPeriod, string> = {
   week: 'analytics.week',

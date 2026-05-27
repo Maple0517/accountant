@@ -41,10 +41,11 @@ export type DashboardRecentTransaction = {
 
 export type DashboardData = {
   currencyCode: string
+  currentMonth?: string
   accounts: DashboardAccount[]
   monthTx: DashboardMonthTransaction[]
   recentTx: DashboardRecentTransaction[]
-  analytics: AnalyticsData | null
-  budget: MonthlyBudgetSummary | null
+  analytics?: AnalyticsData | null
+  budget?: MonthlyBudgetSummary | null
   generatedAt?: string
 }

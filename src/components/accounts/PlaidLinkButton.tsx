@@ -1,8 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
-import { usePlaidLink } from 'react-plaid-link'
+import dynamic from 'next/dynamic'
+import { useState, useCallback } from 'react'
 import { useI18n } from '@/i18n/client'
+
+const PlaidLinkLauncher = dynamic(() => import('./PlaidLinkLauncher'), {
+  ssr: false,
+})
 
 interface PlaidLinkButtonProps {
   onSuccess?: () => void
@@ -14,22 +18,29 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    async function createToken() {
-      try {
-        const response = await fetch('/api/plaid/create-link-token', { method: 'POST' })
-        const data = await response.json()
-        if (data.link_token) {
-          setToken(data.link_token)
-        } else {
-          setError(t('accounts.linkTokenError'))
-        }
-      } catch {
-        setError(t('accounts.plaidInitError'))
+  const createToken = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    setToken(null)
+    try {
+      const response = await fetch('/api/plaid/create-link-token', { method: 'POST' })
+      const data = await response.json()
+      if (data.link_token) {
+        setToken(data.link_token)
+      } else {
+        setError(t('accounts.linkTokenError'))
+        setLoading(false)
       }
+    } catch {
+      setError(t('accounts.plaidInitError'))
+      setLoading(false)
     }
-    createToken()
   }, [t])
+
+  const handleOnExit = useCallback(() => {
+    setLoading(false)
+    setToken(null)
+  }, [])
 
   const handleOnSuccess = useCallback(
     async (public_token: string) => {
@@ -54,19 +65,25 @@ export default function PlaidLinkButton({ onSuccess }: PlaidLinkButtonProps) {
         setError(t('accounts.linkError'))
       } finally {
         setLoading(false)
+        setToken(null)
       }
     },
     [onSuccess, t]
   )
 
-  const { open, ready } = usePlaidLink({ token: token!, onSuccess: handleOnSuccess })
-
   return (
     <div className="plaid-link-container">
       {error && <div className="error-message">{error}</div>}
-      <button className="btn btn-primary btn-md btn-link-bank" onClick={() => open()} disabled={!ready || !token || loading} type="button">
+      <button className="btn btn-primary btn-md btn-link-bank" onClick={createToken} disabled={loading} type="button">
         {loading ? t('common.connecting') : t('accounts.connectBank')}
       </button>
+      {token && (
+        <PlaidLinkLauncher
+          token={token}
+          onExit={handleOnExit}
+          onSuccess={handleOnSuccess}
+        />
+      )}
     </div>
   )
 }

@@ -17,19 +17,28 @@ import {
   summarizeBalances,
 } from '@/features/dashboard/dashboard-utils'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
+import type { AnalyticsData } from '@/modules/analytics/analytics.types'
+import type { MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 
-const fetcher = async (url: string): Promise<DashboardData> => {
+const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error || 'Failed to fetch')
-  return json.data
+  return (json.data ?? json) as T
 }
 
 export default function DashboardPage() {
   const { t } = useI18n()
-  const { data, error, isLoading } = useSWR('/api/dashboard', fetcher)
+  const { data, error, isLoading } = useSWR<DashboardData>('/api/dashboard', fetcher)
 
   const currencyCode = data?.currencyCode || 'USD'
+  const currentMonth = data?.currentMonth
+  const analyticsKey = data ? `/api/analytics?period=month&currency=${currencyCode}` : null
+  const budgetKey = currentMonth ? `/api/budget/monthly-summary?month=${currentMonth}` : null
+  const { data: analyticsData } = useSWR<AnalyticsData>(analyticsKey, fetcher)
+  const { data: budgetData } = useSWR<MonthlyBudgetSummary>(budgetKey, fetcher)
+  const analytics = analyticsData ?? data?.analytics ?? null
+  const budget = budgetData ?? data?.budget ?? null
   const balances = summarizeBalances(data?.accounts ?? [], currencyCode)
   const monthlyTotals = (data?.monthTx ?? []).reduce(
     (totals, tx) => {
@@ -75,17 +84,17 @@ export default function DashboardPage() {
             cardDebt={balances.cardDebt}
             monthlySpending={monthlyTotals.spending}
             monthlyIncome={monthlyTotals.income}
-            budgetLeft={data.budget?.totalRemaining ?? null}
+            budgetLeft={budget?.totalRemaining ?? null}
             currencyCode={currencyCode}
           />
 
           <div className="dashboard-grid">
             <div className="dashboard-stack">
               <NeedsReviewCard counts={reviewCounts} />
-              <SpendingTrendCard analytics={data.analytics} />
+              <SpendingTrendCard analytics={analytics} />
             </div>
             <div className="dashboard-stack">
-              <BudgetHealthCard summary={data.budget} />
+              <BudgetHealthCard summary={budget} />
               <RecentActivityCard transactions={data.recentTx ?? []} />
             </div>
           </div>

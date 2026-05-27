@@ -26,12 +26,15 @@ function isMissingColumnError(error: { message?: string; code?: string } | null)
   )
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { supabase, user } = await getCurrentUser()
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const { searchParams } = new URL(request.url)
+    const includeFull = searchParams.get('include') === 'full'
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -46,8 +49,7 @@ export async function GET() {
     const firstDayOfNextMonth = toMonthStart(nextMonthDate)
     const currentMonth = toMonthParam(now)
 
-    const [accountsResult, monthTxResult, recentTxResult, analyticsResult, budgetResult] =
-      await Promise.allSettled([
+    const baseRequests = [
         supabase
           .from('accounts')
           .select('type, current_balance, available_balance, iso_currency_code')
@@ -76,9 +78,22 @@ export async function GET() {
           .order('effective_date', { ascending: false })
           .order('date', { ascending: false })
           .limit(6),
-        getAnalyticsSummary(supabase, user.id, 'month', currencyCode),
-        getMonthlySummary(supabase, user.id, currentMonth),
-      ])
+      ] as const
+
+    const fullRequests = includeFull
+      ? ([
+          getAnalyticsSummary(supabase, user.id, 'month', currencyCode),
+          getMonthlySummary(supabase, user.id, currentMonth),
+        ] as const)
+      : ([] as const)
+
+    const [
+      accountsResult,
+      monthTxResult,
+      recentTxResult,
+      analyticsResult,
+      budgetResult,
+    ] = await Promise.allSettled([...baseRequests, ...fullRequests])
 
     const accounts =
       accountsResult.status === 'fulfilled' && !accountsResult.value.error
@@ -123,12 +138,14 @@ export async function GET() {
       console.warn('Dashboard recent query failed:', recentTxResult.value.error)
     }
 
-    const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null
-    const budget = budgetResult.status === 'fulfilled' ? budgetResult.value : null
+    const analytics =
+      analyticsResult?.status === 'fulfilled' ? analyticsResult.value : null
+    const budget = budgetResult?.status === 'fulfilled' ? budgetResult.value : null
 
     return Response.json({
       data: {
         currencyCode,
+        currentMonth,
         accounts,
         monthTx,
         recentTx: recentTx.map((tx) => ({

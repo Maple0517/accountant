@@ -702,6 +702,7 @@ a {
 .insight-copy { color: var(--text-secondary); font-size: 0.86rem; }
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1rem; }
 .chart-card { padding: 1.15rem; }
+.chart-loading-card { min-height: 42rem; }
 .chart-card h3 { margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.9rem; font-weight: 750; }
 .chart-card.full-width { grid-column: 1 / -1; }
 .chart-container { height: 250px; position: relative; }
