@@ -1,6 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { DEFAULT_CATEGORIES } from '@/lib/categories'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
+import {
+  getBudgetDate,
+  getTransactionSemanticAmounts,
+} from '@/lib/transactions/effective'
 import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
 
 type AnalyticsCategoryRelation = {
@@ -16,6 +20,10 @@ type AnalyticsTransactionRow = {
   date: string
   category_id?: string | null
   budget_effective_date?: string | null
+  effective_date?: string | null
+  deleted_at?: string | null
+  is_hidden_from_reports?: boolean | null
+  split_role?: string | null
   budget_behavior?: string | null
   transaction_kind?: string | null
   categories?: AnalyticsCategoryRelation | AnalyticsCategoryRelation[] | null
@@ -50,34 +58,6 @@ function getLocalMonthStart(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-function getBudgetDate(row: Pick<AnalyticsTransactionRow, 'budget_effective_date' | 'date'>) {
-  return row.budget_effective_date || row.date
-}
-
-function getSemanticAmounts(tx: AnalyticsTransactionRow) {
-  const amount = Number(tx.amount)
-
-  if (!Number.isFinite(amount)) {
-    return { spending: 0, income: 0, categorySpend: 0 }
-  }
-
-  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') {
-    return { spending: 0, income: 0, categorySpend: 0 }
-  }
-
-  if (tx.budget_behavior === 'count_as_income') {
-    return { spending: 0, income: Math.abs(amount), categorySpend: 0 }
-  }
-
-  if (tx.budget_behavior === 'count_as_spending') {
-    return { spending: amount, income: 0, categorySpend: amount }
-  }
-
-  if (amount > 0) return { spending: amount, income: 0, categorySpend: amount }
-  if (amount < 0) return { spending: 0, income: Math.abs(amount), categorySpend: 0 }
-  return { spending: 0, income: 0, categorySpend: 0 }
-}
-
 function normalizeCategoryDisplay(
   category: AnalyticsTransactionRow['categories']
 ) {
@@ -107,10 +87,13 @@ export async function getAnalyticsSummary(
   const selectedCurrency = normalizeCurrencyCode(currencyCode)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, iso_currency_code, date, category_id, budget_effective_date, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
+    .select('amount, iso_currency_code, date, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
     .eq('user_id', userId)
-    .gte('date', dateFrom)
-    .order('date', { ascending: true })
+    .is('deleted_at', null)
+    .eq('is_hidden_from_reports', false)
+    .neq('split_role', 'parent')
+    .gte('effective_date', dateFrom)
+    .order('effective_date', { ascending: true })
 
   if (error) {
     throw new Error(`Failed to load analytics transactions: ${error.message}`)
@@ -134,12 +117,12 @@ export async function getAnalyticsSummary(
       continue
     }
 
-    const semanticAmounts = getSemanticAmounts(tx)
+    const semanticAmounts = getTransactionSemanticAmounts(tx)
 
-    totalSpending += semanticAmounts.spending
+    totalSpending += semanticAmounts.netSpending
     totalIncome += semanticAmounts.income
 
-    if (semanticAmounts.categorySpend !== 0) {
+    if (semanticAmounts.categoryNetSpend !== 0) {
       const rawCat = tx.categories
       const cat = normalizeCategoryDisplay(rawCat)
       const catKey = tx.category_id || cat.name
@@ -150,7 +133,7 @@ export async function getAnalyticsSummary(
         color: cat.color,
         total: 0,
       }
-      existing.total += semanticAmounts.categorySpend
+      existing.total += semanticAmounts.categoryNetSpend
       categoryMap.set(catKey, existing)
     }
 
@@ -160,12 +143,12 @@ export async function getAnalyticsSummary(
       spending: 0,
       income: 0,
     }
-    monthData.spending += semanticAmounts.spending
+    monthData.spending += semanticAmounts.netSpending
     monthData.income += semanticAmounts.income
     monthMap.set(monthKey, monthData)
 
     const dayData = dayMap.get(budgetDate) || 0
-    dayMap.set(budgetDate, dayData + semanticAmounts.spending)
+    dayMap.set(budgetDate, dayData + semanticAmounts.netSpending)
   }
 
   return {

@@ -15,11 +15,47 @@ type PlaidItemAccountsRouteContext = {
 }
 
 export async function PATCH(request: Request, context: PlaidItemAccountsRouteContext) {
+  return handlePatchPlaidItemAccountsRequest(request, context, {
+    getUserId: async () => {
+      const supabase = await createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      return user?.id
+    },
+    reconcile: async ({ userId, plaidItemId, selectedPlaidAccountIds }) => {
+      const admin = createAdminClient()
+      return reconcilePlaidItemAccounts({
+        supabase: admin as unknown as PlaidAccountSelectionClient,
+        userId,
+        plaidItemId,
+        selectedPlaidAccountIds,
+        getPlaidAccounts: async (accessToken) => {
+          const response = await getPlaidClient().accountsGet({ access_token: accessToken })
+          return response.data.accounts
+        },
+      })
+    },
+  })
+}
+
+type PatchPlaidItemAccountsRequestDeps = {
+  getUserId: () => Promise<string | undefined>
+  reconcile: (input: {
+    userId: string
+    plaidItemId: string
+    selectedPlaidAccountIds: string[]
+  }) => Promise<unknown>
+}
+
+export async function handlePatchPlaidItemAccountsRequest(
+  request: Request,
+  context: PlaidItemAccountsRouteContext,
+  deps: PatchPlaidItemAccountsRequestDeps
+) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
+    const user = await deps.getUserId()
 
     if (!user) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -39,16 +75,10 @@ export async function PATCH(request: Request, context: PlaidItemAccountsRouteCon
       )
     }
 
-    const admin = createAdminClient()
-    const result = await reconcilePlaidItemAccounts({
-      supabase: admin as unknown as PlaidAccountSelectionClient,
-      userId: user.id,
+    const result = await deps.reconcile({
+      userId: user,
       plaidItemId: id,
       selectedPlaidAccountIds,
-      getPlaidAccounts: async (accessToken) => {
-        const response = await getPlaidClient().accountsGet({ access_token: accessToken })
-        return response.data.accounts
-      },
     })
 
     return Response.json(result)

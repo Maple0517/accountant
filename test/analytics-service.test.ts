@@ -69,8 +69,15 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
           return chain
         },
         eq(column: string, value: unknown) {
-          assert.equal(column, 'user_id')
-          assert.equal(value, 'user_1')
+          if (column === 'user_id') {
+            assert.equal(value, 'user_1')
+          }
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
           return chain
         },
         gte() {
@@ -140,6 +147,12 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
           return chain
         },
         eq() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
           return chain
         },
         gte() {

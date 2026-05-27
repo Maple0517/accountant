@@ -43,6 +43,7 @@ type TransactionQueryResult = {
 
 type TransactionFilterQuery = PromiseLike<TransactionQueryResult> & {
   eq(column: string, value: unknown): TransactionFilterQuery
+  neq(column: string, value: unknown): TransactionFilterQuery
   or(filters: string): TransactionFilterQuery
   is(column: string, value: null): TransactionFilterQuery
   in(column: string, values: readonly unknown[]): TransactionFilterQuery
@@ -94,6 +95,10 @@ export async function GET(request: Request) {
     const currency = searchParams.get('currency') || 'all'
     const dateFrom = searchParams.get('dateFrom') || ''
     const dateTo = searchParams.get('dateTo') || ''
+    const showHidden = searchParams.get('showHidden') === 'true'
+    const showDeleted = searchParams.get('showDeleted') === 'true'
+    const showSplitParents = searchParams.get('showSplitParents') === 'true'
+    const splitGroupId = searchParams.get('splitGroupId') || ''
     const savedViewParam = searchParams.get('savedView') || 'all'
     const savedView: SavedView = isSavedView(savedViewParam) ? savedViewParam : 'all'
 
@@ -105,6 +110,10 @@ export async function GET(request: Request) {
       currency,
       dateFrom,
       dateTo,
+      showHidden,
+      showDeleted,
+      showSplitParents,
+      splitGroupId,
     }
 
     const transactionsQuery = applySavedViewFilters(
@@ -116,6 +125,7 @@ export async function GET(request: Request) {
       ),
       savedView
     )
+      .order('effective_date', { ascending: false })
       .order('date', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -221,8 +231,17 @@ const TRANSACTION_SELECT = `
   tags,
   transaction_kind,
   budget_behavior,
-  linked_transaction_id,
-  budget_effective_date,
+      linked_transaction_id,
+      budget_effective_date,
+  effective_date,
+  deleted_at,
+  deleted_reason,
+  is_hidden_from_reports,
+  split_group_id,
+  split_parent_id,
+  split_role,
+  split_sequence,
+  split_status,
   refund_match_confidence,
   refund_match_reason,
   transfer_match_status,
@@ -277,6 +296,10 @@ function applyBaseFilters(
     currency,
     dateFrom,
     dateTo,
+    showHidden,
+    showDeleted,
+    showSplitParents,
+    splitGroupId,
   }: {
     userId: string
     search: string
@@ -285,9 +308,26 @@ function applyBaseFilters(
     currency: string
     dateFrom: string
     dateTo: string
+    showHidden: boolean
+    showDeleted: boolean
+    showSplitParents: boolean
+    splitGroupId: string
   }
 ) {
   let nextQuery = query.eq('user_id', userId)
+
+  if (!showDeleted) {
+    nextQuery = nextQuery.is('deleted_at', null)
+  }
+  if (!showHidden) {
+    nextQuery = nextQuery.eq('is_hidden_from_reports', false)
+  }
+  if (!showSplitParents) {
+    nextQuery = nextQuery.neq('split_role', 'parent')
+  }
+  if (splitGroupId) {
+    nextQuery = nextQuery.eq('split_group_id', splitGroupId)
+  }
 
   if (search) {
     const escapedSearch = search.replace(/[%,]/g, '')
@@ -311,10 +351,10 @@ function applyBaseFilters(
     nextQuery = nextQuery.eq('iso_currency_code', currency)
   }
   if (dateFrom) {
-    nextQuery = nextQuery.gte('date', dateFrom)
+    nextQuery = nextQuery.gte('effective_date', dateFrom)
   }
   if (dateTo) {
-    nextQuery = nextQuery.lte('date', dateTo)
+    nextQuery = nextQuery.lte('effective_date', dateTo)
   }
 
   return nextQuery

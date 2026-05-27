@@ -33,6 +33,12 @@ function createSupabaseStub(categories: Array<Record<string, unknown>> = []) {
         gte() {
           return chain
         },
+        is() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
         lt() {
           return Promise.resolve({ data: [], error: null })
         },
@@ -222,7 +228,16 @@ test('getMonthlySummary budgets linked refunded-category rows against original c
 
           return chain
         },
-        or() {
+        is() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        lt() {
           return Promise.resolve({ data: monthlyTransactions, error: null })
         },
         in(column: string, ids: string[]) {
@@ -293,10 +308,13 @@ test('getMonthlySummary propagates repository database errors', async () => {
           }
           return chain
         },
-        or() {
-          return Promise.resolve({ data: [], error: null })
-        },
         gte() {
+          return chain
+        },
+        is() {
+          return chain
+        },
+        neq() {
           return chain
         },
         lt() {
@@ -387,11 +405,20 @@ test('getMonthlySummary filters budget transactions to the profile default curre
           }
           return chain
         },
-        or() {
-          return Promise.resolve({ data: monthlyTransactions, error: null })
-        },
         in() {
           return Promise.resolve({ data: [], error: null })
+        },
+        is() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        lt() {
+          return Promise.resolve({ data: monthlyTransactions, error: null })
         },
         order() {
           return Promise.resolve({ data: categories, error: null })

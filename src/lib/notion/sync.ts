@@ -4,6 +4,7 @@ import type { Transaction } from '@/types'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { UpdateDataSourceParameters } from '@notionhq/client'
+import { getBudgetDate } from '@/lib/transactions/effective'
 
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
@@ -18,6 +19,40 @@ export type NotionProfileConfig = {
   notion_sync_enabled?: boolean | null
   notion_token?: string | null
   notion_database_id?: string | null
+}
+
+export type NotionSchemaReadiness =
+  | { ready: true; status: 'disabled' | 'ready' }
+  | { ready: false; status: 'not_configured' | 'schema_update_failed'; error: string }
+
+export type NotionSyncOutboxRow = {
+  id: string
+  user_id: string
+  transaction_id: string | null
+  split_group_id: string | null
+  job_type: NotionSyncOutboxJobType
+  idempotency_key: string
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'dead'
+  attempts: number
+  last_error: string | null
+  available_at: string
+  created_at: string
+  updated_at: string
+}
+
+export type ProcessNotionSyncOutboxResult = {
+  checked: number
+  processed: number
+  succeeded: number
+  failed: number
+  dead: number
+  skipped: number
+  results: Array<{
+    id: string
+    jobType: NotionSyncOutboxJobType
+    status: 'succeeded' | 'failed' | 'dead' | 'skipped'
+    error?: string
+  }>
 }
 
 
@@ -58,6 +93,48 @@ const semanticPropertySchema: NonNullable<UpdateDataSourceParameters['properties
   'Match Confidence': { number: { format: 'percent' } },
   Reason: { rich_text: {} },
 }
+
+const splitPropertySchema: NonNullable<UpdateDataSourceParameters['properties']> = {
+  Source: {
+    select: {
+      options: [
+        { name: 'plaid', color: 'blue' },
+        { name: 'manual', color: 'green' },
+        { name: 'receipt', color: 'orange' },
+        { name: 'split', color: 'purple' },
+      ],
+    },
+  },
+  'Split Role': {
+    select: {
+      options: [
+        { name: 'none', color: 'default' },
+        { name: 'parent', color: 'yellow' },
+        { name: 'child', color: 'purple' },
+      ],
+    },
+  },
+  'Split Group ID': { rich_text: {} },
+  'Split Parent ID': { rich_text: {} },
+  'Split Sequence': { number: { format: 'number' } },
+  'Hidden From Reports': { checkbox: {} },
+  'Deleted At': { date: {} },
+  'Deleted Reason': { rich_text: {} },
+  'Bank Date': { date: {} },
+  'Original Date': { date: {} },
+}
+
+const notionSchemaProperties: NonNullable<UpdateDataSourceParameters['properties']> = {
+  ...semanticPropertySchema,
+  ...splitPropertySchema,
+}
+
+export type NotionSyncOutboxJobType =
+  | 'sync_effective_transaction'
+  | 'mark_split_parent_hidden'
+  | 'archive_or_mark_child_deleted'
+  | 'sync_split_group'
+  | 'restore_split_parent'
 
 /**
  * Create the Notion database structure for transactions
@@ -134,12 +211,14 @@ export async function createTransactionDatabase(
               { name: 'plaid', color: 'blue' },
               { name: 'manual', color: 'green' },
               { name: 'receipt', color: 'orange' },
+              { name: 'split', color: 'purple' },
             ],
           },
         },
         Tags: { multi_select: {} },
         'Transaction ID': { rich_text: {} },
         ...semanticPropertySchema,
+        ...splitPropertySchema,
       },
     }),
   });
@@ -270,7 +349,7 @@ async function ensureTransactionSemanticsProperties(
 
     await notion.dataSources.update({
       data_source_id: dataSourceId,
-      properties: semanticPropertySchema,
+      properties: notionSchemaProperties,
     })
     semanticsPropertiesEnsured.add(databaseId)
     return true
@@ -278,6 +357,59 @@ async function ensureTransactionSemanticsProperties(
     console.error('Failed to ensure Notion semantic properties:', error)
     return false
   }
+}
+
+export async function ensureNotionSplitSchemaReady(
+  userId: string,
+  options: { supabase?: SupabaseClient; profile?: NotionProfileConfig | null } = {}
+): Promise<NotionSchemaReadiness> {
+  const supabase = options.supabase ?? createAdminClient()
+  let profile = options.profile ?? null
+
+  if (!profile) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('notion_sync_enabled, notion_token, notion_database_id')
+      .eq('id', userId)
+      .single()
+
+    if (error) {
+      return {
+        ready: false,
+        status: 'not_configured',
+        error: `Failed to load Notion profile: ${error.message}`,
+      }
+    }
+
+    profile = data as NotionProfileConfig | null
+  }
+
+  if (!profile?.notion_sync_enabled) {
+    return { ready: true, status: 'disabled' }
+  }
+
+  if (!profile.notion_token || !profile.notion_database_id) {
+    return {
+      ready: false,
+      status: 'not_configured',
+      error: 'Notion sync is enabled but token or database ID is missing',
+    }
+  }
+
+  const ready = await ensureTransactionSemanticsProperties(
+    profile.notion_database_id,
+    profile.notion_token
+  )
+
+  if (!ready) {
+    return {
+      ready: false,
+      status: 'schema_update_failed',
+      error: 'Required Notion split properties could not be created or verified',
+    }
+  }
+
+  return { ready: true, status: 'ready' }
 }
 
 /**
@@ -449,6 +581,250 @@ export async function syncTransactionsIfEnabled(
   return results
 }
 
+export async function enqueueNotionSyncOutbox(
+  supabase: Pick<SupabaseClient, 'rpc'>,
+  jobs: Array<{
+    userId: string
+    transactionId?: string | null
+    splitGroupId?: string | null
+    jobType: NotionSyncOutboxJobType
+    idempotencyKey: string
+    availableAt?: string
+  }>
+) {
+  if (jobs.length === 0) {
+    return { enqueued: 0 }
+  }
+
+  for (const job of jobs) {
+    const { error } = await supabase.rpc('enqueue_notion_sync_outbox', {
+      p_user_id: job.userId,
+      p_transaction_id: job.transactionId ?? null,
+      p_split_group_id: job.splitGroupId ?? null,
+      p_job_type: job.jobType,
+      p_idempotency_key: job.idempotencyKey,
+      p_available_at: job.availableAt ?? new Date().toISOString(),
+    })
+
+    if (error) {
+      throw new Error(`Failed to enqueue Notion sync outbox: ${error.message}`)
+    }
+  }
+
+  return { enqueued: jobs.length }
+}
+
+export async function processNotionSyncOutbox({
+  supabase = createAdminClient(),
+  limit = 20,
+  now = new Date(),
+  maxAttempts = 5,
+}: {
+  supabase?: SupabaseClient
+  limit?: number
+  now?: Date
+  maxAttempts?: number
+} = {}): Promise<ProcessNotionSyncOutboxResult> {
+  const { data, error } = await supabase
+    .from('notion_sync_outbox')
+    .select('*')
+    .in('status', ['pending', 'failed'])
+    .lte('available_at', now.toISOString())
+    .order('available_at', { ascending: true })
+    .limit(limit)
+
+  if (error) {
+    throw new Error(`Failed to load Notion sync outbox: ${error.message}`)
+  }
+
+  const rows = ((data || []) as NotionSyncOutboxRow[]).slice(0, limit)
+  const summary: ProcessNotionSyncOutboxResult = {
+    checked: rows.length,
+    processed: 0,
+    succeeded: 0,
+    failed: 0,
+    dead: 0,
+    skipped: 0,
+    results: [],
+  }
+
+  for (const row of rows) {
+    const claimed = await claimNotionSyncOutboxRow(supabase, row, now)
+    if (!claimed) {
+      summary.skipped++
+      summary.results.push({
+        id: row.id,
+        jobType: row.job_type,
+        status: 'skipped',
+      })
+      continue
+    }
+
+    summary.processed++
+
+    try {
+      await processNotionSyncOutboxRow(supabase, row)
+      await supabase
+        .from('notion_sync_outbox')
+        .update({
+          status: 'succeeded',
+          last_error: null,
+          updated_at: now.toISOString(),
+        })
+        .eq('id', row.id)
+
+      summary.succeeded++
+      summary.results.push({
+        id: row.id,
+        jobType: row.job_type,
+        status: 'succeeded',
+      })
+    } catch (error) {
+      const nextAttempts = row.attempts + 1
+      const status = nextAttempts >= maxAttempts ? 'dead' : 'failed'
+      const message =
+        error instanceof Error ? error.message : 'Unknown Notion outbox error'
+      await supabase
+        .from('notion_sync_outbox')
+        .update({
+          status,
+          attempts: nextAttempts,
+          last_error: message,
+          available_at: nextOutboxRetryAt(now, nextAttempts),
+          updated_at: now.toISOString(),
+        })
+        .eq('id', row.id)
+
+      if (status === 'dead') {
+        summary.dead++
+      } else {
+        summary.failed++
+      }
+      summary.results.push({
+        id: row.id,
+        jobType: row.job_type,
+        status,
+        error: message,
+      })
+    }
+  }
+
+  return summary
+}
+
+async function claimNotionSyncOutboxRow(
+  supabase: SupabaseClient,
+  row: NotionSyncOutboxRow,
+  now: Date
+) {
+  const { data, error } = await supabase
+    .from('notion_sync_outbox')
+    .update({
+      status: 'running',
+      updated_at: now.toISOString(),
+    })
+    .eq('id', row.id)
+    .in('status', ['pending', 'failed'])
+    .select('id')
+
+  if (error) {
+    throw new Error(`Failed to claim Notion outbox job: ${error.message}`)
+  }
+
+  return Array.isArray(data) && data.length > 0
+}
+
+async function processNotionSyncOutboxRow(
+  supabase: SupabaseClient,
+  row: NotionSyncOutboxRow
+) {
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('notion_sync_enabled, notion_token, notion_database_id')
+    .eq('id', row.user_id)
+    .single()
+
+  if (profileError) {
+    throw new Error(`Failed to load Notion profile: ${profileError.message}`)
+  }
+
+  const profileConfig = profile as NotionProfileConfig | null
+  if (!profileConfig?.notion_sync_enabled) {
+    return
+  }
+
+  const readiness = await ensureNotionSplitSchemaReady(row.user_id, {
+    supabase,
+    profile: profileConfig,
+  })
+  if (!readiness.ready) {
+    throw new Error(readiness.error)
+  }
+
+  const transactionIds = await getNotionOutboxTransactionIds(supabase, row)
+  if (transactionIds.length === 0) {
+    return
+  }
+
+  const syncResults = await syncTransactionsIfEnabled(row.user_id, transactionIds, {
+    supabase,
+    profile: profileConfig,
+  })
+  const failed = syncResults.filter(
+    (result) => result.status !== 'synced' && result.status !== 'disabled'
+  )
+
+  if (failed.length > 0) {
+    throw new Error(
+      failed
+        .map((result) => `${result.transactionId}: ${'error' in result ? result.error || result.status : result.status}`)
+        .join('; ')
+    )
+  }
+}
+
+async function getNotionOutboxTransactionIds(
+  supabase: SupabaseClient,
+  row: NotionSyncOutboxRow
+) {
+  if (row.job_type !== 'sync_split_group') {
+    return row.transaction_id ? [row.transaction_id] : []
+  }
+
+  if (!row.split_group_id) {
+    return row.transaction_id ? [row.transaction_id] : []
+  }
+
+  const ids = new Set<string>()
+  if (row.transaction_id) {
+    ids.add(row.transaction_id)
+  }
+
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('id')
+    .eq('user_id', row.user_id)
+    .eq('split_group_id', row.split_group_id)
+    .eq('split_role', 'child')
+    .is('deleted_at', null)
+    .order('split_sequence', { ascending: true })
+
+  if (error) {
+    throw new Error(`Failed to load split group transactions: ${error.message}`)
+  }
+
+  for (const transaction of (data || []) as Array<{ id: string }>) {
+    ids.add(transaction.id)
+  }
+
+  return Array.from(ids)
+}
+
+function nextOutboxRetryAt(now: Date, attempts: number) {
+  const delayMinutes = Math.min(5 * 2 ** Math.max(attempts - 1, 0), 360)
+  return new Date(now.getTime() + delayMinutes * 60_000).toISOString()
+}
+
 /**
  * Find a Notion page by transaction ID (for deduplication)
  */
@@ -520,13 +896,25 @@ function buildNotionProperties(
       number: transaction.amount < 0 ? -amount : amount,
     },
     Date: {
-      date: { start: transaction.date },
+      date: { start: getBudgetDate(transaction) },
     },
     'Transaction ID': {
       rich_text: [{ text: { content: transaction.id } }],
     },
     Source: {
       select: { name: transaction.source },
+    },
+    'Split Role': {
+      select: { name: transaction.split_role || 'none' },
+    },
+    'Hidden From Reports': {
+      checkbox: transaction.is_hidden_from_reports === true,
+    },
+    'Bank Date': {
+      date: { start: transaction.date },
+    },
+    'Original Date': {
+      date: { start: transaction.date },
     },
   }
 
@@ -566,6 +954,36 @@ function buildNotionProperties(
     }
   }
 
+  if (transaction.split_group_id) {
+    properties['Split Group ID'] = {
+      rich_text: [{ text: { content: transaction.split_group_id } }],
+    }
+  }
+
+  if (transaction.split_parent_id) {
+    properties['Split Parent ID'] = {
+      rich_text: [{ text: { content: transaction.split_parent_id } }],
+    }
+  }
+
+  if (transaction.split_sequence != null) {
+    properties['Split Sequence'] = {
+      number: Number(transaction.split_sequence),
+    }
+  }
+
+  if (transaction.deleted_at) {
+    properties['Deleted At'] = {
+      date: { start: transaction.deleted_at },
+    }
+  }
+
+  if (transaction.deleted_reason) {
+    properties['Deleted Reason'] = {
+      rich_text: [{ text: { content: transaction.deleted_reason } }],
+    }
+  }
+
   const type =
     transaction.budget_behavior === 'exclude_as_transfer'
       ? 'transfer'
@@ -590,7 +1008,7 @@ function buildNotionProperties(
     }
 
     properties['Budget Date'] = {
-      date: { start: transaction.budget_effective_date || transaction.date },
+      date: { start: getBudgetDate(transaction) },
     }
 
     if (transaction.linked_transaction_id) {

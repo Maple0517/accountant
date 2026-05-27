@@ -108,6 +108,34 @@ function createSupabaseMock(initialDb: MockDb) {
   ) as MockDb
 
   const supabase = {
+    rpc(fn: string, args: Record<string, unknown>) {
+      const operation: Operation = {
+        table: fn,
+        action: 'update',
+        payload: args,
+        filters: [],
+        single: false,
+      }
+      operations.push(operation)
+
+      if (fn === 'soft_delete_transactions_for_trusted_sync') {
+        const ids = Array.isArray(args.p_transaction_ids)
+          ? args.p_transaction_ids
+          : []
+        for (const row of db.transactions || []) {
+          if (ids.includes(row.id)) {
+            Object.assign(row, {
+              deleted_at: new Date().toISOString(),
+              deleted_reason: args.p_deleted_reason,
+              is_hidden_from_reports: true,
+            })
+          }
+        }
+        return Promise.resolve({ data: ids.length, error: null })
+      }
+
+      return Promise.resolve({ data: null, error: { message: 'Unknown RPC' } })
+    },
     from(table: string) {
       const operation: Operation = {
         table,
@@ -181,6 +209,8 @@ test('disconnectPlaidItem preserves historical accounts and transactions', async
   assert.equal(result.deleted_transactions, 0)
   assert.equal(db.plaid_items.some((item) => item.id === 'item_1'), false)
   assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_1'), true)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_at, undefined)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_reason, undefined)
   assert.deepEqual(
     db.accounts
       .filter((account) => account.user_id === 'user_1')
@@ -192,7 +222,7 @@ test('disconnectPlaidItem preserves historical accounts and transactions', async
   )
 })
 
-test('disconnectPlaidItem deletes selected connection history without touching other users', async () => {
+test('disconnectPlaidItem soft-deletes selected connection history without deleting accounts', async () => {
   const { supabase, db } = createSupabaseMock(baseDb)
 
   const result = await disconnectPlaidItem({
@@ -205,12 +235,19 @@ test('disconnectPlaidItem deletes selected connection history without touching o
 
   assert.equal(result.deleted_transactions, 2)
   assert.equal(db.plaid_items.some((item) => item.id === 'item_1'), false)
-  assert.equal(db.accounts.some((account) => account.id === 'account_1'), false)
+  assert.equal(db.accounts.some((account) => account.id === 'account_1'), true)
+  assert.equal(db.accounts.some((account) => account.id === 'account_2'), true)
+  assert.equal(db.accounts.find((account) => account.id === 'account_1')?.plaid_item_id, null)
+  assert.equal(db.accounts.find((account) => account.id === 'account_1')?.plaid_account_id, null)
   assert.equal(db.accounts.some((account) => account.id === 'account_other'), true)
-  assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_1'), false)
-  assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_2'), false)
+  assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_1'), true)
+  assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_2'), true)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_reason, 'plaid_disconnect_delete_history')
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.is_hidden_from_reports, true)
+  assert.equal(typeof db.transactions.find((transaction) => transaction.id === 'tx_1')?.deleted_at, 'string')
   assert.equal(db.transactions.some((transaction) => transaction.id === 'tx_other'), true)
   assert.equal(db.ai_classification_job_items.some((item) => item.transaction_id === 'tx_1'), false)
+  assert.equal(db.accounts.find((account) => account.id === 'account_1')?.deleted_at, undefined)
   assert.equal(
     db.transactions.find((transaction) => transaction.id === 'tx_external_link')?.linked_transaction_id,
     null

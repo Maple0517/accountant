@@ -44,11 +44,13 @@ export async function loadTransactionsForBudgetMonth(
 ): Promise<Transaction[]> {
   const { data, error } = await supabase
     .from('transactions')
-    .select('id, user_id, account_id, category_id, amount, iso_currency_code, date, pending, source, description, created_at, updated_at, transaction_kind, budget_behavior, linked_transaction_id, budget_effective_date')
+    .select('id, user_id, account_id, category_id, amount, iso_currency_code, date, pending, source, description, created_at, updated_at, transaction_kind, budget_behavior, linked_transaction_id, budget_effective_date, effective_date, deleted_at, deleted_reason, is_hidden_from_reports, split_group_id, split_parent_id, split_role, split_sequence, split_status')
     .eq('user_id', userId)
-    .or(
-      `and(budget_effective_date.gte.${monthStart},budget_effective_date.lt.${monthEnd}),and(budget_effective_date.is.null,date.gte.${monthStart},date.lt.${monthEnd})`,
-    );
+    .is('deleted_at', null)
+    .eq('is_hidden_from_reports', false)
+    .neq('split_role', 'parent')
+    .gte('effective_date', monthStart)
+    .lt('effective_date', monthEnd);
 
   if (error) {
     throw new Error(`[budget.repository] loadTransactionsForBudgetMonth failed: ${error.message}`);

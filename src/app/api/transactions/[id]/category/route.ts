@@ -1,6 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
+import {
+  canApplySimilarCategoryUpdate,
+  getTransactionMutationBlockReason,
+} from '@/lib/transactions/mutation-guard'
 import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
 
 export const dynamic = 'force-dynamic'
@@ -41,7 +45,7 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind, budget_behavior, semantic_override_source')
+          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind, budget_behavior, semantic_override_source, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
@@ -61,6 +65,17 @@ export async function PATCH(
       return Response.json({ error: 'Category not found' }, { status: 404 })
     }
 
+    const blockReason = getTransactionMutationBlockReason(transaction)
+    if (blockReason) {
+      return Response.json({ error: blockReason }, { status: 409 })
+    }
+    if (mode === 'similar' && !canApplySimilarCategoryUpdate(transaction)) {
+      return Response.json(
+        { error: 'Apply similar is disabled for split transactions' },
+        { status: 409 }
+      )
+    }
+
     const matchKey = normalizeMatchKey(transaction.merchant_name || transaction.description)
     let similarCount = 0
     let updatedCount = 0
@@ -71,6 +86,10 @@ export async function PATCH(
         .select('id, tags, merchant_name, description, transaction_kind, budget_behavior, semantic_override_source')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
+        .is('deleted_at', null)
+        .eq('is_hidden_from_reports', false)
+        .neq('split_role', 'child')
+        .neq('split_role', 'parent')
 
       if (candidatesError) {
         return Response.json(
@@ -109,6 +128,10 @@ export async function PATCH(
             .update(updatePayload)
             .eq('id', candidate.id)
             .eq('user_id', user.id)
+            .is('deleted_at', null)
+            .eq('is_hidden_from_reports', false)
+            .neq('split_role', 'child')
+            .neq('split_role', 'parent')
 
           return updateError ? 0 : 1
         })
@@ -157,6 +180,10 @@ export async function PATCH(
         .select('id, merchant_name, description')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
+        .is('deleted_at', null)
+        .eq('is_hidden_from_reports', false)
+        .neq('split_role', 'child')
+        .neq('split_role', 'parent')
 
       if (!candidatesError) {
         similarCount = Math.max(

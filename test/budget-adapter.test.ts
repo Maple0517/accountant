@@ -106,6 +106,50 @@ test('transaction adapter uses budget_effective_date when present', () => {
   assert.equal(refund.date, '2026-01-20')
 })
 
+test('transaction adapter prefers generated effective_date when present', () => {
+  const category = makeCategory({ id: 'cat_food' })
+  const [splitChild] = adaptTransactions(
+    [
+      makeTransaction({
+        id: 'split_child',
+        amount: 50,
+        category_id: 'cat_food',
+        date: '2026-05-20',
+        budget_effective_date: '2026-06-01',
+        effective_date: '2026-06-01',
+        split_role: 'child',
+      }),
+    ],
+    new Map([[category.id, category]])
+  )
+
+  assert.equal(splitChild.date, '2026-06-01')
+})
+
+test('transaction adapter maps hidden and deleted flags into engine input', () => {
+  const category = makeCategory({ id: 'cat_food' })
+  const [hidden, deleted] = adaptTransactions(
+    [
+      makeTransaction({
+        id: 'hidden',
+        category_id: 'cat_food',
+        is_hidden_from_reports: true,
+      }),
+      makeTransaction({
+        id: 'deleted',
+        category_id: 'cat_food',
+        deleted_at: '2026-05-02T00:00:00Z',
+      }),
+    ],
+    new Map([[category.id, category]])
+  )
+
+  assert.equal(hidden.isHidden, true)
+  assert.equal(hidden.isDeleted, false)
+  assert.equal(deleted.isHidden, false)
+  assert.equal(deleted.isDeleted, true)
+})
+
 test('transaction adapter uses original category for linked refund budget math', () => {
   const shopping = makeCategory({ id: 'cat_shopping', name: 'Shopping' })
   const refunded = makeCategory({ id: 'cat_refunded', name: 'Refunded', name_zh: '已退款' })

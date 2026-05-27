@@ -55,18 +55,24 @@ export async function GET() {
         supabase
           .from('transactions')
           .select(
-            'id, amount, iso_currency_code, pending, category_id, tags, transaction_kind, budget_behavior, budget_effective_date, date, transfer_match_status'
+            'id, amount, iso_currency_code, pending, category_id, tags, transaction_kind, budget_behavior, budget_effective_date, effective_date, date, transfer_match_status, deleted_at, is_hidden_from_reports, split_role'
           )
           .eq('user_id', user.id)
-          .or(
-            `and(budget_effective_date.gte.${firstDayOfMonth},budget_effective_date.lt.${firstDayOfNextMonth}),and(budget_effective_date.is.null,date.gte.${firstDayOfMonth},date.lt.${firstDayOfNextMonth})`
-          ),
+          .is('deleted_at', null)
+          .eq('is_hidden_from_reports', false)
+          .neq('split_role', 'parent')
+          .gte('effective_date', firstDayOfMonth)
+          .lt('effective_date', firstDayOfNextMonth),
         supabase
           .from('transactions')
           .select(
-            'id, merchant_name, description, amount, iso_currency_code, date, source, pending, tags, transaction_kind, budget_behavior, transfer_match_status, accounts!transactions_account_id_fkey ( name, mask ), categories!transactions_category_id_fkey ( name, name_zh, icon, color )'
+            'id, merchant_name, description, amount, iso_currency_code, date, effective_date, source, pending, tags, transaction_kind, budget_behavior, transfer_match_status, deleted_at, is_hidden_from_reports, split_role, accounts!transactions_account_id_fkey ( name, mask ), categories!transactions_category_id_fkey ( name, name_zh, icon, color )'
           )
           .eq('user_id', user.id)
+          .is('deleted_at', null)
+          .eq('is_hidden_from_reports', false)
+          .neq('split_role', 'parent')
+          .order('effective_date', { ascending: false })
           .order('date', { ascending: false })
           .limit(6),
         getAnalyticsSummary(supabase, user.id, 'month', currencyCode),
@@ -100,8 +106,12 @@ export async function GET() {
     ) {
       const fallbackRecent = await supabase
         .from('transactions')
-        .select('id, merchant_name, description, amount, iso_currency_code, date, source')
+        .select('id, merchant_name, description, amount, iso_currency_code, date, effective_date, source')
         .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .eq('is_hidden_from_reports', false)
+        .neq('split_role', 'parent')
+        .order('effective_date', { ascending: false })
         .order('date', { ascending: false })
         .limit(6)
       recentTx = fallbackRecent.data ?? []

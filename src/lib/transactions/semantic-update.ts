@@ -1,5 +1,11 @@
+import { getTransactionMutationBlockReason } from '@/lib/transactions/mutation-guard'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
-import type { BudgetBehavior, TransactionKind, TransferMatchStatus } from '@/types'
+import type {
+  BudgetBehavior,
+  TransactionKind,
+  TransactionSplitRole,
+  TransferMatchStatus,
+} from '@/types'
 
 type TransactionCategorySemantics = {
   type?: 'income' | 'expense' | 'transfer' | null
@@ -13,6 +19,11 @@ type TransactionSemanticsRow = {
   category_id: string | null
   transaction_kind: TransactionKind | null
   transfer_group_id: string | null
+  deleted_at?: string | null
+  is_hidden_from_reports?: boolean | null
+  split_role?: TransactionSplitRole | null
+  split_group_id?: string | null
+  split_parent_id?: string | null
   categories: TransactionCategorySemantics | TransactionCategorySemantics[]
 }
 
@@ -30,6 +41,7 @@ export type TransactionSemanticsQuery = PromiseLike<QueryResult<unknown>> & {
   update(payload: Record<string, unknown>): TransactionSemanticsQuery
   eq(column: string, value: unknown): TransactionSemanticsQuery
   neq(column: string, value: unknown): TransactionSemanticsQuery
+  is(column: string, value: null): TransactionSemanticsQuery
   single(): Promise<QueryResult<unknown>>
 }
 
@@ -149,6 +161,11 @@ export async function updateTransactionSemantics({
       category_id,
       transaction_kind,
       transfer_group_id,
+      deleted_at,
+      is_hidden_from_reports,
+      split_role,
+      split_group_id,
+      split_parent_id,
       categories!transactions_category_id_fkey (
         type,
         is_excluded_from_budget
@@ -161,6 +178,11 @@ export async function updateTransactionSemantics({
 
   if (transactionError || !transaction) {
     return { ok: false, status: 404, error: 'Transaction not found' }
+  }
+
+  const blockReason = getTransactionMutationBlockReason(transaction)
+  if (blockReason) {
+    return { ok: false, status: 409, error: blockReason }
   }
 
   const currentCategory = normalizeCategory(transaction.categories)
@@ -236,6 +258,8 @@ export async function updateTransactionSemantics({
       .eq('user_id', userId)
       .eq('transfer_group_id', transaction.transfer_group_id)
       .neq('id', transactionId)
+      .is('deleted_at', null)
+      .neq('split_role', 'parent')
 
     if (groupUpdateError) {
       return {

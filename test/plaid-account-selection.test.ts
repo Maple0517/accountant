@@ -7,6 +7,7 @@ import {
   reconcilePlaidItemAccounts,
   type PlaidAccountSelectionClient,
 } from '@/lib/plaid/account-selection'
+import { handlePatchPlaidItemAccountsRequest } from '@/app/api/plaid/items/[id]/accounts/route'
 
 type Row = Record<string, unknown>
 type Filter = {
@@ -171,7 +172,7 @@ test('mapPlaidType maps common Plaid account types', () => {
 })
 
 test('reconcilePlaidItemAccounts disconnects only unselected accounts', async () => {
-  const { supabase, db } = createSupabaseMock({
+  const { supabase, db, operations } = createSupabaseMock({
     plaid_items: [{ id: 'item_1', user_id: 'user_1', access_token: 'access-token' }],
     accounts: [
       {
@@ -197,6 +198,10 @@ test('reconcilePlaidItemAccounts disconnects only unselected accounts', async ()
         is_manual: false,
       },
     ],
+    transactions: [
+      { id: 'tx_1', user_id: 'user_1', account_id: 'account_checking' },
+      { id: 'tx_2', user_id: 'user_1', account_id: 'account_credit' },
+    ],
   })
 
   const result = await reconcilePlaidItemAccounts({
@@ -211,6 +216,30 @@ test('reconcilePlaidItemAccounts disconnects only unselected accounts', async ()
   assert.equal(db.accounts.find((account) => account.id === 'account_checking')?.plaid_item_id, 'item_1')
   assert.equal(db.accounts.find((account) => account.id === 'account_credit')?.plaid_item_id, null)
   assert.equal(db.accounts.find((account) => account.id === 'account_credit')?.plaid_account_id, null)
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_1')?.account_id, 'account_checking')
+  assert.equal(db.transactions.find((transaction) => transaction.id === 'tx_2')?.account_id, 'account_credit')
+  assert.equal(db.transactions.every((transaction) => transaction.deleted_at === undefined), true)
+  assert.equal(
+    db.transactions.every((transaction) => transaction.deleted_reason === undefined),
+    true
+  )
+  assert.equal(
+    db.transactions.every((transaction) => transaction.is_hidden_from_reports === undefined),
+    true
+  )
+  assert.equal(
+    db.transactions.every((transaction) => transaction.linked_transaction_id === undefined),
+    true
+  )
+  assert.equal(
+    db.transactions.every((transaction) => transaction.refund_match_confidence === undefined),
+    true
+  )
+  assert.equal(
+    db.transactions.every((transaction) => transaction.refund_match_reason === undefined),
+    true
+  )
+  assert.equal(operations.some((operation) => operation.table === 'transactions'), false)
 })
 
 test('reconcilePlaidItemAccounts reconnects a previously disconnected matching account', async () => {
@@ -244,4 +273,39 @@ test('reconcilePlaidItemAccounts reconnects a previously disconnected matching a
   assert.equal(db.accounts.length, 1)
   assert.equal(db.accounts[0].plaid_item_id, 'item_1')
   assert.equal(db.accounts[0].plaid_account_id, 'pa_credit')
+})
+
+test('PATCH Plaid item accounts route forwards the selected account ids to reconciliation', async () => {
+  const response = await handlePatchPlaidItemAccountsRequest(
+    new Request('https://example.test/api/plaid/items/item_1/accounts', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        selected_plaid_account_ids: ['pa_checking', 'pa_credit'],
+      }),
+    }),
+    { params: { id: 'item_1' } },
+    {
+      getUserId: async () => 'user_1',
+      reconcile: async ({ userId, plaidItemId, selectedPlaidAccountIds }) => ({
+        success: true,
+        plaid_item_id: plaidItemId,
+        selected_accounts: selectedPlaidAccountIds.length,
+        added_accounts: 0,
+        reconnected_accounts: 0,
+        disconnected_accounts: 0,
+        userId,
+      }),
+    }
+  )
+
+  assert.equal(response.status, 200)
+  assert.deepEqual(await response.json(), {
+    success: true,
+    plaid_item_id: 'item_1',
+    selected_accounts: 2,
+    added_accounts: 0,
+    reconnected_accounts: 0,
+    disconnected_accounts: 0,
+    userId: 'user_1',
+  })
 })

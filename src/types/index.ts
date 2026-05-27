@@ -14,6 +14,15 @@ export type TransferMatchStatus =
 
 export type SemanticOverrideSource = 'system' | 'user' | 'rule' | 'ai'
 
+export type TransactionSource = 'plaid' | 'manual' | 'receipt' | 'split'
+export type TransactionSplitRole = 'none' | 'parent' | 'child'
+export type TransactionSplitStatus =
+  | 'balanced'
+  | 'out_of_balance'
+  | 'draft'
+  | 'restored'
+  | 'orphaned'
+
 export type Transaction = {
   id: string
   user_id: string
@@ -28,7 +37,7 @@ export type Transaction = {
   description: string
   payment_channel?: string
   pending: boolean
-  source: 'plaid' | 'manual' | 'receipt'
+  source: TransactionSource
   receipt_url?: string
   notion_page_id?: string
   tags?: string[]
@@ -44,8 +53,55 @@ export type Transaction = {
   transfer_match_confidence?: number | null
   transfer_match_reason?: string | null
   semantic_override_source?: SemanticOverrideSource | null
+  deleted_at?: string | null
+  deleted_reason?: string | null
+  is_hidden_from_reports?: boolean
+  split_group_id?: string | null
+  split_parent_id?: string | null
+  split_role?: TransactionSplitRole
+  split_sequence?: number | null
+  split_status?: TransactionSplitStatus | null
+  effective_date?: string | null
   created_at: string
   updated_at: string
+}
+
+export type TransactionSplitGroup = {
+  id: string
+  user_id: string
+  parent_transaction_id: string
+  status: TransactionSplitStatus
+  parent_amount_snapshot: number
+  child_amount_sum: number
+  iso_currency_code: string
+  version: number
+  last_validated_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TransactionSplitEvent = {
+  id: string
+  user_id: string
+  split_group_id?: string | null
+  parent_transaction_id: string
+  event_type:
+    | 'created'
+    | 'replaced'
+    | 'restored'
+    | 'out_of_balance'
+    | 'balanced_again'
+    | 'plaid_removed'
+    | 'plaid_modified'
+    | 'plaid_pending_replaced'
+    | 'child_deleted'
+    | 'notion_parent_hidden'
+    | 'notion_parent_archived'
+    | 'notion_child_archived'
+    | 'soft_deleted'
+    | 'purged'
+  payload: Record<string, unknown>
+  created_at: string
 }
 
 export type Account = {
