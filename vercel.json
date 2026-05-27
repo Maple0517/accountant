@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/notion-outbox",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }
