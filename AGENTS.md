@@ -12,6 +12,16 @@ For non-trivial tasks, use the smallest useful blocking, anti-overlap subagent t
 
 Do not optimize only for raw wall-clock speed. Avoid speculative overlap by default, but do not avoid subagents merely to keep the workflow simple.
 
+### CodeGraph
+
+CodeGraph is installed for this repository. When CodeGraph MCP tools are available, prefer using them for initial repo orientation, call graph lookup, impact analysis, and large-module context gathering before broad manual file search.
+
+Before relying on CodeGraph results for current code, run:
+
+/Users/maple/.local/bin/codegraph sync /Users/maple/Documents/accountant
+
+Use CodeGraph especially for transaction, budget, Plaid, Notion sync, auth, database, and shared money/currency logic. Small obvious edits do not require CodeGraph.
+
 ### Subagent usage bias
 
 After explicit or standing authorization, the main agent should actively look for useful subagent opportunities.
