@@ -2000,12 +2000,15 @@ function SplitEditorDrawer({
 
   useEffect(() => {
     let cancelled = false
+    const controller = new AbortController()
 
     async function loadSplit() {
       setLoading(true)
       setMessage(null)
       try {
-        const response = await fetch(`/api/transactions/${transaction.id}/split`)
+        const response = await fetch(`/api/transactions/${transaction.id}/split`, {
+          signal: controller.signal,
+        })
         const data = (await response.json()) as SplitStateResponse
         if (cancelled) return
         if (!response.ok) {
@@ -2014,7 +2017,7 @@ function SplitEditorDrawer({
         setSplitState(data)
         setLines(buildInitialSplitLines(data.parent, data.children))
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && !controller.signal.aborted) {
           setMessage(error instanceof Error ? error.message : t('transactions.splitLoadError'))
         }
       } finally {
@@ -2025,6 +2028,7 @@ function SplitEditorDrawer({
     loadSplit()
     return () => {
       cancelled = true
+      controller.abort()
     }
   }, [transaction.id, t])
 

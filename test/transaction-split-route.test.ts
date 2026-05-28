@@ -171,28 +171,33 @@ test('GET split route resolves a clicked child back to its parent group', async 
   assert.deepEqual(body.children.map((tx: Transaction) => tx.id), ['child_1'])
 })
 
-test('GET split route reports Notion schema readiness as a blocking issue', async () => {
+test('GET split route does not block opening on Notion schema readiness', async () => {
   const supabase = makeSupabase({
     transactions: [makeTransaction({ id: 'parent_1' })],
     transaction_split_groups: [],
   })
+  let schemaChecks = 0
 
   const response = await handleGetSplit({
     supabase: supabase as never,
     userId: 'user_1',
     transactionId: 'parent_1',
-    ensureSchemaReady: async () => ({
-      ready: false as const,
-      status: 'schema_update_failed' as const,
-      error: 'missing schema',
-    }),
+    ensureSchemaReady: async () => {
+      schemaChecks += 1
+      return {
+        ready: false as const,
+        status: 'schema_update_failed' as const,
+        error: 'missing schema',
+      }
+    },
   })
   const body = await response.json()
 
   assert.equal(response.status, 200)
-  assert.equal(body.canSplit, false)
-  assert.equal(body.notionSchemaReady, false)
-  assert.ok(body.issues.includes('NOTION_SCHEMA_NOT_READY'))
+  assert.equal(body.canSplit, true)
+  assert.equal(body.notionSchemaReady, undefined)
+  assert.equal(body.issues.includes('NOTION_SCHEMA_NOT_READY'), false)
+  assert.equal(schemaChecks, 0)
 })
 
 test('PUT split route rejects pending parents before calling RPC', async () => {

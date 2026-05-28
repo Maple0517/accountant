@@ -158,25 +158,13 @@ export async function handleGetSplit({
   supabase,
   userId,
   transactionId,
-  ensureSchemaReady = ensureNotionSplitSchemaReady,
 }: SplitRouteDeps) {
   const result = await loadSplitState(supabase, userId, transactionId)
   if (!result.ok) {
     return Response.json(result.error.body, { status: result.error.status })
   }
 
-  const schemaReadiness = await ensureSchemaReady(userId)
-  const value = {
-    ...result.value,
-    notionSchemaReady: schemaReadiness.ready,
-    notionSchemaStatus: schemaReadiness.status,
-    issues: schemaReadiness.ready
-      ? result.value.issues
-      : Array.from(new Set([...result.value.issues, 'NOTION_SCHEMA_NOT_READY'])),
-    canSplit: result.value.canSplit && schemaReadiness.ready,
-  }
-
-  return Response.json(value)
+  return Response.json(result.value)
 }
 
 export async function handlePutSplit({
