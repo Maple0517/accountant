@@ -5,6 +5,7 @@ import {
   parsePositiveInt,
   SAVED_VIEWS,
   loadSavedViewCounts,
+  countAllPendingAiClassifications,
   type SavedView,
   type TransactionFilterQuery,
 } from '@/lib/transactions/list-filters'
@@ -170,14 +171,18 @@ export async function GET(request: Request) {
       }
     })
 
-    const viewCounts = includeViewCounts
-      ? await loadSavedViewCounts(supabase as never, filterContext)
-      : undefined
+    const [viewCounts, allAiPendingCount] = await Promise.all([
+      includeViewCounts
+        ? loadSavedViewCounts(supabase as never, filterContext)
+        : Promise.resolve(undefined),
+      countAllPendingAiClassifications(supabase as never, user.id),
+    ])
 
     return Response.json({
       transactions,
       totalCount: transactionsResult.count || 0,
       viewCounts,
+      allAiPendingCount,
       categories: (categoriesResult.data || []) as Category[],
       accounts: ((accountsResult.data || []) as TransactionAccountRelation[])
         .map((account) => normalizeAccountRelation(account))

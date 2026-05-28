@@ -242,6 +242,15 @@ export async function POST(request: Request) {
         .in('id', refreshableItems.map((item) => item.id))
         .eq('user_id', user.id)
 
+      await supabase
+        .from('ai_classification_jobs')
+        .update({
+          error_message: errorMessage,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', jobId)
+        .eq('user_id', user.id)
+
       const refreshedJob = await refreshJobCounts(supabase, jobId, user.id)
       return Response.json(
         {

@@ -243,10 +243,6 @@ function isActiveAiJob(job: AiClassificationJob | null): job is AiClassification
   return job?.status === 'queued' || job?.status === 'running'
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debouncedValue, setDebouncedValue] = useState(value)
 
@@ -347,6 +343,7 @@ type TransactionsApiResponse = {
   transactions: TransactionWithRelations[]
   totalCount: number
   viewCounts?: Record<SavedView, number>
+  allAiPendingCount?: number
   categories: Category[]
   accounts: TransactionAccountRelation[]
   limit: number
@@ -360,11 +357,14 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
+  const [allAiPendingCount, setAllAiPendingCount] = useState(0)
   const [viewCountsLoading, setViewCountsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
   const [aiJob, setAiJob] = useState<AiClassificationJob | null>(null)
+  const [aiQueueActionLoading, setAiQueueActionLoading] = useState(false)
+  const [aiQueueProcessing, setAiQueueProcessing] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [accountOptions, setAccountOptions] = useState<AccountFilterOption[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
@@ -468,6 +468,7 @@ export default function TransactionsPage() {
             ...payload.viewCounts,
           }))
         }
+        setAllAiPendingCount(payload.allAiPendingCount || 0)
         setCategories(payload.categories || [])
         setCategoriesLoading(false)
         setAccountOptions(
@@ -516,6 +517,7 @@ export default function TransactionsPage() {
       const response = await fetch(`/api/transactions/view-counts?${params.toString()}`)
       const payload = (await response.json()) as {
         viewCounts?: Record<SavedView, number>
+        allAiPendingCount?: number
         error?: string
       }
 
@@ -530,6 +532,7 @@ export default function TransactionsPage() {
         ...current,
         ...(payload.viewCounts || {}),
       }))
+      setAllAiPendingCount(payload.allAiPendingCount || 0)
     } catch (error) {
       if (viewCountsRequestIdRef.current === requestId) {
         console.error('Error fetching transaction view counts:', error)
@@ -559,6 +562,8 @@ export default function TransactionsPage() {
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
+      setAiQueueProcessing(true)
+
       try {
         let keepProcessing = true
 
@@ -575,9 +580,21 @@ export default function TransactionsPage() {
 
           if (!response.ok) {
             if (data.retryable) {
-              setAiRefreshStatus(t('transactions.retrying', { error: data.error }))
-              await delay(10000)
-              continue
+              const retryJob = data.job as AiClassificationJob | null
+              if (retryJob) {
+                setAiJob(retryJob)
+                setAiRefreshStatus(
+                  t('transactions.aiPendingReason', {
+                    count: retryJob.pending_count,
+                    plural: retryJob.pending_count === 1 ? '' : 's',
+                    reason: data.error || t('transactions.processAiQueueError'),
+                  })
+                )
+              } else {
+                setAiRefreshStatus(t('transactions.retrying', { error: data.error }))
+              }
+              keepProcessing = false
+              break
             }
 
             throw new Error(data.error || t('transactions.processAiQueueError'))
@@ -595,15 +612,18 @@ export default function TransactionsPage() {
           }
 
           await fetchTransactions()
+          await fetchViewCounts()
         }
       } catch (error) {
         console.error('Failed to process AI queue:', error)
         setAiRefreshStatus(
           error instanceof Error ? error.message : t('transactions.processAiQueueError')
         )
+      } finally {
+        setAiQueueProcessing(false)
       }
     },
-    [fetchTransactions, t]
+    [fetchTransactions, fetchViewCounts, t]
   )
 
   const fetchLatestAiJob = useCallback(async () => {
@@ -627,7 +647,13 @@ export default function TransactionsPage() {
 
       if (isActiveAiJob(job)) {
         setAiRefreshStatus(
-          t('transactions.aiQueue', { done: job.completed_count, total: job.total_count, pending: job.pending_count, failed: job.failed_count })
+          job.error_message
+            ? t('transactions.aiPendingReason', {
+                count: job.pending_count,
+                plural: job.pending_count === 1 ? '' : 's',
+                reason: job.error_message,
+              })
+            : t('transactions.aiQueue', { done: job.completed_count, total: job.total_count, pending: job.pending_count, failed: job.failed_count })
         )
         processAiQueue(job.id)
       }
@@ -646,6 +672,55 @@ export default function TransactionsPage() {
 
     return () => window.clearTimeout(timeoutId)
   }, [fetchLatestAiJob])
+
+  const handleQueueAiRefresh = useCallback(async () => {
+    setAiQueueActionLoading(true)
+    setAiRefreshStatus(t('transactions.processingAi'))
+
+    try {
+      if (isActiveAiJob(aiJob)) {
+        await processAiQueue(aiJob.id)
+        await fetchTransactions()
+        await fetchViewCounts()
+        return
+      }
+
+      const response = await fetch('/api/plaid/ai-classification-jobs', {
+        method: 'POST',
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || t('transactions.createAiQueueError'))
+      }
+
+      const job = data.job as AiClassificationJob | null
+      setAiJob(job)
+
+      if (!job || job.total_count === 0) {
+        setAiRefreshStatus(t('transactions.noPendingAi'))
+        await fetchViewCounts()
+        return
+      }
+
+      setAiRefreshStatus(
+        t('transactions.aiQueueStarted', {
+          count: job.total_count,
+          plural: job.total_count === 1 ? '' : 's',
+        })
+      )
+      await processAiQueue(job.id)
+      await fetchTransactions()
+      await fetchViewCounts()
+    } catch (error) {
+      console.error('Failed to create AI queue:', error)
+      setAiRefreshStatus(
+        error instanceof Error ? error.message : t('transactions.createAiQueueError')
+      )
+    } finally {
+      setAiQueueActionLoading(false)
+    }
+  }, [aiJob, fetchTransactions, fetchViewCounts, processAiQueue, t])
 
   const handleCategorySave = useCallback(
     async (
@@ -925,7 +1000,19 @@ export default function TransactionsPage() {
   }, [visibleTransactions, categories, categoryName])
 
   const pendingCount = serverViewCounts.pending || 0
+  const aiPendingCount = allAiPendingCount
   const needsReviewCount = serverViewCounts.needs_review || 0
+  const aiStatusMessage =
+    aiRefreshStatus ||
+    (aiPendingCount > 0
+      ? t('transactions.aiPendingSummary', {
+          count: aiPendingCount,
+          plural: aiPendingCount === 1 ? '' : 's',
+          reason:
+            aiJob?.error_message || t('transactions.aiPendingNoJobReason'),
+        })
+      : null)
+  const aiQueueBusy = aiQueueActionLoading || aiQueueProcessing
   const visibleTotalsByCurrency = useMemo(
     () => sumByCurrency(visibleTransactions, (tx) => Number(tx.amount), (tx) => tx.iso_currency_code),
     [visibleTransactions]
@@ -1064,16 +1151,28 @@ export default function TransactionsPage() {
         <div className="card card-pad-sm"><span className="metric-label">{t('transactions.loaded')}</span><span className="metric-value">{transactions.length}</span></div>
         <div className="card card-pad-sm"><span className="metric-label">{t('transactions.needsReview')}</span><span className="metric-value">{needsReviewCount}</span></div>
         <div className="card card-pad-sm"><span className="metric-label">{t('common.pending')}</span><span className="metric-value">{pendingCount}</span></div>
+        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.aiPending')}</span><span className="metric-value">{aiPendingCount}</span></div>
         <div className="card card-pad-sm"><span className="metric-label">{t('transactions.visibleNet')}</span><span className="metric-value">{formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)}</span></div>
       </div>
 
-      {(aiRefreshStatus || aiJob) && (
+      {(aiStatusMessage || aiJob || aiPendingCount > 0) && (
         <div className="ai-refresh-status">
-          <span>{aiRefreshStatus}</span>
+          {aiStatusMessage && <span>{aiStatusMessage}</span>}
           {aiJob && (
             <span>
-              {t('transactions.total')} {aiJob.total_count} · {t('common.pending')} {aiJob.pending_count} · {t('transactions.done')} {aiJob.completed_count} · Failed {aiJob.failed_count}
+              {t('transactions.total')} {aiJob.total_count} · {t('common.pending')} {aiJob.pending_count} · {t('transactions.done')} {aiJob.completed_count} · {t('transactions.failed')} {aiJob.failed_count}
             </span>
+          )}
+          {aiPendingCount > 0 && (
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={handleQueueAiRefresh}
+              disabled={aiQueueBusy}
+              title={t('transactions.queueAiTitle')}
+            >
+              {aiQueueBusy ? t('transactions.processingAi') : t('transactions.queueAiRefresh')}
+            </button>
           )}
         </div>
       )}

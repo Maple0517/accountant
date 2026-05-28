@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import {
   applyBaseFilters,
   loadSavedViewCounts,
+  countAllPendingAiClassifications,
 } from '@/lib/transactions/list-filters'
 
 export const dynamic = 'force-dynamic'
@@ -32,9 +33,12 @@ export async function GET(request: Request) {
       splitGroupId: searchParams.get('splitGroupId') || '',
     }
 
-    const viewCounts = await loadSavedViewCounts(supabase as never, filterContext)
+    const [viewCounts, allAiPendingCount] = await Promise.all([
+      loadSavedViewCounts(supabase as never, filterContext),
+      countAllPendingAiClassifications(supabase as never, user.id),
+    ])
 
-    return Response.json({ viewCounts })
+    return Response.json({ viewCounts, allAiPendingCount })
   } catch (error: unknown) {
     console.error('Error in transaction view counts API:', error)
     const errorMessage =

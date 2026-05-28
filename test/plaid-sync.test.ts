@@ -16,6 +16,7 @@ import {
   resolvePendingSplitParentReplacement,
   softDeletePlaidRemovedTransactions,
 } from '@/lib/plaid/transactions-sync'
+import { refreshJobCounts } from '@/lib/plaid/ai-classification-queue'
 import {
   findLikelyOriginalPurchase,
   isLikelyRefundCandidate,
@@ -182,6 +183,70 @@ test('shouldRefreshAiClassification targets uncategorized and pending fallback r
     }),
     false
   )
+})
+
+test('refreshJobCounts preserves retry reason while pending and after completion', async () => {
+  let pendingCount = 2
+  const updates: Record<string, unknown>[] = []
+  const supabase = {
+    from(table: string) {
+      assert.ok(
+        table === 'ai_classification_job_items' ||
+          table === 'ai_classification_jobs'
+      )
+
+      if (table === 'ai_classification_job_items') {
+        let selectedStatus = ''
+        const query = {
+          select() {
+            return query
+          },
+          eq(column: string, value: unknown) {
+            if (column === 'status') selectedStatus = String(value)
+            return query
+          },
+          then(resolve: (value: { count: number; error: null }) => void) {
+            resolve({
+              count:
+                selectedStatus === 'queued'
+                  ? pendingCount
+                  : selectedStatus === 'completed'
+                    ? 1
+                    : 0,
+              error: null,
+            })
+          },
+        }
+        return query
+      }
+
+      const query = {
+        update(payload: Record<string, unknown>) {
+          updates.push(payload)
+          return query
+        },
+        eq() {
+          return query
+        },
+        select() {
+          return query
+        },
+        single() {
+          return Promise.resolve({ data: updates.at(-1), error: null })
+        },
+      }
+      return query
+    },
+  }
+
+  await refreshJobCounts(supabase as never, 'job_1', 'user_1')
+  assert.equal(updates[0].status, 'running')
+  assert.equal(Object.hasOwn(updates[0], 'error_message'), false)
+
+  pendingCount = 0
+  await refreshJobCounts(supabase as never, 'job_1', 'user_1')
+  assert.equal(updates[1].status, 'completed')
+  assert.equal(Object.hasOwn(updates[1], 'error_message'), false)
 })
 
 test('getPlaidPrimaryCategory prefers personal finance category over legacy category', () => {

@@ -2,9 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 import type { AiClassificationJob } from '@/types'
-import {
-  loadRefreshCandidateIds,
-} from '@/lib/plaid/ai-classification-queue'
+import { loadRefreshCandidateIds } from '@/lib/plaid/ai-classification-queue'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,6 +85,41 @@ export async function POST() {
     }
 
     const candidateIds = await loadRefreshCandidateIds(supabase, user.id)
+
+    const { data: activeJob, error: activeJobError } = await supabase
+      .from('ai_classification_jobs')
+      .select('*')
+      .eq('user_id', user.id)
+      .in('status', ['queued', 'running'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (activeJobError) {
+      if (isMissingQueueTableError(activeJobError)) {
+        return Response.json(
+          {
+            error:
+              'AI classification queue tables are missing. Run Supabase migration 003_ai_classification_queue.sql.',
+          },
+          { status: 503 }
+        )
+      }
+
+      return Response.json(
+        { error: 'Failed to load active AI classification job' },
+        { status: 500 }
+      )
+    }
+
+    if (activeJob) {
+      return Response.json({
+        success: true,
+        reused: true,
+        job: activeJob as AiClassificationJob,
+      })
+    }
+
     const { data: job, error: jobError } = await supabase
       .from('ai_classification_jobs')
       .insert({

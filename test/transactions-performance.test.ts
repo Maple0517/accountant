@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
   applyBaseFilters,
   applySavedViewFilters,
+  countAllPendingAiClassifications,
   loadSavedViewCounts,
   parsePositiveInt,
   SAVED_VIEWS,
@@ -139,4 +140,35 @@ test('saved view filters keep the expensive counts isolated and reusable', () =>
   applySavedViewFilters(query, 'needs_review' satisfies SavedView)
 
   assert.ok(operations[0].filters.some((filter) => filter.method === 'or'))
+})
+
+test('countAllPendingAiClassifications ignores page filters but keeps safe visibility filters', async () => {
+  const { supabase, operations } = createCountSupabaseMock()
+
+  const count = await countAllPendingAiClassifications(supabase as never, 'user_1')
+
+  assert.equal(count, 7)
+  assert.equal(operations.length, 1)
+  assert.ok(
+    operations[0].filters.some(
+      (filter) =>
+        filter.method === 'eq' &&
+        filter.column === 'user_id' &&
+        filter.value === 'user_1'
+    )
+  )
+  assert.ok(
+    operations[0].filters.some(
+      (filter) =>
+        filter.method === 'or' &&
+        typeof filter.value === 'string' &&
+        filter.value.includes('classification:ai-pending')
+    )
+  )
+  assert.equal(
+    operations[0].filters.some(
+      (filter) => filter.method === 'eq' && filter.column === 'source'
+    ),
+    false
+  )
 })

@@ -184,8 +184,33 @@ export async function loadSavedViewCounts(
   filterContext: Parameters<typeof applyBaseFilters>[1]
 ) {
   const entries = await Promise.all(
-    SAVED_VIEWS.map(async (view) => [view, await countSavedView(supabase, filterContext, view)] as const)
+    SAVED_VIEWS.map(async (view) =>
+      [view, await countSavedView(supabase, filterContext, view)] as const
+    )
   )
 
   return Object.fromEntries(entries) as Record<SavedView, number>
+}
+
+export async function countAllPendingAiClassifications(
+  supabase: Parameters<typeof countSavedView>[0],
+  userId: string
+) {
+  return countSavedView(
+    supabase,
+    {
+      userId,
+      search: '',
+      sourceOrAccount: 'all',
+      category: 'all',
+      currency: 'all',
+      dateFrom: '',
+      dateTo: '',
+      showHidden: false,
+      showDeleted: false,
+      showSplitParents: false,
+      splitGroupId: '',
+    },
+    'ai_pending'
+  )
 }
