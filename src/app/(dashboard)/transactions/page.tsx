@@ -1577,18 +1577,6 @@ const TransactionItem = memo(function TransactionItem({
           {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
         </div>
       </div>
-      <div className="tx-row-actions">
-        <button
-          type="button"
-          className="btn btn-sm btn-ghost"
-          title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-          aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-          disabled={tx.pending}
-          onClick={() => onOpenSplitEditor(tx)}
-        >
-          Split
-        </button>
-      </div>
       {isEditing && (
         <div className="tx-category-popover">
           <div className="tx-category-popover-header">
@@ -1831,6 +1819,27 @@ const TransactionItem = memo(function TransactionItem({
             </div>
             {tx.transfer_match_reason && (
               <p className="refund-hint">{tx.transfer_match_reason}</p>
+            )}
+          </div>
+          <div className="refund-tools">
+            <div className="tx-category-popover-header">
+              <span>{t('transactions.splitSectionTitle')}</span>
+            </div>
+            <p className="refund-hint">{t('transactions.splitSectionHint')}</p>
+            <div className="refund-kind-actions">
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+                aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+                disabled={tx.pending}
+                onClick={() => onOpenSplitEditor(tx)}
+              >
+                {t('transactions.splitAction')}
+              </button>
+            </div>
+            {tx.pending && (
+              <p className="refund-hint">{t('transactions.splitPendingDisabled')}</p>
             )}
           </div>
           <div className="new-category-section">
