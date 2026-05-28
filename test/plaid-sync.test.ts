@@ -460,13 +460,19 @@ test('findLikelyOriginalPurchase links exact same-merchant refund to prior purch
       description: 'AMAZON MARKETPLACE',
     },
   ]
+  const filters: Array<{ method: string; column: string; value: unknown }> = []
   const supabase = {
     from() {
       const chain = {
         select() {
           return chain
         },
-        eq() {
+        eq(column: string, value: unknown) {
+          filters.push({ method: 'eq', column, value })
+          return chain
+        },
+        is(column: string, value: unknown) {
+          filters.push({ method: 'is', column, value })
           return chain
         },
         gt() {
@@ -496,4 +502,11 @@ test('findLikelyOriginalPurchase links exact same-merchant refund to prior purch
   assert.equal(match?.original.id, 'purchase_1')
   assert.equal(match?.original.category_id, 'cat_shopping')
   assert.equal(match?.confidence, 0.9)
+  assert.deepEqual(
+    filters.filter((filter) => filter.column === 'deleted_at' || filter.column === 'is_hidden_from_reports'),
+    [
+      { method: 'is', column: 'deleted_at', value: null },
+      { method: 'eq', column: 'is_hidden_from_reports', value: false },
+    ]
+  )
 })

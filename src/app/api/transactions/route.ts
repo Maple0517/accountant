@@ -120,6 +120,8 @@ export async function GET(request: Request) {
               subtype,
               mask,
               is_manual,
+              archived_at,
+              archived_reason,
               plaid_items (
                 institution_name,
                 institution_id
@@ -127,6 +129,7 @@ export async function GET(request: Request) {
             `
           )
           .eq('user_id', user.id)
+          .is('archived_at', null)
           .order('created_at', { ascending: true }),
       ])
 
