@@ -124,7 +124,6 @@ export async function GET(request: Request) {
         .from('plaid_items')
         .select('last_synced_at')
         .eq('user_id', auth.userId)
-        .eq('status', 'active')
         .not('last_synced_at', 'is', null)
         .order('last_synced_at', { ascending: false })
         .limit(1)

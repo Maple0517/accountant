@@ -100,7 +100,7 @@ function renderWidget(widget, payload) {
 
   const footerLabel = payload.lastSyncedAt
     ? `Synced ${formatRelativeTime(payload.lastSyncedAt)}`
-    : `Updated ${formatRelativeTime(payload.updatedAt)}`
+    : `Fetched ${formatRelativeTime(payload.updatedAt)}`
   const footer = widget.addText(footerLabel)
   footer.font = Font.systemFont(9)
   footer.textColor = COLORS.muted
