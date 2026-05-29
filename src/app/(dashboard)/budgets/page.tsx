@@ -450,14 +450,14 @@ function BudgetCategoryRow({
         >
           {displayCategoryName}
         </button>
-        <span>
+        <span className="budget-category-spend">
           {t('budgets.spentOf', {
             spent: formatCurrency(cat.actualSpend, currencyCode),
             budget: formatCurrency(cat.baseBudget, currencyCode),
           })}
         </span>
         {cat.baseBudget > 0 && cat.remaining < 0 && (
-          <span className="budget-note" style={{ display: 'block' }}>
+          <span className="budget-note">
             {t('budgets.overBy', { amount: formatCurrency(Math.abs(cat.remaining), currencyCode) })}
           </span>
         )}

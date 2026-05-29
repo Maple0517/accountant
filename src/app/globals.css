@@ -675,9 +675,10 @@ a {
   grid-template-columns: minmax(12rem, 1fr) minmax(9rem, auto) minmax(11rem, 0.8fr);
   align-items: center;
 }
-.budget-category-main { min-width: 0; }
-.budget-category-button { appearance: none; max-width: 100%; border: 0; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; font-weight: 700; text-align: left; }
+.budget-category-main { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 0.28rem; }
+.budget-category-button { appearance: none; max-width: 100%; border: 0; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; font-weight: 700; line-height: 1.15; text-align: left; }
 .budget-category-button:hover { color: #c8bfff; text-decoration: underline; text-underline-offset: 0.22em; }
+.budget-category-spend { display: block; line-height: 1.35; }
 .budget-cell-value { display: block; margin-top: 0.2rem; font-family: var(--font-mono); font-weight: 750; font-variant-numeric: tabular-nums; }
 .budget-edit-button { display: inline-flex; align-items: center; gap: 0.35rem; border: 1px solid rgba(124,92,255,0.28); border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text-primary); font-family: var(--font-mono); font-size: 0.86rem; font-weight: 750; padding: 0.34rem 0.55rem; cursor: pointer; }
 .budget-edit-button:hover { border-color: rgba(124,92,255,0.5); }
