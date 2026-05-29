@@ -106,6 +106,70 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
   ])
 })
 
+test('getAnalyticsSummary ignores excluded budget categories even with stale spending behavior', async () => {
+  const rows = [
+    {
+      amount: 25,
+      iso_currency_code: 'USD',
+      date: '2026-05-01',
+      budget_behavior: 'count_as_spending',
+      category_id: 'food',
+      categories: {
+        name: 'Food',
+        icon: '🍔',
+        color: '#ff9800',
+        is_excluded_from_budget: false,
+      },
+    },
+    {
+      amount: 3126,
+      iso_currency_code: 'USD',
+      date: '2026-05-02',
+      budget_behavior: 'count_as_spending',
+      category_id: 'excluded',
+      categories: {
+        name: 'Excluded',
+        icon: '🚫',
+        color: '#9e9e9e',
+        is_excluded_from_budget: true,
+      },
+    },
+  ]
+  const supabase = {
+    from() {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        order() {
+          return Promise.resolve({ data: rows, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD')
+
+  assert.equal(summary.totalSpending, 25)
+  assert.deepEqual(summary.byCategory, [
+    { name: 'Food', name_zh: null, icon: '🍔', color: '#ff9800', total: 25 },
+  ])
+  assert.deepEqual(summary.byDay, [{ date: '2026-05-01', total: 25 }])
+})
+
 
 test('getAnalyticsSummary filters by selected currency and defaults null currencies to USD', async () => {
   const rows = [

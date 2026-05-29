@@ -36,7 +36,7 @@ function isIncludedTransaction(
   monthStart: string,
   nextMonthStart: string,
   includePending: boolean,
-  legacyExpenseCategoryIds: Set<string>,
+  budgetableExpenseCategoryIds: Set<string>,
   knownCategoryIds: Set<string>
 ): boolean {
   // Date must be within the month boundary
@@ -47,6 +47,10 @@ function isIncludedTransaction(
 
   // Category must exist in the budget category set
   if (!knownCategoryIds.has(tx.categoryId)) return false
+
+  // Category-level budget exclusions are absolute, even when older rows still
+  // carry an explicit count_as_spending behavior.
+  if (!budgetableExpenseCategoryIds.has(tx.categoryId)) return false
 
   // Must not be hidden or deleted
   if (tx.isHidden === true) return false
@@ -61,7 +65,7 @@ function isIncludedTransaction(
 
   // Legacy fallback while older rows are not backfilled yet.
   if (tx.type !== 'expense') return false
-  return legacyExpenseCategoryIds.has(tx.categoryId)
+  return budgetableExpenseCategoryIds.has(tx.categoryId)
 }
 
 function isEligibleForBudgetMonth(
@@ -100,11 +104,14 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
   const nextMonthStart = getNextMonthStart(month)
   const includePending = settings.includePendingTransactions
 
-  // Identify non-excluded expense categories
-  const legacyExpenseCategories = categories.filter(
+  // Identify non-excluded expense categories. Category-level exclusions win over
+  // stale row-level budget_behavior values from older data.
+  const budgetableExpenseCategories = categories.filter(
     (c) => c.type === 'expense' && !c.isExcludedFromBudget
   )
-  const legacyExpenseCategoryIds = new Set(legacyExpenseCategories.map((c) => c.id))
+  const budgetableExpenseCategoryIds = new Set(
+    budgetableExpenseCategories.map((c) => c.id)
+  )
   const knownCategoryIds = new Set(categories.map((c) => c.id))
   const explicitSpendingCategoryIds = new Set(
     transactions
@@ -116,13 +123,13 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
             monthStart,
             nextMonthStart,
             includePending,
-            knownCategoryIds
+            budgetableExpenseCategoryIds
           )
       )
       .map((tx) => tx.categoryId!)
   )
   const expenseCategoryIds = new Set([
-    ...legacyExpenseCategoryIds,
+    ...budgetableExpenseCategoryIds,
     ...explicitSpendingCategoryIds,
   ])
   const expenseCategories = categories.filter((c) => expenseCategoryIds.has(c.id))
@@ -144,7 +151,7 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
         monthStart,
         nextMonthStart,
         includePending,
-        legacyExpenseCategoryIds,
+        budgetableExpenseCategoryIds,
         knownCategoryIds
       )
     ) {

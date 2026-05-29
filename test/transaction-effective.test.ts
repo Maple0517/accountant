@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   getBudgetDate,
+  getBudgetSemanticAmounts,
   getEffectiveTransactions,
   getTransactionSemanticAmounts,
   isEffectiveTransaction,
@@ -99,6 +100,17 @@ test('semantic amounts follow Accountant signed amount conventions', () => {
     getTransactionSemanticAmounts({
       amount: 25,
       budget_behavior: 'exclude_as_transfer',
+    }),
+    { netSpending: 0, income: 0, categoryNetSpend: 0 }
+  )
+})
+
+test('budget semantic amounts honor category-level budget exclusion', () => {
+  assert.deepEqual(
+    getBudgetSemanticAmounts({
+      amount: 3126,
+      budget_behavior: 'count_as_spending',
+      category_is_excluded_from_budget: true,
     }),
     { netSpending: 0, income: 0, categoryNetSpend: 0 }
   )

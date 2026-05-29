@@ -1,13 +1,20 @@
 import type { DashboardAccount, DashboardMonthTransaction } from './types'
 import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
-import { getTransactionSemanticAmounts } from '@/lib/transactions/effective'
+import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
 } from '@/lib/plaid/classification'
 
-export function getMonthlySemanticAmounts(tx: Pick<DashboardMonthTransaction, 'amount' | 'budget_behavior'>) {
-  const semanticAmounts = getTransactionSemanticAmounts(tx)
+export function getMonthlySemanticAmounts(
+  tx: Pick<DashboardMonthTransaction, 'amount' | 'budget_behavior' | 'categories'>
+) {
+  const category = Array.isArray(tx.categories) ? tx.categories[0] : tx.categories
+  const semanticAmounts = getBudgetSemanticAmounts({
+    amount: tx.amount,
+    budget_behavior: tx.budget_behavior,
+    category_is_excluded_from_budget: category?.is_excluded_from_budget === true,
+  })
 
   return {
     spending: semanticAmounts.netSpending,

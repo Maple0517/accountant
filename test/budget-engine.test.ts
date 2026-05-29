@@ -46,6 +46,13 @@ const dining: BudgetCategoryInput = {
   isExcludedFromBudget: false,
 }
 
+const excluded: BudgetCategoryInput = {
+  id: 'cat_excluded',
+  name: 'Excluded',
+  type: 'expense',
+  isExcludedFromBudget: true,
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -174,7 +181,7 @@ test('excluded category not counted', () => {
   assert.equal(result.totalBaseBudget, 0)
 })
 
-test('explicit count_as_spending can include a category legacy rules exclude', () => {
+test('explicit count_as_spending cannot include category-level budget exclusions', () => {
   const debtPayment: BudgetCategoryInput = {
     id: 'cat_debt',
     name: 'Debt Payment',
@@ -199,10 +206,9 @@ test('explicit count_as_spending can include a category legacy rules exclude', (
     })
   )
 
-  assert.equal(result.categories.length, 1)
-  assert.equal(result.categories[0].categoryId, 'cat_debt')
-  assert.equal(result.categories[0].actualSpend, 300)
-  assert.equal(result.totalBaseBudget, 300)
+  assert.equal(result.categories.length, 0)
+  assert.equal(result.totalActualSpend, 0)
+  assert.equal(result.totalBaseBudget, 0)
 })
 
 test('hidden transaction not counted', () => {
@@ -289,6 +295,43 @@ test('explicit budget behavior overrides expense-category fallback', () => {
 
   assert.equal(result.categories.length, 1)
   assert.equal(result.categories[0].actualSpend, 25)
+})
+
+test('category budget exclusion overrides stale count_as_spending behavior', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries, excluded],
+      transactions: [
+        {
+          id: 'excluded_spend',
+          amount: 3126,
+          date: '2026-05-04',
+          categoryId: 'cat_excluded',
+          type: 'expense',
+          budgetBehavior: 'count_as_spending',
+        },
+        {
+          id: 'budgeted_spend',
+          amount: 25,
+          date: '2026-05-10',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          budgetBehavior: 'count_as_spending',
+        },
+      ],
+      budgetRules: [
+        { categoryId: 'cat_groceries', month: '2026-05', amount: 100 },
+        { categoryId: 'cat_excluded', month: '2026-05', amount: 999 },
+      ],
+    })
+  )
+
+  assert.deepEqual(
+    result.categories.map((category) => category.categoryId),
+    ['cat_groceries']
+  )
+  assert.equal(result.totalBaseBudget, 100)
+  assert.equal(result.totalActualSpend, 25)
 })
 
 test('pending transaction excluded by default', () => {

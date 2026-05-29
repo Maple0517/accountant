@@ -3,7 +3,7 @@ import { DEFAULT_CATEGORIES } from '@/lib/categories'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
 import {
   getBudgetDate,
-  getTransactionSemanticAmounts,
+  getBudgetSemanticAmounts,
 } from '@/lib/transactions/effective'
 import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
 
@@ -12,6 +12,7 @@ type AnalyticsCategoryRelation = {
   name_zh?: string | null
   icon?: string | null
   color?: string | null
+  is_excluded_from_budget?: boolean | null
 }
 
 type AnalyticsTransactionRow = {
@@ -77,6 +78,13 @@ function normalizeCategoryDisplay(
   }
 }
 
+function isExcludedBudgetCategory(
+  category: AnalyticsTransactionRow['categories']
+) {
+  const cat = Array.isArray(category) ? category[0] : category
+  return cat?.is_excluded_from_budget === true
+}
+
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
@@ -87,7 +95,7 @@ export async function getAnalyticsSummary(
   const selectedCurrency = normalizeCurrencyCode(currencyCode)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, iso_currency_code, date, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color )')
+    .select('amount, iso_currency_code, date, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, budget_behavior, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color, is_excluded_from_budget )')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .eq('is_hidden_from_reports', false)
@@ -117,7 +125,10 @@ export async function getAnalyticsSummary(
       continue
     }
 
-    const semanticAmounts = getTransactionSemanticAmounts(tx)
+    const semanticAmounts = getBudgetSemanticAmounts({
+      ...tx,
+      category_is_excluded_from_budget: isExcludedBudgetCategory(tx.categories),
+    })
 
     totalSpending += semanticAmounts.netSpending
     totalIncome += semanticAmounts.income
@@ -139,16 +150,20 @@ export async function getAnalyticsSummary(
 
     const budgetDate = getBudgetDate(tx)
     const monthKey = budgetDate.substring(0, 7)
-    const monthData = monthMap.get(monthKey) || {
-      spending: 0,
-      income: 0,
+    if (semanticAmounts.netSpending !== 0 || semanticAmounts.income !== 0) {
+      const monthData = monthMap.get(monthKey) || {
+        spending: 0,
+        income: 0,
+      }
+      monthData.spending += semanticAmounts.netSpending
+      monthData.income += semanticAmounts.income
+      monthMap.set(monthKey, monthData)
     }
-    monthData.spending += semanticAmounts.netSpending
-    monthData.income += semanticAmounts.income
-    monthMap.set(monthKey, monthData)
 
-    const dayData = dayMap.get(budgetDate) || 0
-    dayMap.set(budgetDate, dayData + semanticAmounts.netSpending)
+    if (semanticAmounts.netSpending !== 0) {
+      const dayData = dayMap.get(budgetDate) || 0
+      dayMap.set(budgetDate, dayData + semanticAmounts.netSpending)
+    }
   }
 
   return {

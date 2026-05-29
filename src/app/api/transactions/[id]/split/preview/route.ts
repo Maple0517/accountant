@@ -81,7 +81,36 @@ export async function POST(
       return Response.json(mapped.body, { status: mapped.status })
     }
 
-    const preview = buildSplitPreview(parent, parsed.value.children)
+    const categoryIds = Array.from(
+      new Set(
+        parsed.value.children
+          .map((child) => child.category_id)
+          .filter((categoryId): categoryId is string => categoryId != null)
+      )
+    )
+    const excludedCategoryIds = new Set<string>()
+
+    if (categoryIds.length > 0) {
+      const { data: categories, error: categoryError } = await supabase
+        .from('categories')
+        .select('id, is_excluded_from_budget')
+        .eq('user_id', user.id)
+        .in('id', categoryIds)
+
+      if (categoryError) {
+        throw new Error(`Failed to load split preview categories: ${categoryError.message}`)
+      }
+
+      for (const category of categories ?? []) {
+        if (category.is_excluded_from_budget === true) {
+          excludedCategoryIds.add(category.id)
+        }
+      }
+    }
+
+    const preview = buildSplitPreview(parent, parsed.value.children, {
+      excludedCategoryIds,
+    })
     const signIssues = validateCanonicalSplitSigns(
       String(parent.amount),
       parsed.value.children

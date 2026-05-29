@@ -20,6 +20,10 @@ export type DashboardMonthTransaction = {
   budget_effective_date?: string | null
   date: string
   transfer_match_status?: string | null
+  categories?:
+    | { is_excluded_from_budget?: boolean | null }
+    | { is_excluded_from_budget?: boolean | null }[]
+    | null
 }
 
 export type DashboardRecentTransaction = {

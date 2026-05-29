@@ -6,6 +6,7 @@ export type EffectiveTransactionFields = {
   budget_effective_date?: string | null
   effective_date?: string | null
   budget_behavior?: BudgetBehavior | string | null
+  category_is_excluded_from_budget?: boolean | null
   deleted_at?: string | null
   is_hidden_from_reports?: boolean | null
   split_role?: TransactionSplitRole | string | null
@@ -105,3 +106,15 @@ export function getTransactionSemanticAmounts(
   return { netSpending: 0, income: 0, categoryNetSpend: 0 }
 }
 
+export function getBudgetSemanticAmounts(
+  tx: Pick<
+    EffectiveTransactionFields,
+    'amount' | 'budget_behavior' | 'category_is_excluded_from_budget'
+  >
+): TransactionSemanticAmounts {
+  if (tx.category_is_excluded_from_budget === true) {
+    return { netSpending: 0, income: 0, categoryNetSpend: 0 }
+  }
+
+  return getTransactionSemanticAmounts(tx)
+}

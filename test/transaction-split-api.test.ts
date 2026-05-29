@@ -133,6 +133,45 @@ test('buildSplitPreview returns decimal-string balance and monthly impact', () =
   )
 })
 
+test('buildSplitPreview excludes category-level budget exclusions from budget impact', () => {
+  const preview = buildSplitPreview(
+    {
+      amount: 100,
+      date: '2026-05-10',
+      budget_effective_date: null,
+      effective_date: '2026-05-10',
+      budget_behavior: 'count_as_spending',
+    },
+    [
+      {
+        amount_decimal: '60',
+        category_id: '11111111-1111-1111-1111-111111111111',
+        allocation_date: '2026-05-10',
+        transaction_kind: 'normal',
+        budget_behavior: 'count_as_spending',
+      },
+      {
+        amount_decimal: '40',
+        category_id: '22222222-2222-2222-2222-222222222222',
+        allocation_date: '2026-05-10',
+        transaction_kind: 'normal',
+        budget_behavior: 'count_as_spending',
+      },
+    ],
+    {
+      excludedCategoryIds: new Set(['22222222-2222-2222-2222-222222222222']),
+    }
+  )
+
+  assert.equal(preview.budgetImpactByMonth[0].netSpendingDeltaDecimal, '60')
+  assert.deepEqual(preview.budgetImpactByMonth[0].categories, [
+    {
+      categoryId: '11111111-1111-1111-1111-111111111111',
+      amountDecimal: '60',
+    },
+  ])
+})
+
 test('validateCanonicalSplitSigns rejects opposite-sign children', () => {
   assert.deepEqual(
     validateCanonicalSplitSigns('100', [

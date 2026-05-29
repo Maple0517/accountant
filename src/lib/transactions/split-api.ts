@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { getTransactionSemanticAmounts } from '@/lib/transactions/effective'
+import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import type {
   BudgetBehavior,
   Transaction,
@@ -180,7 +180,8 @@ export function validateCanonicalSplitSigns(
 
 export function buildSplitPreview(
   parent: Pick<Transaction, 'amount' | 'budget_behavior' | 'budget_effective_date' | 'effective_date' | 'date'>,
-  children: SplitChildInput[]
+  children: SplitChildInput[],
+  options: { excludedCategoryIds?: Set<string> } = {}
 ): SplitPreviewResponse {
   const parentAmount = decimalToMinor(String(parent.amount))
   const childAmountSum = children.reduce(
@@ -212,16 +213,25 @@ export function buildSplitPreview(
         netSpending: 0,
         income: 0,
         categories: new Map<string, number>(),
-      }
+    }
     const amount = decimalToMinor(child.amount_decimal)
-    const semanticAmounts = getTransactionSemanticAmounts({
+    const semanticAmounts = getBudgetSemanticAmounts({
       amount: amount / 10000,
       budget_behavior: child.budget_behavior,
+      category_is_excluded_from_budget:
+        child.category_id != null &&
+        options.excludedCategoryIds?.has(child.category_id) === true,
     })
     const categoryKey = child.category_id ?? ''
     bucket.netSpending += decimalToMinor(String(semanticAmounts.netSpending))
     bucket.income += decimalToMinor(String(semanticAmounts.income))
-    bucket.categories.set(categoryKey, (bucket.categories.get(categoryKey) || 0) + amount)
+    const categoryImpact = decimalToMinor(String(semanticAmounts.categoryNetSpend))
+    if (categoryImpact !== 0) {
+      bucket.categories.set(
+        categoryKey,
+        (bucket.categories.get(categoryKey) || 0) + categoryImpact
+      )
+    }
     monthMap.set(month, bucket)
   }
 
