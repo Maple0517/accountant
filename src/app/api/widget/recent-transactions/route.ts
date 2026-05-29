@@ -42,6 +42,10 @@ type WidgetCategoryRelation = {
   is_excluded_from_budget?: boolean | null
 }
 
+type WidgetPlaidItemSyncRow = {
+  last_synced_at?: string | null
+}
+
 type WidgetTransactionRow = {
   id: string
   amount: number
@@ -85,6 +89,7 @@ type WidgetTransaction = {
 
 export type WidgetRecentTransactionsResponse = {
   updatedAt: string
+  lastSyncedAt: string | null
   count: number
   transactions: WidgetTransaction[]
 }
@@ -103,17 +108,30 @@ export async function GET(request: Request) {
     const limit = parseLimit(searchParams.get('limit'))
     const supabase = createAdminClient()
 
-    const { data, error } = await supabase
-      .from('transactions')
-      .select(WIDGET_TRANSACTION_SELECT)
-      .eq('user_id', auth.userId)
-      .is('deleted_at', null)
-      .eq('is_hidden_from_reports', false)
-      .neq('split_role', 'parent')
-      .order('effective_date', { ascending: false })
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(0, limit - 1)
+    const [transactionsResult, syncResult] = await Promise.all([
+      supabase
+        .from('transactions')
+        .select(WIDGET_TRANSACTION_SELECT)
+        .eq('user_id', auth.userId)
+        .is('deleted_at', null)
+        .eq('is_hidden_from_reports', false)
+        .neq('split_role', 'parent')
+        .order('effective_date', { ascending: false })
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .range(0, limit - 1),
+      supabase
+        .from('plaid_items')
+        .select('last_synced_at')
+        .eq('user_id', auth.userId)
+        .eq('status', 'active')
+        .not('last_synced_at', 'is', null)
+        .order('last_synced_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    const { data, error } = transactionsResult
 
     if (error) {
       console.error('Error fetching widget transactions:', error)
@@ -123,9 +141,17 @@ export async function GET(request: Request) {
       )
     }
 
+    if (syncResult.error) {
+      console.warn('Failed to fetch widget sync timestamp:', syncResult.error)
+    }
+
     const transactions = ((data || []) as WidgetTransactionRow[]).map(toWidgetTransaction)
+    const latestSync = syncResult.error
+      ? null
+      : ((syncResult.data as WidgetPlaidItemSyncRow | null)?.last_synced_at ?? null)
     const response: WidgetRecentTransactionsResponse = {
       updatedAt: new Date().toISOString(),
+      lastSyncedAt: latestSync,
       count: transactions.length,
       transactions,
     }

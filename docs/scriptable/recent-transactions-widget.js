@@ -98,7 +98,10 @@ function renderWidget(widget, payload) {
 
   widget.addSpacer()
 
-  const footer = widget.addText(`Updated ${formatRelativeTime(payload.updatedAt)}`)
+  const footerLabel = payload.lastSyncedAt
+    ? `Synced ${formatRelativeTime(payload.lastSyncedAt)}`
+    : `Updated ${formatRelativeTime(payload.updatedAt)}`
+  const footer = widget.addText(footerLabel)
   footer.font = Font.systemFont(9)
   footer.textColor = COLORS.muted
   footer.lineLimit = 1
