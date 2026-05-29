@@ -40,6 +40,15 @@ test('adapter keeps ordinary expense categories in budget', () => {
   assert.equal(category.isExcludedFromBudget, false)
 })
 
+test('adapter normalizes default category names for localized stored rows', () => {
+  const [category] = adaptCategories([
+    makeCategory({ name: '订阅' }),
+  ])
+
+  assert.equal(category.name, 'Subscriptions')
+  assert.equal(category.nameZh, '订阅')
+})
+
 test('adapter excludes category marked is_excluded_from_budget', () => {
   const [category] = adaptCategories([
     makeCategory({

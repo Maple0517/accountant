@@ -438,7 +438,7 @@ function BudgetCategoryRow({
     }
   }, [isEditing])
 
-  const remainingColor = cat.remaining < 0 ? 'var(--expense)' : 'var(--text-primary)'
+  const showRemaining = hasBudget && cat.baseBudget > 0
 
   return (
     <div className="budget-risk-row budget-category-row">
@@ -506,11 +506,11 @@ function BudgetCategoryRow({
         )}
       </div>
       <div className="budget-category-progress-cell">
-        <span className="budget-cell-value" style={{ color: remainingColor }}>
-          {hasBudget && cat.baseBudget > 0
+        <Badge tone={tone}>
+          {showRemaining
             ? t('dashboard.left', { amount: formatCurrency(cat.remaining, currencyCode) })
             : t('budgets.notConfigured')}
-        </span>
+        </Badge>
         <div style={{ marginTop: '0.45rem' }}>
           <ProgressBar
             value={cat.percentUsed}

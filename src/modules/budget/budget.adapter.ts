@@ -6,6 +6,7 @@
 // ============================================================
 
 import type { Category, Transaction, Budget, Profile } from '@/types';
+import { DEFAULT_CATEGORIES } from '@/lib/categories';
 import { getBudgetDate } from '@/lib/transactions/refunds';
 import type {
   BudgetCategoryInput,
@@ -23,16 +24,25 @@ import type {
  * - `groupId` is always null (no group concept in the DB yet).
  */
 export function adaptCategories(rows: Category[]): BudgetCategoryInput[] {
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    nameZh: row.name_zh ?? null,
-    groupId: null,
-    type: row.type,
-    isExcludedFromBudget:
-      row.type !== 'expense' || row.is_excluded_from_budget === true,
-    sortOrder: row.sort_order,
-  }));
+  return rows.map((row) => {
+    const canonical = DEFAULT_CATEGORIES.find((defaultCategory) =>
+      defaultCategory.name === row.name ||
+      defaultCategory.name_zh === row.name ||
+      defaultCategory.name === row.name_zh ||
+      defaultCategory.name_zh === row.name_zh
+    )
+
+    return {
+      id: row.id,
+      name: canonical?.name || row.name,
+      nameZh: canonical?.name_zh || (row.name_zh ?? null),
+      groupId: null,
+      type: row.type,
+      isExcludedFromBudget:
+        row.type !== 'expense' || row.is_excluded_from_budget === true,
+      sortOrder: row.sort_order,
+    }
+  });
 }
 
 /**

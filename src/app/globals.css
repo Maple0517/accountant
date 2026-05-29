@@ -442,7 +442,7 @@ a {
 .review-inbox-item { min-height: 4.85rem; }
 .tx-merchant-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0; }
 .review-count-row strong, .budget-risk-row strong { color: var(--text-primary); }
-.review-count-row span, .budget-risk-row span { color: var(--text-secondary); font-size: 0.84rem; }
+.review-count-row span:not(.badge), .budget-risk-row span:not(.badge) { color: var(--text-secondary); font-size: 0.84rem; }
 .trend-bars { display: flex; align-items: end; gap: 0.45rem; height: 14rem; padding: 1rem 1.25rem 1.25rem; }
 .trend-bar-wrap { flex: 1; min-width: 0; display: flex; height: 100%; align-items: end; }
 .trend-bar { width: 100%; min-height: 0.25rem; border-radius: 999px 999px 0 0; background: linear-gradient(180deg, #9c87ff, var(--accent)); }
@@ -684,7 +684,8 @@ a {
 .budget-edit-input { max-width: 7rem; min-height: 2rem; padding: 0.35rem 0.55rem; font-family: var(--font-mono); }
 .budget-edit-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.5rem; }
 .budget-category-edit-cell { display: flex; justify-content: flex-end; }
-.budget-category-progress-cell { min-width: 0; }
+.budget-category-progress-cell { min-width: 0; justify-self: stretch; text-align: right; }
+.budget-category-progress-cell .badge { justify-self: end; }
 .budget-category-progress-cell .budget-cell-value { text-align: right; }
 .budget-note { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.75rem; }
 .budget-detail-panel { width: min(100vw, 520px); }
