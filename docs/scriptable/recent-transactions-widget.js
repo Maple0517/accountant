@@ -7,6 +7,8 @@ const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
 const ROW_HEIGHT = 36
 const ROW_GAP = 5
+const AMOUNT_WIDTH = 55
+const DOT_WIDTH = 7
 
 const COLORS = {
   bg: new Color("#050506"),
@@ -145,20 +147,31 @@ function addTransactionRow(widget, tx) {
   pillText.lineLimit = 1
   pillText.minimumScaleFactor = 0.8
 
-  row.addSpacer(5)
+  row.addSpacer()
 
-  const amount = row.addText(formatAmount(tx))
+  const amountStack = row.addStack()
+  amountStack.layoutHorizontally()
+  amountStack.size = new Size(AMOUNT_WIDTH, 16)
+
+  const amount = amountStack.addText(formatAmount(tx))
   amount.font = Font.semiboldSystemFont(11)
   amount.textColor = tx.isIncome ? COLORS.income : COLORS.expense
   amount.lineLimit = 1
   amount.rightAlignText()
   amount.minimumScaleFactor = 0.7
+  amountStack.addSpacer()
 
+  row.addSpacer(3)
+
+  const dotSlot = row.addStack()
+  dotSlot.size = new Size(DOT_WIDTH, 10)
+  dotSlot.layoutHorizontally()
   if (tx.pending) {
-    row.addSpacer(3)
-    const dot = row.addText("●")
+    const dot = dotSlot.addText("●")
     dot.font = Font.systemFont(7)
     dot.textColor = COLORS.pending
+  } else {
+    dotSlot.addSpacer()
   }
 }
 
