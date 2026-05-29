@@ -55,6 +55,10 @@ export default function AnalyticsPage() {
   const topDay = data?.byDay.reduce((max, day) => day.total > max.total ? day : max, { date: '', total: 0 })
   const net = data ? data.totalIncome - data.totalSpending : 0
   const currencyCode = data?.currencyCode || 'USD'
+  const categoryShareTotal = data?.categorySpendingTotal ?? data?.byCategory.reduce(
+    (sum, cat) => sum + Math.max(0, cat.total),
+    0
+  ) ?? 0
 
   return (
     <div className="analytics-page">
@@ -128,7 +132,8 @@ export default function AnalyticsPage() {
             </div>
             <div className="category-list">
               {data.byCategory.slice(0, 8).map((cat) => {
-                const percentage = data.totalSpending > 0 ? (cat.total / data.totalSpending) * 100 : 0
+                const displayTotal = Math.max(0, cat.total)
+                const percentage = categoryShareTotal > 0 ? (displayTotal / categoryShareTotal) * 100 : 0
                 return (
                   <div key={cat.name} className="category-item">
                     <div className="cat-info">
@@ -136,7 +141,7 @@ export default function AnalyticsPage() {
                       <span className="cat-name">{categoryName(cat)}</span>
                     </div>
                     <div className="cat-bar-wrapper">
-                      <div className="cat-bar" style={{ width: `${Math.min(Math.abs(percentage), 100)}%`, backgroundColor: cat.color || '#7c5cff' }} />
+                      <div className="cat-bar" style={{ width: `${Math.min(percentage, 100)}%`, backgroundColor: cat.color || '#7c5cff' }} />
                     </div>
                     <div className="cat-amount">
                       <span className="cat-value">{formatCurrency(cat.total, currencyCode)}</span>

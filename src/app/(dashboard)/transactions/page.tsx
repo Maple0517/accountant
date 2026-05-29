@@ -1656,6 +1656,108 @@ const TransactionItem = memo(function TransactionItem({
     pushMetaPart(t('common.notTransfer'))
   }
   const metaText = metaParts.join(' · ')
+  const hasAutomaticClassificationTag =
+    tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
+  const hasRefundReview =
+    tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement'
+  const hasTransferReview =
+    tx.transaction_kind === 'transfer' &&
+    (!tx.transfer_match_status ||
+      tx.transfer_match_status === 'unmatched' ||
+      tx.transfer_match_status === 'suggested')
+  const reviewActions = [
+    !tx.category_id || hasAutomaticClassificationTag
+      ? {
+          key: 'category',
+          title: !tx.category_id
+            ? t('transactions.reviewCategoryTitle')
+            : t('transactions.reviewAiTitle'),
+          copy: !tx.category_id
+            ? t('transactions.reviewCategoryCopy')
+            : t('transactions.reviewAiCopy'),
+          actions:
+            tx.category_id && hasAutomaticClassificationTag
+              ? [
+                  {
+                    label: t('transactions.confirmCategory'),
+                    variant: 'primary',
+                    onClick: () => {
+                      if (tx.category_id) onSaveCategory(tx.id, tx.category_id)
+                    },
+                    disabled: isSaving,
+                  },
+                ]
+              : [],
+        }
+      : null,
+    hasTransferReview
+      ? {
+          key: 'transfer',
+          title: t('transactions.reviewTransferTitle'),
+          copy: tx.transfer_match_reason || t('transactions.reviewTransferCopy'),
+          actions: [
+            {
+              label: t('transactions.confirmTransfer'),
+              variant: 'primary',
+              onClick: () =>
+                onSaveSemantics(tx.id, {
+                  transfer_match_status: 'manually_matched',
+                }),
+              disabled: isSaving,
+            },
+            {
+              label: t('transactions.notTransfer'),
+              variant: 'ghost',
+              onClick: () =>
+                onSaveSemantics(tx.id, {
+                  transaction_kind: 'normal',
+                  transfer_match_status: 'ignored',
+                  budget_behavior: 'count_as_spending',
+                }),
+              disabled: isSaving,
+            },
+          ],
+        }
+      : null,
+    hasRefundReview
+      ? {
+          key: 'refund',
+          title: t('transactions.reviewRefundTitle'),
+          copy: tx.linked_transaction_id
+            ? t('transactions.reviewRefundLinkedCopy')
+            : t('transactions.reviewRefundCopy'),
+          actions: [
+            {
+              label: t('transactions.notRefund'),
+              variant: 'ghost',
+              onClick: () =>
+                onSaveRefundMetadata(tx.id, {
+                  transaction_kind: 'normal',
+                }),
+              disabled: isSaving,
+            },
+          ],
+        }
+      : null,
+    tx.pending
+      ? {
+          key: 'pending',
+          title: t('transactions.reviewPendingTitle'),
+          copy: t('transactions.reviewPendingCopy'),
+          actions: [],
+        }
+      : null,
+  ].filter(Boolean) as Array<{
+    key: string
+    title: string
+    copy: string
+    actions: Array<{
+      label: string
+      variant: 'primary' | 'ghost'
+      onClick: () => void
+      disabled: boolean
+    }>
+  }>
 
   return (
     <div className={`transaction-item ${detailMode ? 'transaction-item-detail' : ''}`}>
@@ -1711,6 +1813,39 @@ const TransactionItem = memo(function TransactionItem({
           {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
         </div>
       </div>
+      {detailMode && reviewActions.length > 0 && (
+        <div className="review-action-panel">
+          <div className="review-action-panel-header">
+            <span>{t('transactions.recommendedActions')}</span>
+            {isSaving && <span>{t('common.saving')}</span>}
+          </div>
+          <div className="review-action-list">
+            {reviewActions.map((action) => (
+              <div key={action.key} className="review-action-item">
+                <div className="review-action-copy">
+                  <strong>{action.title}</strong>
+                  <span>{action.copy}</span>
+                </div>
+                {action.actions.length > 0 && (
+                  <div className="review-action-buttons">
+                    {action.actions.map((button) => (
+                      <button
+                        key={button.label}
+                        type="button"
+                        className={`btn btn-sm ${button.variant === 'primary' ? 'btn-primary' : 'btn-ghost'}`}
+                        disabled={button.disabled}
+                        onClick={button.onClick}
+                      >
+                        {button.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {isEditing && (
         <div className="tx-category-popover">
           <div className="tx-category-popover-header">

@@ -95,6 +95,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
 
   assert.equal(summary.totalSpending, 22)
   assert.equal(summary.totalIncome, 100)
+  assert.equal(summary.categorySpendingTotal, 22)
   assert.deepEqual(summary.byCategory, [
     { name: 'Food & Drink', name_zh: '餐饮美食', icon: '🍔', color: '#ff9800', total: 17 },
     { name: 'Subscriptions', name_zh: '订阅', icon: '💻', color: '#ef5350', total: 5 },
@@ -164,6 +165,7 @@ test('getAnalyticsSummary ignores excluded budget categories even with stale spe
   const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD')
 
   assert.equal(summary.totalSpending, 25)
+  assert.equal(summary.categorySpendingTotal, 25)
   assert.deepEqual(summary.byCategory, [
     { name: 'Food', name_zh: null, icon: '🍔', color: '#ff9800', total: 25 },
   ])
@@ -240,4 +242,63 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
   assert.equal(cnySummary.currencyCode, 'CNY')
   assert.equal(cnySummary.totalSpending, 30)
   assert.equal(cnySummary.totalIncome, 0)
+})
+
+test('getAnalyticsSummary reports positive category total for spending share denominator', async () => {
+  const rows = [
+    {
+      amount: 100,
+      iso_currency_code: 'USD',
+      date: '2026-05-01',
+      budget_behavior: 'count_as_spending',
+      budget_effective_date: null,
+      transaction_kind: 'normal',
+      category_id: 'food',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: -90,
+      iso_currency_code: 'USD',
+      date: '2026-05-02',
+      budget_behavior: 'count_as_spending',
+      budget_effective_date: null,
+      transaction_kind: 'refund',
+      category_id: 'shopping',
+      categories: { name: 'Shopping', icon: '🛍️', color: '#e91e63' },
+    },
+  ]
+  const supabase = {
+    from() {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        order() {
+          return Promise.resolve({ data: rows, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD')
+
+  assert.equal(summary.totalSpending, 10)
+  assert.equal(summary.categorySpendingTotal, 100)
+  assert.deepEqual(summary.byCategory, [
+    { name: 'Food', name_zh: null, icon: '🍔', color: '#ff9800', total: 100 },
+    { name: 'Shopping', name_zh: '购物消费', icon: '🛍️', color: '#e91e63', total: -90 },
+  ])
 })

@@ -48,14 +48,15 @@ export default function AnalyticsCharts({
   currencyCode?: string
 }) {
   const { categoryName, locale, t } = useI18n()
+  const positiveCategories = data.byCategory.filter((category) => category.total > 0)
 
   const categoryData = {
-    labels: data.byCategory.map((c) => `${c.icon} ${categoryName(c)}`),
+    labels: positiveCategories.map((c) => `${c.icon} ${categoryName(c)}`),
     datasets: [
       {
         label: t('analytics.spending'),
-        data: data.byCategory.map((c) => c.total),
-        backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'),
+        data: positiveCategories.map((c) => c.total),
+        backgroundColor: positiveCategories.map((c) => c.color || '#7c5cff'),
         borderRadius: 8,
         borderSkipped: false,
       },
@@ -135,8 +136,8 @@ export default function AnalyticsCharts({
   }
 
   const donutData = {
-    labels: data.byCategory.map((c) => categoryName(c)),
-    datasets: [{ data: data.byCategory.map((c) => c.total), backgroundColor: data.byCategory.map((c) => c.color || '#7c5cff'), borderWidth: 0, spacing: 2 }],
+    labels: positiveCategories.map((c) => categoryName(c)),
+    datasets: [{ data: positiveCategories.map((c) => c.total), backgroundColor: positiveCategories.map((c) => c.color || '#7c5cff'), borderWidth: 0, spacing: 2 }],
   }
 
   const donutOptions = {

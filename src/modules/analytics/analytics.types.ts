@@ -5,6 +5,7 @@ export type AnalyticsData = {
   totalIncome: number
   currencyCode: string
   availableCurrencies?: string[]
+  categorySpendingTotal: number
   byCategory: Array<{ name: string; name_zh?: string | null; icon: string; color: string; total: number }>
   byMonth: Array<{ month: string; spending: number; income: number }>
   byDay: Array<{ date: string; total: number }>

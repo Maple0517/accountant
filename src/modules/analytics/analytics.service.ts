@@ -171,6 +171,10 @@ export async function getAnalyticsSummary(
     totalIncome,
     currencyCode: selectedCurrency,
     availableCurrencies: Array.from(availableCurrencies),
+    categorySpendingTotal: Array.from(categoryMap.values()).reduce(
+      (sum, category) => sum + Math.max(0, category.total),
+      0
+    ),
     byCategory: Array.from(categoryMap.values()).sort(
       (a, b) => b.total - a.total
     ),

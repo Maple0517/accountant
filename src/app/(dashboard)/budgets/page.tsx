@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
+import { Drawer } from '@/components/ui/Drawer'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { formatCurrency } from '@/lib/currency'
@@ -119,6 +120,7 @@ export default function BudgetsPage() {
   const error = swrError?.message || null
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState<string>('')
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -145,7 +147,6 @@ export default function BudgetsPage() {
     const amount = parseFloat(editValue)
     if (isNaN(amount) || amount < 0) {
       setSaveError(t('budgets.nonNegative'))
-      cancelEdit()
       return
     }
 
@@ -185,7 +186,15 @@ export default function BudgetsPage() {
     }
   }
 
+  function openCategoryDetail(categoryId: string) {
+    setSelectedCategoryId(categoryId)
+  }
+
   const visibleCategories = summary?.categories ?? []
+  const selectedCategory =
+    selectedCategoryId
+      ? visibleCategories.find((category) => category.categoryId === selectedCategoryId) ?? null
+      : null
   const health = getHealth(summary)
   const groupedCategories = {
     over: visibleCategories.filter((category) => category.status === 'over'),
@@ -338,9 +347,13 @@ export default function BudgetsPage() {
                                 })}
                               </span>
                               <span className="budget-note" style={{ display: 'block' }}>
-                                <Link className="subtle-link" href={categoryHref}>
-                                  {t('review.openTransactions')}
-                                </Link>
+                                <button
+                                  type="button"
+                                  className="subtle-button"
+                                  onClick={() => openCategoryDetail(category.categoryId)}
+                                >
+                                  {t('common.details')}
+                                </button>
                               </span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -387,6 +400,8 @@ export default function BudgetsPage() {
                   onEditChange={(v) => setEditValue(v)}
                   onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
                   onCommit={() => commitEdit(cat.categoryId)}
+                  onCancelEdit={cancelEdit}
+                  onOpenDetails={() => openCategoryDetail(cat.categoryId)}
                   onAmountAria={t('budgets.amountAria')}
                   displayCategoryName={categoryName({
                     name: cat.categoryName,
@@ -400,6 +415,31 @@ export default function BudgetsPage() {
               ))}
             </Card>
           )}
+          <Drawer
+            open={Boolean(selectedCategory)}
+            title={selectedCategory ? categoryName({
+              name: selectedCategory.categoryName,
+              name_zh: selectedCategory.categoryNameZh,
+            }) : t('common.details')}
+            onClose={() => setSelectedCategoryId(null)}
+            className="budget-detail-panel"
+          >
+            {selectedCategory && (
+              <BudgetCategoryDetail
+                category={selectedCategory}
+                currencyCode={summary.currencyCode}
+                categoryHref={buildCategoryLink(
+                  selectedCategory.categoryId,
+                  selectedCategory.categoryName
+                )}
+                displayCategoryName={categoryName({
+                  name: selectedCategory.categoryName,
+                  name_zh: selectedCategory.categoryNameZh,
+                })}
+                t={t}
+              />
+            )}
+          </Drawer>
         </>
       )}
     </div>
@@ -415,6 +455,8 @@ type CategoryRowProps = {
   onEditChange: (v: string) => void
   onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
   onCommit: () => void
+  onCancelEdit: () => void
+  onOpenDetails: () => void
   onAmountAria: string
   displayCategoryName: string
   editActionLabel: string
@@ -432,6 +474,8 @@ function CategoryRow({
   onEditChange,
   onEditKeyDown,
   onCommit,
+  onCancelEdit,
+  onOpenDetails,
   onAmountAria,
   displayCategoryName,
   editActionLabel,
@@ -454,7 +498,13 @@ function CategoryRow({
   return (
     <div className="budget-row">
       <div>
-        <span className="budget-category-name">{displayCategoryName}</span>
+        <button
+          type="button"
+          className="budget-category-button"
+          onClick={onOpenDetails}
+        >
+          {displayCategoryName}
+        </button>
         <span className="budget-note" style={{ display: 'block' }}>
           <Link className="subtle-link" href={categoryHref}>
             {t('review.openTransactions')}
@@ -469,15 +519,34 @@ function CategoryRow({
       <div>
         <span className="budget-cell-label">{t('budgets.budget')}</span>
         {isEditing ? (
-          <EditInput
-            ref={inputRef}
-            value={editValue}
-            disabled={saving}
-            onChange={(e) => onEditChange(e.target.value)}
-            onKeyDown={onEditKeyDown}
-            onBlur={onCommit}
-            ariaLabel={onAmountAria}
-          />
+          <div>
+            <EditInput
+              ref={inputRef}
+              value={editValue}
+              disabled={saving}
+              onChange={(e) => onEditChange(e.target.value)}
+              onKeyDown={onEditKeyDown}
+              ariaLabel={onAmountAria}
+            />
+            <div className="budget-edit-actions">
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={saving}
+                onClick={onCommit}
+              >
+                {saving ? t('common.saving') : t('budgets.saveBudget')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={saving}
+                onClick={onCancelEdit}
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
         ) : (
           <button
             className="budget-edit-button"
@@ -524,10 +593,9 @@ const EditInput = forwardRef<
     disabled: boolean
     onChange: React.ChangeEventHandler<HTMLInputElement>
     onKeyDown: React.KeyboardEventHandler<HTMLInputElement>
-    onBlur: React.FocusEventHandler<HTMLInputElement>
     ariaLabel: string
   }
->(function EditInput({ value, disabled, onChange, onKeyDown, onBlur, ariaLabel }, ref) {
+>(function EditInput({ value, disabled, onChange, onKeyDown, ariaLabel }, ref) {
   return (
     <input
       ref={ref}
@@ -539,8 +607,79 @@ const EditInput = forwardRef<
       aria-label={ariaLabel}
       onChange={onChange}
       onKeyDown={onKeyDown}
-      onBlur={onBlur}
       className="input budget-edit-input"
     />
   )
 })
+
+function BudgetCategoryDetail({
+  category,
+  currencyCode,
+  categoryHref,
+  displayCategoryName,
+  t,
+}: {
+  category: CategoryBudgetSummary
+  currencyCode: string
+  categoryHref: string
+  displayCategoryName: string
+  t: (key: string, params?: Record<string, string | number>) => string
+}) {
+  const tone = getStatusTone(category.status)
+
+  return (
+    <div className="budget-detail-content">
+      <div className="budget-detail-hero">
+        <Badge tone={tone}>{category.status.replace('_', ' ')}</Badge>
+        <strong>
+          {category.percentUsed === null
+            ? t('budgets.notConfigured')
+            : t('budgets.used', { percent: Math.round(category.percentUsed * 100) })}
+        </strong>
+        <ProgressBar
+          value={category.percentUsed}
+          tone={tone}
+          label={t('budgets.categoryProgress', { category: displayCategoryName })}
+        />
+      </div>
+      <div className="budget-detail-metrics">
+        <div>
+          <span className="metric-label">{t('budgets.budget')}</span>
+          <span className="metric-value">
+            {formatCurrency(category.baseBudget, currencyCode)}
+          </span>
+        </div>
+        <div>
+          <span className="metric-label">{t('budgets.spent')}</span>
+          <span className="metric-value">
+            {formatCurrency(category.actualSpend, currencyCode)}
+          </span>
+        </div>
+        <div>
+          <span className="metric-label">{t('budgets.left')}</span>
+          <span
+            className="metric-value"
+            style={{ color: category.remaining < 0 ? 'var(--expense)' : 'var(--income)' }}
+          >
+            {formatCurrency(category.remaining, currencyCode)}
+          </span>
+        </div>
+      </div>
+      <div className="drawer-section">
+        <h3>{t('budgets.nextAction')}</h3>
+        <p className="drawer-copy">
+          {category.remaining < 0
+            ? t('budgets.detailOverCopy', {
+                amount: formatCurrency(Math.abs(category.remaining), currencyCode),
+              })
+            : category.baseBudget <= 0
+              ? t('budgets.detailNoBudgetCopy')
+              : t('budgets.detailSafeCopy')}
+        </p>
+        <Link className="btn btn-primary btn-md" href={categoryHref}>
+          {t('review.openTransactions')}
+        </Link>
+      </div>
+    </div>
+  )
+}
