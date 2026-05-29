@@ -6,11 +6,11 @@ const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
 const CONTENT_WIDTH = 302
-const LIST_WIDTH = 292
+const LIST_WIDTH = CONTENT_WIDTH
 const ROW_HEIGHT = 35
-const LEFT_WIDTH = 123
+const LEFT_WIDTH = 127
 const PILL_WIDTH = 66
-const AMOUNT_WIDTH = 68
+const AMOUNT_WIDTH = 72
 const DOT_WIDTH = 8
 
 const COLORS = {
