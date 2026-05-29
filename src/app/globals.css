@@ -540,9 +540,26 @@ a {
 
 /* Settings */
 .settings-grid { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: 1rem; align-items: start; }
+.settings-workspace { grid-template-columns: minmax(260px, 0.42fr) minmax(0, 1fr); gap: 1.15rem; }
+.settings-form-rail { position: sticky; top: 5.8rem; display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.settings-main-stack { display: flex; min-width: 0; flex-direction: column; gap: 1rem; }
 .settings-card { padding: 1.25rem; display: flex; flex-direction: column; }
+.settings-profile-card { background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012)); }
 .settings-card h2 { margin-bottom: 0.35rem; font-size: 1.05rem; font-weight: 760; }
 .settings-card-intro { margin-bottom: 1rem; color: var(--text-secondary); font-size: 0.86rem; }
+.settings-section-header { padding: 0 0 1rem; border: 0; border-bottom: 1px solid var(--border-subtle); margin-bottom: 1rem; align-items: flex-start; }
+.settings-section-header .settings-card-intro { margin-bottom: 0; }
+.settings-save-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: rgba(255,255,255,0.025);
+}
+.settings-save-panel .btn { width: 100%; }
+.settings-capture-card { overflow: hidden; }
 .toggle-label { display: flex; align-items: center; gap: 0.55rem; cursor: pointer; font-weight: 650; color: var(--text-primary); }
 .toggle-checkbox { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); }
 .api-key-reveal { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(32,201,151,0.24); border-radius: var(--radius-md); background: rgba(32,201,151,0.08); }
@@ -561,8 +578,37 @@ a {
 
 /* Budgets */
 .budget-health-card { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr); gap: 1.25rem; align-items: center; }
+.budget-health-card-prominent {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(124,92,255,0.12), transparent 22rem),
+    linear-gradient(135deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+.budget-health-card-prominent::after {
+  content: '';
+  position: absolute;
+  inset: auto 1.5rem 1.35rem 1.5rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  pointer-events: none;
+}
 .budget-health-status { display: flex; flex-direction: column; gap: 0.35rem; }
 .budget-health-status strong { font-size: 1.6rem; letter-spacing: -0.04em; }
+.budget-health-meter { min-width: 0; }
+.budget-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 0.95rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(8,10,15,0.42);
+}
+.budget-health-metrics .metric-value { display: block; margin-top: 0.25rem; font-size: clamp(1.15rem, 2vw, 1.55rem); }
+.budget-watch-card { background: rgba(255,255,255,0.018); }
+.budget-section-header { padding: 0; border: 0; margin-bottom: 0.85rem; }
 .budget-table { overflow: hidden; }
 .budget-row { display: grid; grid-template-columns: minmax(160px, 1fr) 130px 130px 130px minmax(160px, 0.8fr) 80px; gap: 1rem; align-items: center; padding: 0.95rem 1.15rem; border-bottom: 1px solid var(--border-subtle); }
 .budget-row:last-child { border-bottom: 0; }
@@ -577,6 +623,76 @@ a {
 .budget-note { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.75rem; }
 
 /* Transactions */
+.transactions-command-center {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(124,92,255,0.12), transparent 18rem),
+    linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.012));
+}
+.transactions-command-hero {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.52fr) minmax(0, 1fr);
+  gap: 0.95rem;
+  align-items: stretch;
+}
+.transactions-command-hero > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(124,92,255,0.22);
+  border-radius: var(--radius-md);
+  background: rgba(124,92,255,0.08);
+}
+.transactions-net-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.7rem;
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: clamp(1.45rem, 2.4vw, 2.05rem);
+  font-weight: 780;
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+.transactions-net-value span { min-width: 0; overflow-wrap: anywhere; }
+.transactions-command-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: rgba(8,10,15,0.38);
+}
+.transactions-command-stats span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.85rem 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-right: 1px solid var(--border-subtle);
+}
+.transactions-command-stats span:last-child { border-right: 0; }
+.transactions-command-stats b {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 1.35rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.transactions-saved-view-row { padding-top: 0.1rem; }
 .transactions-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
 .transactions-summary-grid > .card {
   display: flex;
@@ -615,6 +731,10 @@ a {
 }
 .saved-view-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .filters-bar { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.filters-bar .filter-group .input {
+  min-height: 2.75rem;
+  background: rgba(8,10,15,0.72);
+}
 .filter-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.6rem; }
 .view-toggle-row { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.84rem; }
 .segmented-control { display: inline-flex; align-items: center; padding: 0.18rem; border: 1px solid var(--border-subtle); border-radius: 999px; background: #0b0e14; }
@@ -730,6 +850,8 @@ a {
 
 @media (max-width: 1024px) {
   .dashboard-grid, .settings-grid, .budget-health-card { grid-template-columns: 1fr; }
+  .settings-form-rail { position: static; }
+  .transactions-command-hero { grid-template-columns: 1fr; }
   .budget-row { grid-template-columns: minmax(160px, 1fr) repeat(2, 120px); }
   .budget-row .budget-progress-cell, .budget-row .budget-actions-cell { grid-column: 1 / -1; }
 }
@@ -750,6 +872,10 @@ a {
     flex-direction: column;
     align-items: flex-start;
   }
+  .transactions-command-center { padding: 0.85rem; }
+  .transactions-command-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .transactions-command-stats span:nth-child(2) { border-right: 0; }
+  .transactions-command-stats span:nth-child(-n + 2) { border-bottom: 1px solid var(--border-subtle); }
   .tx-row-main { grid-template-columns: 2.35rem minmax(0, 1fr) minmax(4.8rem, auto); }
   .tx-row-actions { margin-left: 0; justify-content: flex-start; }
   .tx-category-pill { grid-column: 2 / 3; justify-self: start; width: auto; max-width: min(12rem, 100%); margin-top: 0.35rem; }
@@ -774,6 +900,9 @@ a {
 
 @media (max-width: 640px) {
   .stats-grid, .summary-grid, .dashboard-snapshot-grid, .account-health-grid, .insight-grid { grid-template-columns: 1fr; }
+  .budget-health-metrics { grid-template-columns: 1fr; }
+  .settings-section-header { flex-direction: column; align-items: flex-start; }
+  .settings-save-panel { padding: 0.9rem; }
   .group-header { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
   .group-summary { white-space: normal; }
   .api-key-actions, .api-key-reveal, .api-key-row, .inline-similar-suggestion { align-items: stretch; flex-direction: column; }

@@ -184,17 +184,17 @@ export default function BudgetsPage() {
 
       {!loading && !error && summary && (
         <>
-          <Card className="budget-health-card" padding="lg">
+          <Card className="budget-health-card budget-health-card-prominent" padding="lg">
             <div className="budget-health-status">
               <Badge tone={health.tone}>{t(health.labelKey)}</Badge>
               <strong>{summary.totalPercentUsed === null ? t('budgets.noPlanYet') : t('budgets.used', { percent: Math.round(summary.totalPercentUsed * 100) })}</strong>
               <p className="text-secondary">{t(health.copyKey)}</p>
             </div>
-            <div>
-              <div className="summary-grid" style={{ marginBottom: '1rem' }}>
-                <div><span className="metric-label">{t('budgets.totalBudget')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalBaseBudget, summary.currencyCode)}</span></div>
-                <div><span className="metric-label">{t('budgets.spent')}</span><span className="metric-value" style={{ display: 'block' }}>{formatCurrency(summary.totalActualSpend, summary.currencyCode)}</span></div>
-                <div><span className="metric-label">{t('budgets.remaining')}</span><span className="metric-value" style={{ display: 'block', color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining, summary.currencyCode)}</span></div>
+            <div className="budget-health-meter">
+              <div className="budget-health-metrics">
+                <div><span className="metric-label">{t('budgets.totalBudget')}</span><span className="metric-value">{formatCurrency(summary.totalBaseBudget, summary.currencyCode)}</span></div>
+                <div><span className="metric-label">{t('budgets.spent')}</span><span className="metric-value">{formatCurrency(summary.totalActualSpend, summary.currencyCode)}</span></div>
+                <div><span className="metric-label">{t('budgets.remaining')}</span><span className="metric-value" style={{ color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}>{formatCurrency(summary.totalRemaining, summary.currencyCode)}</span></div>
               </div>
               <ProgressBar value={summary.totalPercentUsed} tone={health.tone} label={t('budgets.monthlyProgress')} />
               {summary.totalRemaining < 0 && <p className="budget-note">{t('budgets.negativeRemaining')}</p>}
@@ -202,8 +202,8 @@ export default function BudgetsPage() {
           </Card>
 
           {riskyCategories.length > 0 && (
-            <Card padding="md">
-              <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '0.8rem' }}>
+            <Card className="budget-watch-card" padding="md">
+              <div className="card-header budget-section-header">
                 <div>
                   <h3>{t('budgets.categoriesToWatch')}</h3>
                   <p className="card-subtitle">{t('budgets.categoriesToWatchSubtitle')}</p>

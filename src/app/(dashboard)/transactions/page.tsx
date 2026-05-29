@@ -1017,6 +1017,7 @@ export default function TransactionsPage() {
     () => sumByCurrency(visibleTransactions, (tx) => Number(tx.amount), (tx) => tx.iso_currency_code),
     [visibleTransactions]
   )
+  const visibleNetLabel = formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)
   const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
 
@@ -1147,13 +1148,38 @@ export default function TransactionsPage() {
         subtitle={t('transactions.subtitle', { visible: visibleTransactions.length, loaded: transactions.length, totalPart: totalCount > transactions.length ? t('transactions.loadedTotalPart', { loaded: transactions.length, total: totalCount }) : '' })}
       />
 
-      <div className="transactions-summary-grid">
-        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.loaded')}</span><span className="metric-value">{transactions.length}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.needsReview')}</span><span className="metric-value">{needsReviewCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">{t('common.pending')}</span><span className="metric-value">{pendingCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.aiPending')}</span><span className="metric-value">{aiPendingCount}</span></div>
-        <div className="card card-pad-sm"><span className="metric-label">{t('transactions.visibleNet')}</span><span className="metric-value">{formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)}</span></div>
-      </div>
+      <section className="transactions-command-center">
+        <div className="transactions-command-hero">
+          <div>
+            <span className="metric-label">{t('transactions.visibleNet')}</span>
+            <strong className="transactions-net-value">
+              {visibleNetLabel.split(' · ').map((part) => (
+                <span key={part}>{part}</span>
+              ))}
+            </strong>
+          </div>
+          <div className="transactions-command-stats">
+            <span><b>{transactions.length}</b> {t('transactions.loaded')}</span>
+            <span><b>{needsReviewCount}</b> {t('transactions.needsReview')}</span>
+            <span><b>{pendingCount}</b> {t('common.pending')}</span>
+            <span><b>{aiPendingCount}</b> {t('transactions.aiPending')}</span>
+          </div>
+        </div>
+
+        <div className="saved-view-row transactions-saved-view-row" aria-label={t('transactions.savedViewsAria')}>
+          {SAVED_VIEWS.map((view) => (
+            <button
+              key={view.id}
+              type="button"
+              className={`btn btn-sm ${savedView === view.id ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setSavedView(view.id)}
+            >
+              {t(view.labelKey)}
+              <span className="badge badge-muted">{viewCountsLoading ? '...' : serverViewCounts[view.id] ?? 0}</span>
+            </button>
+          ))}
+        </div>
+      </section>
 
       {(aiStatusMessage || aiJob || aiPendingCount > 0) && (
         <div className="ai-refresh-status">
@@ -1176,20 +1202,6 @@ export default function TransactionsPage() {
           )}
         </div>
       )}
-
-      <div className="saved-view-row" aria-label={t('transactions.savedViewsAria')}>
-        {SAVED_VIEWS.map((view) => (
-          <button
-            key={view.id}
-            type="button"
-            className={`btn btn-sm ${savedView === view.id ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setSavedView(view.id)}
-          >
-            {t(view.labelKey)}
-            <span className="badge badge-muted">{viewCountsLoading ? '…' : serverViewCounts[view.id] ?? 0}</span>
-          </button>
-        ))}
-      </div>
 
       <div className="card filters-bar">
         <div className="filter-group">

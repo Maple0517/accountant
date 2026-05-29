@@ -228,71 +228,78 @@ export default function SettingsPage() {
 
       {visibleMessage && <div className={`alert ${visibleMessage.type === 'success' ? 'alert-success' : 'alert-error'}`}>{visibleMessage.text}</div>}
 
-      <form onSubmit={handleSave} className="settings-grid">
-        <Card className="settings-card">
-          <h2>Profile</h2>
-          <p className="settings-card-intro">{t('settings.profileIntro')}</p>
-          <div className="input-group">
-            <label className="input-label" htmlFor="settings-display-name">{t('settings.displayName')}</label>
-            <input id="settings-display-name" type="text" className="input" value={profile?.display_name || ''} onChange={(e) => setProfileDraft((p) => ({ ...p, display_name: e.target.value }))} />
-          </div>
-          <div className="input-group">
-            <label className="input-label" htmlFor="settings-default-currency">{t('settings.defaultCurrency')}</label>
-            <select id="settings-default-currency" className="input" value={profile?.default_currency || 'USD'} onChange={(e) => setProfileDraft((p) => ({ ...p, default_currency: e.target.value }))}>
-              <option value="USD">USD ($)</option>
-              <option value="CNY">CNY (¥)</option>
-            </select>
-          </div>
-        </Card>
-
-        <Card className="settings-card">
-          <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
-            <div>
-              <h2>Notion</h2>
-              <p className="settings-card-intro" style={{ marginBottom: 0 }}>{t('settings.notionIntro')}</p>
+      <form onSubmit={handleSave} className="settings-grid settings-workspace">
+        <div className="settings-form-rail">
+          <Card className="settings-card settings-profile-card">
+            <h2>Profile</h2>
+            <p className="settings-card-intro">{t('settings.profileIntro')}</p>
+            <div className="input-group">
+              <label className="input-label" htmlFor="settings-display-name">{t('settings.displayName')}</label>
+              <input id="settings-display-name" type="text" className="input" value={profile?.display_name || ''} onChange={(e) => setProfileDraft((p) => ({ ...p, display_name: e.target.value }))} />
             </div>
-            <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? t('common.connected') : t('common.notConnected')}</Badge>
-          </div>
+            <div className="input-group">
+              <label className="input-label" htmlFor="settings-default-currency">{t('settings.defaultCurrency')}</label>
+              <select id="settings-default-currency" className="input" value={profile?.default_currency || 'USD'} onChange={(e) => setProfileDraft((p) => ({ ...p, default_currency: e.target.value }))}>
+                <option value="USD">USD ($)</option>
+                <option value="CNY">CNY (¥)</option>
+              </select>
+            </div>
+          </Card>
 
-          <div className="toggle-group mb-4">
-            <label className="toggle-label">
-              <input type="checkbox" className="toggle-checkbox" checked={profile?.notion_sync_enabled || false} onChange={(e) => setProfileDraft((p) => ({ ...p, notion_sync_enabled: e.target.checked }))} />
-              <span>{t('settings.enableNotion')}</span>
-            </label>
+          <div className="settings-save-panel">
+            <button type="submit" className="btn btn-primary" disabled={saving || !profile}>{saving ? t('settings.saving') : t('settings.saveSettings')}</button>
           </div>
+        </div>
 
-          {profile?.notion_sync_enabled && (
-            <>
-              <div className="input-group">
-                <label className="input-label" htmlFor="settings-notion-token">{t('settings.notionToken')}</label>
-                <input id="settings-notion-token" type="password" className="input" placeholder={profile.notion_token_configured ? t('settings.keepTokenPlaceholder') : 'secret_...'} value={notionTokenInput} onChange={(e) => setNotionTokenInput(e.target.value)} />
-                {profile.notion_token_configured && <p className="input-hint">{t('settings.tokenSaved', { token: profile.notion_token_masked || t('settings.configured') })}</p>}
+        <div className="settings-main-stack">
+          <Card className="settings-card">
+            <div className="card-header settings-section-header">
+              <div>
+                <h2>Notion</h2>
+                <p className="settings-card-intro">{t('settings.notionIntro')}</p>
               </div>
+              <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? t('common.connected') : t('common.notConnected')}</Badge>
+            </div>
 
-              {!profile?.notion_database_id ? (
+            <div className="toggle-group mb-4">
+              <label className="toggle-label">
+                <input type="checkbox" className="toggle-checkbox" checked={profile?.notion_sync_enabled || false} onChange={(e) => setProfileDraft((p) => ({ ...p, notion_sync_enabled: e.target.checked }))} />
+                <span>{t('settings.enableNotion')}</span>
+              </label>
+            </div>
+
+            {profile?.notion_sync_enabled && (
+              <>
                 <div className="input-group">
-                  <label className="input-label" htmlFor="settings-notion-parent-page">{t('settings.parentPage')}</label>
-                  <input type="text" id="settings-notion-parent-page" className="input" placeholder={t('settings.parentPagePlaceholder')} value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} />
+                  <label className="input-label" htmlFor="settings-notion-token">{t('settings.notionToken')}</label>
+                  <input id="settings-notion-token" type="password" className="input" placeholder={profile.notion_token_configured ? t('settings.keepTokenPlaceholder') : 'secret_...'} value={notionTokenInput} onChange={(e) => setNotionTokenInput(e.target.value)} />
+                  {profile.notion_token_configured && <p className="input-hint">{t('settings.tokenSaved', { token: profile.notion_token_masked || t('settings.configured') })}</p>}
                 </div>
-              ) : (
-                <div className="input-group">
-                  <label className="input-label">{t('settings.database')}</label>
-                  <div className="code-block">{t('settings.databaseConfigured', { suffix: profile.notion_database_id.slice(-6) })}</div>
-                </div>
-              )}
 
-              <button type="button" className="btn btn-secondary" onClick={handleManualSync} disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}>
-                {syncing ? t('settings.syncing') : t('settings.forceSync')}
-              </button>
-            </>
-          )}
-        </Card>
+                {!profile?.notion_database_id ? (
+                  <div className="input-group">
+                    <label className="input-label" htmlFor="settings-notion-parent-page">{t('settings.parentPage')}</label>
+                    <input type="text" id="settings-notion-parent-page" className="input" placeholder={t('settings.parentPagePlaceholder')} value={parentPageId} onChange={(e) => setParentPageId(e.target.value)} />
+                  </div>
+                ) : (
+                  <div className="input-group">
+                    <label className="input-label">{t('settings.database')}</label>
+                    <div className="code-block">{t('settings.databaseConfigured', { suffix: profile.notion_database_id.slice(-6) })}</div>
+                  </div>
+                )}
 
-        <Card className="settings-card full-width">
-          <div className="card-header" style={{ padding: 0, border: 0, marginBottom: '1rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={handleManualSync} disabled={syncing || (!profile.notion_token_configured && !notionTokenInput.trim()) || (!profile.notion_database_id && !parentPageId)}>
+                  {syncing ? t('settings.syncing') : t('settings.forceSync')}
+                </button>
+              </>
+            )}
+          </Card>
+
+        <Card className="settings-card settings-capture-card">
+          <div className="card-header settings-section-header">
             <div>
               <h2>{t('settings.iosCapture')}</h2>
-              <p className="settings-card-intro" style={{ marginBottom: 0 }}>{t('settings.iosCaptureIntro')}</p>
+              <p className="settings-card-intro">{t('settings.iosCaptureIntro')}</p>
             </div>
             <Badge tone={apiKeys.some((key) => !key.revoked_at) ? 'success' : 'muted'}>{apiKeys.some((key) => !key.revoked_at) ? t('settings.keyActive') : t('settings.noActiveKey')}</Badge>
           </div>
@@ -340,9 +347,6 @@ export default function SettingsPage() {
             </div>
           </details>
         </Card>
-
-        <div className="form-actions full-width">
-          <button type="submit" className="btn btn-primary" disabled={saving || !profile}>{saving ? t('settings.saving') : t('settings.saveSettings')}</button>
         </div>
       </form>
     </div>
