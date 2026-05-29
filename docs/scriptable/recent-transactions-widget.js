@@ -6,19 +6,19 @@ const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
 const CONTENT_WIDTH = 302
+const LIST_WIDTH = 292
 const ROW_HEIGHT = 35
-const ROW_GAP = 5
-const LEFT_WIDTH = 128
-const PILL_WIDTH = 68
-const AMOUNT_WIDTH = 66
+const LEFT_WIDTH = 123
+const PILL_WIDTH = 66
+const AMOUNT_WIDTH = 68
 const DOT_WIDTH = 8
 
 const COLORS = {
   bg: new Color("#030304"),
-  row: new Color("#111216"),
-  rowBorder: new Color("#1c1e24"),
+  panel: new Color("#070708"),
+  divider: new Color("#24262d"),
   text: Color.white(),
-  muted: new Color("#8f949e"),
+  muted: new Color("#878c96"),
   faint: new Color("#5f6570"),
   pillText: Color.white(),
   income: new Color("#34d399"),
@@ -30,7 +30,7 @@ const COLORS = {
 const widget = new ListWidget()
 widget.backgroundColor = COLORS.bg
 widget.url = APP_URL
-widget.setPadding(10, 11, 8, 11)
+widget.setPadding(12, 15, 10, 15)
 
 try {
   const payload = await loadTransactions()
@@ -81,7 +81,7 @@ function renderWidget(widget, payload) {
   updated.textColor = COLORS.muted
   updated.lineLimit = 1
 
-  widget.addSpacer(6)
+  widget.addSpacer(8)
 
   const transactions = Array.isArray(payload.transactions)
     ? payload.transactions.slice(0, MAX_TRANSACTIONS)
@@ -99,7 +99,11 @@ function renderWidget(widget, payload) {
 
   transactions.forEach((tx, index) => {
     addTransactionRow(widget, tx)
-    if (index < transactions.length - 1) widget.addSpacer(ROW_GAP)
+    if (index < transactions.length - 1) {
+      const divider = widget.addStack()
+      divider.size = new Size(LIST_WIDTH, 0.5)
+      divider.backgroundColor = COLORS.divider
+    }
   })
 
   widget.addSpacer()
@@ -117,19 +121,16 @@ function addTransactionRow(widget, tx) {
   const row = widget.addStack()
   row.layoutHorizontally()
   row.centerAlignContent()
-  row.backgroundColor = COLORS.row
-  row.borderColor = COLORS.rowBorder
-  row.borderWidth = 0.5
-  row.cornerRadius = 8
-  row.size = new Size(CONTENT_WIDTH, ROW_HEIGHT)
-  row.setPadding(4, 8, 4, 8)
+  row.backgroundColor = COLORS.panel
+  row.size = new Size(LIST_WIDTH, ROW_HEIGHT)
+  row.setPadding(4, 0, 4, 0)
 
   const left = row.addStack()
   left.layoutVertically()
   left.size = new Size(LEFT_WIDTH, 27)
 
   const merchant = left.addText(truncate(tx.merchant || "Unknown merchant", 18))
-  merchant.font = Font.semiboldSystemFont(12)
+  merchant.font = Font.semiboldSystemFont(13)
   merchant.textColor = COLORS.text
   merchant.lineLimit = 1
   merchant.minimumScaleFactor = 0.85
@@ -148,13 +149,13 @@ function addTransactionRow(widget, tx) {
   pill.layoutHorizontally()
   pill.centerAlignContent()
   pill.backgroundColor = pillColor(tx.category && tx.category.color)
-  pill.cornerRadius = 7
-  pill.size = new Size(PILL_WIDTH, 17)
-  pill.setPadding(2, 5, 2, 5)
+  pill.cornerRadius = 8
+  pill.size = new Size(PILL_WIDTH, 16)
+  pill.setPadding(2, 4, 2, 4)
 
   const pillLabel = categoryLabel(tx.category)
   const pillText = pill.addText(truncate(pillLabel, 10))
-  pillText.font = Font.mediumSystemFont(8)
+  pillText.font = Font.semiboldSystemFont(8)
   pillText.textColor = COLORS.pillText
   pillText.lineLimit = 1
   pillText.minimumScaleFactor = 0.8
@@ -167,7 +168,7 @@ function addTransactionRow(widget, tx) {
   amountStack.size = new Size(AMOUNT_WIDTH, 16)
 
   const amount = amountStack.addText(formatAmount(tx))
-  amount.font = Font.semiboldSystemFont(11)
+  amount.font = Font.semiboldSystemFont(13)
   amount.textColor = tx.isIncome ? COLORS.income : COLORS.expense
   amount.lineLimit = 1
   amount.rightAlignText()
@@ -228,10 +229,10 @@ function currencySymbol(currency) {
 
 function pillColor(color) {
   if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
-    return new Color(color)
+    return new Color(color, 0.78)
   }
 
-  return new Color("#374151")
+  return new Color("#2d3138", 0.78)
 }
 
 function formatUpdated(value) {
