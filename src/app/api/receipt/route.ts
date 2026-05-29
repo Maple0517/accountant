@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { hashApiKey } from '@/lib/api-keys'
+import { authenticateWithApiKey, markApiKeyUsed } from '@/lib/api-key-auth'
 import {
   parseReceipt,
   ReceiptParsingQuotaError,
@@ -50,20 +50,6 @@ async function updateReceiptRecord(
     await supabase.from('receipts').update(updates).eq('id', receiptId)
   } catch (error) {
     console.error('Failed to update receipt status:', error)
-  }
-}
-
-async function markApiKeyUsed(apiKeyId: string | undefined) {
-  if (!apiKeyId) return
-
-  try {
-    const supabase = createAdminClient()
-    await supabase
-      .from('api_keys')
-      .update({ last_used_at: new Date().toISOString() })
-      .eq('id', apiKeyId)
-  } catch (error) {
-    console.error('Failed to update API key usage timestamp:', error)
   }
 }
 
@@ -553,35 +539,6 @@ async function authenticateWithSession(): Promise<ReceiptAuth | undefined> {
       data: { user },
     } = await supabase.auth.getUser()
     return user?.id ? { userId: user.id } : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Authenticate using API key (iOS Shortcut)
- * API keys are stored as SHA-256 hashes, so the raw ak_ token is only visible once.
- */
-async function authenticateWithApiKey(
-  apiKey: string
-): Promise<ReceiptAuth | undefined> {
-  try {
-    const normalizedApiKey = apiKey.trim()
-    if (!normalizedApiKey) return undefined
-
-    const supabase = createAdminClient()
-    const keyHash = hashApiKey(normalizedApiKey)
-
-    const { data } = await supabase
-      .from('api_keys')
-      .select('id, user_id')
-      .eq('key_hash', keyHash)
-      .is('revoked_at', null)
-      .single()
-
-    if (!data?.user_id) return undefined
-
-    return { userId: data.user_id, apiKeyId: data.id }
   } catch {
     return undefined
   }
