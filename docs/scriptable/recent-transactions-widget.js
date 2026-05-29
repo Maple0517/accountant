@@ -5,16 +5,21 @@ const API_URL = "https://accountant-rose.vercel.app/api/widget/recent-transactio
 const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
-const ROW_HEIGHT = 36
+const CONTENT_WIDTH = 302
+const ROW_HEIGHT = 35
 const ROW_GAP = 5
-const AMOUNT_WIDTH = 55
-const DOT_WIDTH = 7
+const LEFT_WIDTH = 128
+const PILL_WIDTH = 68
+const AMOUNT_WIDTH = 66
+const DOT_WIDTH = 8
 
 const COLORS = {
-  bg: new Color("#050506"),
-  row: new Color("#0f1014"),
+  bg: new Color("#030304"),
+  row: new Color("#111216"),
+  rowBorder: new Color("#1c1e24"),
   text: Color.white(),
-  muted: new Color("#9ca3af"),
+  muted: new Color("#8f949e"),
+  faint: new Color("#5f6570"),
   pillText: Color.white(),
   income: new Color("#34d399"),
   expense: new Color("#f9fafb"),
@@ -62,6 +67,7 @@ function renderWidget(widget, payload) {
   const header = widget.addStack()
   header.layoutHorizontally()
   header.centerAlignContent()
+  header.size = new Size(CONTENT_WIDTH, 16)
 
   const title = header.addText("Recent Transactions")
   title.font = Font.semiboldSystemFont(12)
@@ -70,7 +76,7 @@ function renderWidget(widget, payload) {
 
   header.addSpacer()
 
-  const updated = header.addText(formatUpdated(payload.updatedAt))
+  const updated = header.addText(`Fetched ${formatUpdated(payload.updatedAt)}`)
   updated.font = Font.systemFont(9)
   updated.textColor = COLORS.muted
   updated.lineLimit = 1
@@ -103,7 +109,7 @@ function renderWidget(widget, payload) {
     : `Fetched ${formatRelativeTime(payload.updatedAt)}`
   const footer = widget.addText(footerLabel)
   footer.font = Font.systemFont(9)
-  footer.textColor = COLORS.muted
+  footer.textColor = COLORS.faint
   footer.lineLimit = 1
 }
 
@@ -112,13 +118,15 @@ function addTransactionRow(widget, tx) {
   row.layoutHorizontally()
   row.centerAlignContent()
   row.backgroundColor = COLORS.row
+  row.borderColor = COLORS.rowBorder
+  row.borderWidth = 0.5
   row.cornerRadius = 8
-  row.size = new Size(0, ROW_HEIGHT)
-  row.setPadding(4, 7, 4, 7)
+  row.size = new Size(CONTENT_WIDTH, ROW_HEIGHT)
+  row.setPadding(4, 8, 4, 8)
 
   const left = row.addStack()
   left.layoutVertically()
-  left.size = new Size(128, 28)
+  left.size = new Size(LEFT_WIDTH, 27)
 
   const merchant = left.addText(truncate(tx.merchant || "Unknown merchant", 18))
   merchant.font = Font.semiboldSystemFont(12)
@@ -141,6 +149,7 @@ function addTransactionRow(widget, tx) {
   pill.centerAlignContent()
   pill.backgroundColor = pillColor(tx.category && tx.category.color)
   pill.cornerRadius = 7
+  pill.size = new Size(PILL_WIDTH, 17)
   pill.setPadding(2, 5, 2, 5)
 
   const pillLabel = categoryLabel(tx.category)
@@ -149,6 +158,7 @@ function addTransactionRow(widget, tx) {
   pillText.textColor = COLORS.pillText
   pillText.lineLimit = 1
   pillText.minimumScaleFactor = 0.8
+  pillText.centerAlignText()
 
   row.addSpacer()
 
