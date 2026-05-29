@@ -284,7 +284,13 @@ export default function BudgetsPage() {
             </div>
           </Card>
 
-          {sectionOrder.map((group) => {
+          {visibleCategories.length === 0 ? (
+            <EmptyState
+              title={t('budgets.noCategoriesTitle')}
+            >
+              {t('budgets.noCategoriesCopy', { month: monthlyLabel })}
+            </EmptyState>
+          ) : sectionOrder.map((group) => {
             const items = groupedCategories[group]
             const groupLabel = getGroupLabel(group, locale)
 
@@ -326,45 +332,28 @@ export default function BudgetsPage() {
                           name: category.categoryName,
                           name_zh: category.categoryNameZh,
                         })
-                        const categoryHref = buildCategoryLink(category.categoryId, category.categoryName)
                         const tone = getStatusTone(category.status)
 
                         return (
-                          <div
+                          <BudgetCategoryRow
                             key={category.categoryId}
-                            className="budget-risk-row"
-                          >
-                            <div>
-                              <strong>
-                                <Link className="subtle-link" href={categoryHref}>
-                                  {displayCategoryName}
-                                </Link>
-                              </strong>
-                              <span style={{ display: 'block' }}>
-                                {t('budgets.spentOf', {
-                                  spent: formatCurrency(category.actualSpend, summary.currencyCode),
-                                  budget: formatCurrency(category.baseBudget, summary.currencyCode),
-                                })}
-                              </span>
-                              <span className="budget-note" style={{ display: 'block' }}>
-                                <button
-                                  type="button"
-                                  className="subtle-button"
-                                  onClick={() => openCategoryDetail(category.categoryId)}
-                                >
-                                  {t('common.details')}
-                                </button>
-                              </span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                              <Badge tone={tone}>{category.status.replace('_', ' ')}</Badge>
-                              <span className="badge badge-muted">
-                                {hasBudget && category.baseBudget > 0
-                                  ? formatCurrency(category.baseBudget, summary.currencyCode)
-                                  : t('budgets.notConfigured')}
-                              </span>
-                            </div>
-                          </div>
+                            cat={category}
+                            isEditing={editingId === category.categoryId}
+                            editValue={editValue}
+                            saving={saving}
+                            tone={tone}
+                            hasBudget={Boolean(hasBudget)}
+                            displayCategoryName={displayCategoryName}
+                            currencyCode={summary.currencyCode}
+                            onStartEdit={() => startEdit(category)}
+                            onEditChange={(v) => setEditValue(v)}
+                            onEditKeyDown={(e) => handleEditKeyDown(e, category.categoryId)}
+                            onCommit={() => commitEdit(category.categoryId)}
+                            onCancelEdit={cancelEdit}
+                            onOpenDetails={() => openCategoryDetail(category.categoryId)}
+                            onAmountAria={t('budgets.amountAria')}
+                            t={t}
+                          />
                         )
                       })}
                   </div>
@@ -372,49 +361,6 @@ export default function BudgetsPage() {
               </Card>
             )
           })}
-
-          {visibleCategories.length === 0 ? (
-            <EmptyState
-              title={t('budgets.noCategoriesTitle')}
-            >
-              {t('budgets.noCategoriesCopy', { month: monthlyLabel })}
-            </EmptyState>
-          ) : (
-            <Card className="budget-table" padding="none">
-              <div className="budget-row budget-row-heading" aria-hidden="true">
-                <span>{t('budgets.category')}</span>
-                <span>{t('budgets.budget')}</span>
-                <span>{t('budgets.spent')}</span>
-                <span>{t('budgets.left')}</span>
-                <span>{t('budgets.progress')}</span>
-                <span>{t('budgets.status')}</span>
-              </div>
-              {visibleCategories.map((cat) => (
-                <CategoryRow
-                  key={cat.categoryId}
-                  cat={cat}
-                  isEditing={editingId === cat.categoryId}
-                  editValue={editValue}
-                  saving={saving}
-                  onStartEdit={() => startEdit(cat)}
-                  onEditChange={(v) => setEditValue(v)}
-                  onEditKeyDown={(e) => handleEditKeyDown(e, cat.categoryId)}
-                  onCommit={() => commitEdit(cat.categoryId)}
-                  onCancelEdit={cancelEdit}
-                  onOpenDetails={() => openCategoryDetail(cat.categoryId)}
-                  onAmountAria={t('budgets.amountAria')}
-                  displayCategoryName={categoryName({
-                    name: cat.categoryName,
-                    name_zh: cat.categoryNameZh,
-                  })}
-                  editActionLabel={locale === 'zh' ? '编辑预算' : 'Edit budget'}
-                  categoryHref={buildCategoryLink(cat.categoryId, cat.categoryName)}
-                  currencyCode={summary.currencyCode}
-                  t={t}
-                />
-              ))}
-            </Card>
-          )}
           <Drawer
             open={Boolean(selectedCategory)}
             title={selectedCategory ? categoryName({
@@ -446,11 +392,13 @@ export default function BudgetsPage() {
   )
 }
 
-type CategoryRowProps = {
+type BudgetCategoryRowProps = {
   cat: CategoryBudgetSummary
   isEditing: boolean
   editValue: string
   saving: boolean
+  tone: ReturnType<typeof getStatusTone>
+  hasBudget: boolean
   onStartEdit: () => void
   onEditChange: (v: string) => void
   onEditKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void
@@ -459,17 +407,17 @@ type CategoryRowProps = {
   onOpenDetails: () => void
   onAmountAria: string
   displayCategoryName: string
-  editActionLabel: string
-  categoryHref: string
   currencyCode: string
   t: (key: string, params?: Record<string, string | number>) => string
 }
 
-function CategoryRow({
+function BudgetCategoryRow({
   cat,
   isEditing,
   editValue,
   saving,
+  tone,
+  hasBudget,
   onStartEdit,
   onEditChange,
   onEditKeyDown,
@@ -478,11 +426,9 @@ function CategoryRow({
   onOpenDetails,
   onAmountAria,
   displayCategoryName,
-  editActionLabel,
-  categoryHref,
   currencyCode,
   t,
-}: CategoryRowProps) {
+}: BudgetCategoryRowProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -492,12 +438,11 @@ function CategoryRow({
     }
   }, [isEditing])
 
-  const tone = getStatusTone(cat.status)
   const remainingColor = cat.remaining < 0 ? 'var(--expense)' : 'var(--text-primary)'
 
   return (
-    <div className="budget-row">
-      <div>
+    <div className="budget-risk-row budget-category-row">
+      <div className="budget-category-main">
         <button
           type="button"
           className="budget-category-button"
@@ -505,19 +450,19 @@ function CategoryRow({
         >
           {displayCategoryName}
         </button>
-        <span className="budget-note" style={{ display: 'block' }}>
-          <Link className="subtle-link" href={categoryHref}>
-            {t('review.openTransactions')}
-          </Link>
+        <span>
+          {t('budgets.spentOf', {
+            spent: formatCurrency(cat.actualSpend, currencyCode),
+            budget: formatCurrency(cat.baseBudget, currencyCode),
+          })}
         </span>
-        {cat.remaining < 0 && (
+        {cat.baseBudget > 0 && cat.remaining < 0 && (
           <span className="budget-note" style={{ display: 'block' }}>
             {t('budgets.overBy', { amount: formatCurrency(Math.abs(cat.remaining), currencyCode) })}
           </span>
         )}
       </div>
-      <div>
-        <span className="budget-cell-label">{t('budgets.budget')}</span>
+      <div className="budget-category-edit-cell">
         {isEditing ? (
           <div>
             <EditInput
@@ -554,23 +499,18 @@ function CategoryRow({
             onClick={onStartEdit}
             aria-label={t('budgets.editBudgetAria', { category: displayCategoryName })}
           >
-            <span className="budget-note" style={{ display: 'block' }}>{editActionLabel}</span>
-            {formatCurrency(cat.baseBudget, currencyCode)}
+            {cat.baseBudget > 0
+              ? formatCurrency(cat.baseBudget, currencyCode)
+              : t('budgets.setBudget')}
           </button>
         )}
       </div>
-      <div>
-        <span className="budget-cell-label">{t('budgets.spent')}</span>
-        <span className="budget-cell-value">{formatCurrency(cat.actualSpend, currencyCode)}</span>
-      </div>
-      <div>
-        <span className="budget-cell-label">{t('budgets.left')}</span>
+      <div className="budget-category-progress-cell">
         <span className="budget-cell-value" style={{ color: remainingColor }}>
-          {formatCurrency(cat.remaining, currencyCode)}
+          {hasBudget && cat.baseBudget > 0
+            ? t('dashboard.left', { amount: formatCurrency(cat.remaining, currencyCode) })
+            : t('budgets.notConfigured')}
         </span>
-      </div>
-      <div className="budget-progress-cell">
-        <span className="budget-cell-label">{t('budgets.progress')}</span>
         <div style={{ marginTop: '0.45rem' }}>
           <ProgressBar
             value={cat.percentUsed}
@@ -578,9 +518,6 @@ function CategoryRow({
             label={t('budgets.categoryProgress', { category: displayCategoryName })}
           />
         </div>
-      </div>
-      <div className="budget-actions-cell">
-        <Badge tone={tone}>{cat.status.replace('_', ' ')}</Badge>
       </div>
     </div>
   )
