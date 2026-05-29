@@ -60,6 +60,7 @@ export function applyBaseFilters(
     showDeleted,
     showSplitParents,
     splitGroupId,
+    tx,
   }: {
     userId: string
     search: string
@@ -72,6 +73,7 @@ export function applyBaseFilters(
     showDeleted: boolean
     showSplitParents: boolean
     splitGroupId: string
+    tx?: string
   }
 ) {
   let nextQuery = query.eq('user_id', userId)
@@ -87,6 +89,9 @@ export function applyBaseFilters(
   }
   if (splitGroupId) {
     nextQuery = nextQuery.eq('split_group_id', splitGroupId)
+  }
+  if (tx) {
+    return nextQuery.eq('id', tx)
   }
 
   if (search) {
@@ -210,6 +215,7 @@ export async function countAllPendingAiClassifications(
       showDeleted: false,
       showSplitParents: false,
       splitGroupId: '',
+      tx: '',
     },
     'ai_pending'
   )

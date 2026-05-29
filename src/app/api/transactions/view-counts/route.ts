@@ -31,6 +31,7 @@ export async function GET(request: Request) {
       showDeleted: searchParams.get('showDeleted') === 'true',
       showSplitParents: searchParams.get('showSplitParents') === 'true',
       splitGroupId: searchParams.get('splitGroupId') || '',
+      tx: '',
     }
 
     const [viewCounts, allAiPendingCount] = await Promise.all([

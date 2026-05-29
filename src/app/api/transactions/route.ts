@@ -71,6 +71,7 @@ export async function GET(request: Request) {
     const showDeleted = searchParams.get('showDeleted') === 'true'
     const showSplitParents = searchParams.get('showSplitParents') === 'true'
     const splitGroupId = searchParams.get('splitGroupId') || ''
+    const tx = searchParams.get('tx') || ''
     const savedViewParam = searchParams.get('savedView') || 'all'
     const savedView: SavedView = isSavedView(savedViewParam) ? savedViewParam : 'all'
     const includeViewCounts = searchParams.get('includeViewCounts') === 'true'
@@ -87,6 +88,7 @@ export async function GET(request: Request) {
       showDeleted,
       showSplitParents,
       splitGroupId,
+      tx,
     }
 
     const transactionsQuery = applySavedViewFilters(

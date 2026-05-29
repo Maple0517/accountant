@@ -1,10 +1,12 @@
 'use client'
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { formatCurrency } from '@/lib/currency'
 import { formatCurrencyTotals, hasMultipleCurrencies, sumByCurrency } from '@/lib/money/totals'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Badge } from '@/components/ui/Badge'
+import { Drawer } from '@/components/ui/Drawer'
 import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
@@ -37,6 +39,12 @@ const SAVED_VIEWS: Array<{ id: SavedView; labelKey: string }> = [
   { id: 'large', labelKey: 'transactions.large' },
 ]
 
+function getSavedViewFromParams(searchParams: URLSearchParams): SavedView {
+  const savedView = searchParams.get('savedView')
+  return savedView && SAVED_VIEWS.some((view) => view.id === savedView)
+    ? (savedView as SavedView)
+    : 'all'
+}
 
 type TransactionWithRelations = Transaction & {
   categories?: Pick<
@@ -353,6 +361,11 @@ type TransactionsApiResponse = {
 
 export default function TransactionsPage() {
   const { categoryName, locale, t } = useI18n()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialSavedView = getSavedViewFromParams(searchParams)
+  const initialCategory = searchParams.get('category') || 'all'
+  const initialTransactionId = searchParams.get('tx') || ''
   const localeCode = locale === 'zh' ? 'zh-CN' : 'en-US'
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
   const [totalCount, setTotalCount] = useState(0)
@@ -360,6 +373,7 @@ export default function TransactionsPage() {
   const [allAiPendingCount, setAllAiPendingCount] = useState(0)
   const [viewCountsLoading, setViewCountsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [aiRefreshStatus, setAiRefreshStatus] = useState<string | null>(null)
   const [aiJob, setAiJob] = useState<AiClassificationJob | null>(null)
@@ -369,8 +383,10 @@ export default function TransactionsPage() {
   const [accountOptions, setAccountOptions] = useState<AccountFilterOption[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [groupBy, setGroupBy] = useState<TransactionGroupBy>('date')
-  const [savedView, setSavedView] = useState<SavedView>('all')
-  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(null)
+  const [savedView, setSavedView] = useState<SavedView>(initialSavedView)
+  const [focusedTransactionId, setFocusedTransactionId] = useState(initialTransactionId)
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false)
+  const [editingTransactionId, setEditingTransactionId] = useState<string | null>(initialTransactionId || null)
   const [savingTransactionId, setSavingTransactionId] = useState<string | null>(null)
   const [categorySaveStatus, setCategorySaveStatus] = useState<{
     transactionId: string
@@ -383,7 +399,7 @@ export default function TransactionsPage() {
   const [filters, setFilters] = useState<TransactionFilter>({
     search: '',
     sourceOrAccount: 'all',
-    category: 'all',
+    category: initialCategory,
     currency: 'all',
     dateFrom: '',
     dateTo: '',
@@ -411,6 +427,28 @@ export default function TransactionsPage() {
 
   const transactionsRequestIdRef = useRef(0)
 
+  useEffect(() => {
+    const querySavedView = getSavedViewFromParams(searchParams)
+    const queryCategory = searchParams.get('category') || 'all'
+    const queryTx = searchParams.get('tx')
+
+    const timeoutId = window.setTimeout(() => {
+      setSavedView((current) => (current === querySavedView ? current : querySavedView))
+      setFilters((current) => (
+        current.category === queryCategory ? current : { ...current, category: queryCategory }
+      ))
+      if (queryTx) {
+        setFocusedTransactionId(queryTx)
+        setEditingTransactionId(queryTx)
+        setAdvancedFiltersOpen(false)
+      } else {
+        setFocusedTransactionId('')
+      }
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [searchParams])
+
   const buildTransactionQueryParams = useCallback(
     (options: { offset?: number; savedViewOverride?: SavedView } = {}) => {
       const params = new URLSearchParams({
@@ -425,10 +463,11 @@ export default function TransactionsPage() {
       if (queryFilters.search) params.set('search', queryFilters.search)
       if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
       if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
+      if (focusedTransactionId) params.set('tx', focusedTransactionId)
 
       return params
     },
-    [queryFilters, savedView]
+    [focusedTransactionId, queryFilters, savedView]
   )
 
   const fetchTransactions = useCallback(
@@ -442,6 +481,7 @@ export default function TransactionsPage() {
         setLoadingMore(true)
       } else {
         setLoading(true)
+        setLoadError(null)
       }
 
       const params = buildTransactionQueryParams({ offset })
@@ -453,7 +493,9 @@ export default function TransactionsPage() {
         if (transactionsRequestIdRef.current !== requestId) return
 
         if (!response.ok) {
-          console.error('Error fetching transactions:', payload.error)
+          const message = payload.error || t('transactions.loadTransactionsError')
+          console.error('Error fetching transactions:', message)
+          setLoadError(message)
           return
         }
 
@@ -493,6 +535,9 @@ export default function TransactionsPage() {
       } catch (error) {
         if (transactionsRequestIdRef.current === requestId) {
           console.error('Error fetching transactions:', error)
+          setLoadError(
+            error instanceof Error ? error.message : t('transactions.loadTransactionsError')
+          )
         }
       } finally {
         if (transactionsRequestIdRef.current === requestId) {
@@ -1020,6 +1065,9 @@ export default function TransactionsPage() {
   const visibleNetLabel = formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)
   const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
+  const selectedTransaction = editingTransactionId
+    ? transactions.find((tx) => tx.id === editingTransactionId) ?? null
+    : null
 
   const handleLoadMore = useCallback(() => {
     fetchTransactions({
@@ -1080,10 +1128,19 @@ export default function TransactionsPage() {
   const handleToggleCategoryPicker = useCallback((transactionId: string) => {
     setCategorySaveStatus(null)
     setSimilarSuggestion(null)
-    setEditingTransactionId((current) =>
-      current === transactionId ? null : transactionId
-    )
+    setEditingTransactionId(transactionId)
   }, [])
+
+  const handleCloseDetail = useCallback(() => {
+    setEditingTransactionId(null)
+    setSimilarSuggestion(null)
+    if (!focusedTransactionId) return
+    setFocusedTransactionId('')
+    const nextParams = new URLSearchParams(searchParams.toString())
+    nextParams.delete('tx')
+    const query = nextParams.toString()
+    router.replace(query ? `/transactions?${query}` : '/transactions', { scroll: false })
+  }, [focusedTransactionId, router, searchParams])
 
   const handleDismissSimilar = useCallback(() => {
     setSimilarSuggestion(null)
@@ -1099,17 +1156,16 @@ export default function TransactionsPage() {
         }
         categories={categories}
         categoriesLoading={categoriesLoading}
-        isEditing={editingTransactionId === tx.id}
+        isEditing={false}
         isSaving={savingTransactionId === tx.id}
         statusMessage={
-          categorySaveStatus?.transactionId === tx.id
+          categorySaveStatus?.transactionId === tx.id && editingTransactionId !== tx.id
             ? categorySaveStatus.message
             : null
         }
         similarSuggestion={
-          similarSuggestion?.transactionId === tx.id ? similarSuggestion : null
+          similarSuggestion?.transactionId === tx.id && editingTransactionId !== tx.id ? similarSuggestion : null
         }
-        onToggleCategoryPicker={handleToggleCategoryPicker}
         onSaveCategory={handleCategorySave}
         onApplySimilar={handleCategorySave}
         onDismissSimilar={handleDismissSimilar}
@@ -1117,6 +1173,7 @@ export default function TransactionsPage() {
         onSaveRefundMetadata={handleRefundMetadataSave}
         onSaveSemantics={handleSemanticsSave}
         onOpenSplitEditor={handleOpenSplitEditor}
+        onOpenDetails={handleToggleCategoryPicker}
         categoryName={categoryName}
         t={t}
       />
@@ -1203,7 +1260,11 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      <div className="card filters-bar">
+      {loadError && (
+        <div className="alert alert-error">{loadError}</div>
+      )}
+
+      <div className="card filters-bar transactions-filter-card">
         <div className="filter-group">
           <input
             type="text"
@@ -1216,7 +1277,33 @@ export default function TransactionsPage() {
             }
           />
         </div>
-        <div className="filter-row">
+        <div className="transactions-filter-actions">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setAdvancedFiltersOpen((open) => !open)}
+            aria-expanded={advancedFiltersOpen}
+          >
+            {advancedFiltersOpen ? t('transactions.hideFilters') : t('transactions.showFilters')}
+          </button>
+          <div className="segmented-control" aria-label={t('transactions.groupByAria')}>
+            <button
+              type="button"
+              className={groupBy === 'date' ? 'active' : ''}
+              onClick={() => setGroupBy('date')}
+            >
+              {t('transactions.date')}
+            </button>
+            <button
+              type="button"
+              className={groupBy === 'category' ? 'active' : ''}
+              onClick={() => setGroupBy('category')}
+            >
+              {t('transactions.category')}
+            </button>
+          </div>
+        </div>
+        {advancedFiltersOpen && <div className="filter-row">
           <select
             className="input"
             aria-label={t('transactions.accountFilterAria')}
@@ -1280,26 +1367,7 @@ export default function TransactionsPage() {
               setFilters((f) => ({ ...f, dateTo: e.target.value }))
             }
           />
-        </div>
-        <div className="view-toggle-row">
-          <span className="text-secondary">{t('transactions.groupBy')}</span>
-          <div className="segmented-control" aria-label={t('transactions.groupByAria')}>
-            <button
-              type="button"
-              className={groupBy === 'date' ? 'active' : ''}
-              onClick={() => setGroupBy('date')}
-            >
-              Date
-            </button>
-            <button
-              type="button"
-              className={groupBy === 'category' ? 'active' : ''}
-              onClick={() => setGroupBy('category')}
-            >
-              Category
-            </button>
-          </div>
-        </div>
+        </div>}
       </div>
 
       {loading ? (
@@ -1388,6 +1456,44 @@ export default function TransactionsPage() {
           onSaved={handleSplitSaved}
         />
       )}
+      <Drawer
+        open={Boolean(selectedTransaction)}
+        title={selectedTransaction ? (selectedTransaction.merchant_name || selectedTransaction.description) : t('transactions.transactionDetails')}
+        onClose={handleCloseDetail}
+        className="transaction-detail-panel"
+      >
+        {selectedTransaction && (
+          <TransactionItem
+            transaction={selectedTransaction}
+            linkCandidates={
+              linkCandidatesByTransactionId.get(selectedTransaction.id) || EMPTY_LINK_CANDIDATES
+            }
+            categories={categories}
+            categoriesLoading={categoriesLoading}
+            isEditing
+            isSaving={savingTransactionId === selectedTransaction.id}
+            statusMessage={
+              categorySaveStatus?.transactionId === selectedTransaction.id
+                ? categorySaveStatus.message
+                : null
+            }
+            similarSuggestion={
+              similarSuggestion?.transactionId === selectedTransaction.id ? similarSuggestion : null
+            }
+            onSaveCategory={handleCategorySave}
+            onApplySimilar={handleCategorySave}
+            onDismissSimilar={handleDismissSimilar}
+            onCreateCategory={handleCreateCategory}
+            onSaveRefundMetadata={handleRefundMetadataSave}
+            onSaveSemantics={handleSemanticsSave}
+            onOpenSplitEditor={handleOpenSplitEditor}
+            onOpenDetails={handleToggleCategoryPicker}
+            categoryName={categoryName}
+            t={t}
+            detailMode
+          />
+        )}
+      </Drawer>
     </div>
   )
 }
@@ -1401,7 +1507,6 @@ const TransactionItem = memo(function TransactionItem({
   isSaving,
   statusMessage,
   similarSuggestion,
-  onToggleCategoryPicker,
   onSaveCategory,
   onApplySimilar,
   onDismissSimilar,
@@ -1409,8 +1514,10 @@ const TransactionItem = memo(function TransactionItem({
   onSaveRefundMetadata,
   onSaveSemantics,
   onOpenSplitEditor,
+  onOpenDetails,
   categoryName,
   t,
+  detailMode = false,
 }: {
   transaction: TransactionWithRelations
   linkCandidates: RefundLinkCandidate[]
@@ -1420,7 +1527,6 @@ const TransactionItem = memo(function TransactionItem({
   isSaving: boolean
   statusMessage: string | null
   similarSuggestion: SimilarCategorySuggestion | null
-  onToggleCategoryPicker: (transactionId: string) => void
   onSaveCategory: (
     transactionId: string,
     categoryId: string,
@@ -1456,8 +1562,10 @@ const TransactionItem = memo(function TransactionItem({
     }
   ) => void
   onOpenSplitEditor: (transaction: TransactionWithRelations) => void
+  onOpenDetails: (transactionId: string) => void
   categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
   t: (key: string, params?: Record<string, string | number>) => string
+  detailMode?: boolean
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
@@ -1550,8 +1658,19 @@ const TransactionItem = memo(function TransactionItem({
   const metaText = metaParts.join(' · ')
 
   return (
-    <div className="transaction-item">
-      <div className="tx-row-main">
+    <div className={`transaction-item ${detailMode ? 'transaction-item-detail' : ''}`}>
+      <div
+        className={`tx-row-main ${detailMode ? '' : 'tx-row-clickable'}`}
+        role={detailMode ? undefined : 'button'}
+        tabIndex={detailMode ? undefined : 0}
+        onClick={detailMode ? undefined : () => onOpenDetails(tx.id)}
+        onKeyDown={detailMode ? undefined : (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpenDetails(tx.id)
+          }
+        }}
+      >
         <div className="tx-icon">{categoryIcon}</div>
         <div className="tx-details">
           <span className="tx-merchant">{merchantName}</span>
@@ -1580,7 +1699,10 @@ const TransactionItem = memo(function TransactionItem({
           )}
           aria-expanded={isEditing}
           aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
-          onClick={() => onToggleCategoryPicker(tx.id)}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenDetails(tx.id)
+          }}
         >
           <span className="tx-category-pill-icon">{categoryIcon}</span>
           <span className="tx-category-pill-label">{displayCategoryName}</span>

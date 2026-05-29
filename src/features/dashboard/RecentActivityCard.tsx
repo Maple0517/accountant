@@ -2,6 +2,7 @@ import { Card } from '@/components/ui/Card'
 import { ButtonLink } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatCurrency } from '@/lib/currency'
+import Link from 'next/link'
 import type { DashboardRecentTransaction } from './types'
 import { formatShortDate } from './dashboard-utils'
 import { useI18n } from '@/i18n/client'
@@ -43,7 +44,7 @@ export function RecentActivityCard({ transactions }: { transactions: DashboardRe
           const merchant = tx.merchant_name || tx.description || t('common.unknown')
           const label = account?.name ? `${account.name}${account.mask ? ` ••••${account.mask}` : ''}` : tx.source
           return (
-            <div key={tx.id} className="tx-item">
+            <Link key={tx.id} className="tx-item tx-item-link" href={`/transactions?tx=${tx.id}`}>
               <div className="tx-icon">{category?.icon || '•'}</div>
               <div className="tx-details">
                 <span className="tx-merchant">{merchant}</span>
@@ -55,7 +56,7 @@ export function RecentActivityCard({ transactions }: { transactions: DashboardRe
               <span className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
                 {formatCurrency(-amount, tx.iso_currency_code || 'USD')}
               </span>
-            </div>
+            </Link>
           )
         }) : (
           <div className="trend-empty">{t('dashboard.noRecentTransactions')}</div>

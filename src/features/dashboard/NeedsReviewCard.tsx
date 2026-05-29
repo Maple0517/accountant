@@ -1,6 +1,7 @@
 import { Card } from '@/components/ui/Card'
 import { ButtonLink } from '@/components/ui/Button'
 import { useI18n } from '@/i18n/client'
+import Link from 'next/link'
 
 export function NeedsReviewCard({
   counts,
@@ -16,11 +17,11 @@ export function NeedsReviewCard({
   const { t } = useI18n()
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0)
   const rows = [
-    { label: t('transactions.aiPending'), value: counts.aiPending, hint: t('dashboard.aiPendingHint') },
-    { label: t('common.uncategorized'), value: counts.uncategorized, hint: t('dashboard.uncategorizedHint') },
-    { label: 'Refunds / reimbursements', value: counts.possibleRefunds, hint: t('dashboard.refundsHint') },
-    { label: t('common.unmatched') + ' transfers', value: counts.unmatchedTransfers, hint: t('dashboard.transfersHint') },
-    { label: t('common.pending'), value: counts.pending, hint: t('dashboard.pendingHint') },
+    { label: t('transactions.aiPending'), value: counts.aiPending, hint: t('dashboard.aiPendingHint'), href: '/transactions?savedView=ai_pending' },
+    { label: t('common.uncategorized'), value: counts.uncategorized, hint: t('dashboard.uncategorizedHint'), href: '/transactions?savedView=uncategorized' },
+    { label: t('dashboard.refundsLabel'), value: counts.possibleRefunds, hint: t('dashboard.refundsHint'), href: '/transactions?savedView=refunds' },
+    { label: t('dashboard.transfersLabel'), value: counts.unmatchedTransfers, hint: t('dashboard.transfersHint'), href: '/transactions?savedView=transfers' },
+    { label: t('common.pending'), value: counts.pending, hint: t('dashboard.pendingHint'), href: '/transactions?savedView=pending' },
   ]
 
   return (
@@ -34,13 +35,13 @@ export function NeedsReviewCard({
       </div>
       <div className="review-list" style={{ padding: '1rem' }}>
         {rows.map((row) => (
-          <div key={row.label} className="review-count-row">
+          <Link key={row.label} className="review-count-row review-count-link" href={row.href}>
             <div>
               <strong>{row.label}</strong>
               <span style={{ display: 'block' }}>{row.hint}</span>
             </div>
             <span className={`badge ${row.value > 0 ? 'badge-warning' : 'badge-muted'}`}>{row.value}</span>
-          </div>
+          </Link>
         ))}
       </div>
     </Card>

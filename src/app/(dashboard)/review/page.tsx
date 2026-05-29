@@ -15,7 +15,7 @@ import type { Category, Transaction } from '@/types'
 import { useI18n } from '@/i18n/client'
 
 type ReviewTransaction = Transaction & {
-  categories?: Pick<Category, 'name' | 'name_zh' | 'icon' | 'color'> | null
+  categories?: Pick<Category, 'id' | 'name' | 'name_zh' | 'icon' | 'color'> | null
   accounts?: {
     name?: string | null
     mask?: string | null
@@ -35,6 +35,12 @@ type TransactionsApiResponse = {
   }
 }
 
+type ReviewIssue = {
+  key: string
+  label: string
+  tone: 'accent' | 'warning' | 'info' | 'danger' | 'muted'
+}
+
 const fetcher = async (url: string): Promise<TransactionsApiResponse> => {
   const res = await fetch(url)
   const json = await res.json().catch(() => ({}))
@@ -42,20 +48,61 @@ const fetcher = async (url: string): Promise<TransactionsApiResponse> => {
   return json
 }
 
-function getIssues(tx: ReviewTransaction, t: (key: string) => string) {
+function getIssueBuckets(tx: ReviewTransaction, t: (key: string) => string) {
   const tags = Array.isArray(tx.tags) ? tx.tags : []
-  const issues: Array<{ label: string; tone: 'accent' | 'warning' | 'info' | 'danger' | 'muted' }> = []
-  if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) issues.push({ label: t('transactions.aiPending'), tone: 'accent' })
-  if (!tx.category_id) issues.push({ label: t('common.uncategorized'), tone: 'warning' })
-  if (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement') issues.push({ label: t('review.refundReview'), tone: 'info' })
-  if (tx.transaction_kind === 'transfer' && (!tx.transfer_match_status || tx.transfer_match_status === 'unmatched' || tx.transfer_match_status === 'suggested')) issues.push({ label: t('review.transferMatch'), tone: 'danger' })
-  if (tx.pending) issues.push({ label: t('common.pending'), tone: 'muted' })
+  const issues: ReviewIssue[] = []
+
+  if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
+    issues.push({ key: 'ai', label: t('transactions.aiPending'), tone: 'accent' })
+  }
+  if (!tx.category_id) {
+    issues.push({ key: 'uncategorized', label: t('common.uncategorized'), tone: 'warning' })
+  }
+  if (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement') {
+    issues.push({ key: 'refund', label: t('review.refundReview'), tone: 'info' })
+  }
+  if (
+    tx.transaction_kind === 'transfer' &&
+    (!tx.transfer_match_status ||
+      tx.transfer_match_status === 'unmatched' ||
+      tx.transfer_match_status === 'suggested')
+  ) {
+    issues.push({ key: 'transfer', label: t('review.transferMatch'), tone: 'danger' })
+  }
+  if (tx.pending) {
+    issues.push({ key: 'pending', label: t('common.pending'), tone: 'muted' })
+  }
+
   return issues
+}
+
+function getIssueSummaryLabel(
+  counts: {
+    ai: number
+    uncategorized: number
+    refunds: number
+    transfers: number
+    pending: number
+  },
+  t: (key: string) => string
+) {
+  return [
+    counts.uncategorized > 0 ? `${counts.uncategorized} ${t('common.uncategorized')}` : null,
+    counts.ai > 0 ? `${counts.ai} ${t('transactions.aiPending')}` : null,
+    counts.transfers > 0 ? `${counts.transfers} ${t('review.transfers')}` : null,
+    counts.refunds > 0 ? `${counts.refunds} ${t('review.refunds')}` : null,
+    counts.pending > 0 ? `${counts.pending} ${t('common.pending')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 export default function ReviewPage() {
   const { categoryName, t } = useI18n()
-  const { data, error, isLoading } = useSWR('/api/transactions?limit=100&offset=0&sourceOrAccount=all&category=all&currency=all&savedView=needs_review', fetcher)
+  const { data, error, isLoading } = useSWR(
+    '/api/transactions?limit=100&offset=0&sourceOrAccount=all&category=all&currency=all&savedView=needs_review&includeViewCounts=true',
+    fetcher
+  )
   const reviewItems = data?.transactions ?? []
   const counts = {
     ai: data?.viewCounts?.ai_pending ?? 0,
@@ -64,22 +111,61 @@ export default function ReviewPage() {
     transfers: data?.viewCounts?.transfers ?? 0,
     pending: data?.viewCounts?.pending ?? 0,
   }
+  const queueTotal =
+    data?.totalCount ??
+    counts.ai + counts.uncategorized + counts.refunds + counts.transfers + counts.pending
+  const bucketSummary = getIssueSummaryLabel(counts, t)
 
   return (
     <div className="review-page">
       <PageHeader
         title={t('review.title')}
         subtitle={t('review.subtitle')}
-        actions={<Link className="btn btn-ghost btn-sm" href="/transactions">{t('review.openTransactions')}</Link>}
+        actions={
+          <Link className="btn btn-ghost btn-sm" href="/transactions?savedView=needs_review">
+            {t('review.openTransactions')}
+          </Link>
+        }
       />
 
-      <div className="transactions-summary-grid">
-        <Card padding="sm"><span className="metric-label">{t('transactions.aiPending')}</span><span className="metric-value">{counts.ai}</span></Card>
-        <Card padding="sm"><span className="metric-label">{t('common.uncategorized')}</span><span className="metric-value">{counts.uncategorized}</span></Card>
-        <Card padding="sm"><span className="metric-label">{t('review.refunds')}</span><span className="metric-value">{counts.refunds}</span></Card>
-        <Card padding="sm"><span className="metric-label">{t('review.transfers')}</span><span className="metric-value">{counts.transfers}</span></Card>
-        <Card padding="sm"><span className="metric-label">{t('common.pending')}</span><span className="metric-value">{counts.pending}</span></Card>
-      </div>
+      <Card padding="lg">
+        <div className="card-header">
+          <div>
+            <h3>{t('review.queue')}</h3>
+            <p className="card-subtitle">
+              {queueTotal} {t('transactions.needsReview')}
+              {bucketSummary ? ` · ${bucketSummary}` : ''}
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div className="metric-value">{queueTotal}</div>
+            <div className="metric-label">{t('transactions.needsReview')}</div>
+          </div>
+        </div>
+
+        <div className="transactions-summary-grid">
+          <Card padding="sm">
+            <span className="metric-label">{t('common.uncategorized')}</span>
+            <span className="metric-value">{counts.uncategorized}</span>
+          </Card>
+          <Card padding="sm">
+            <span className="metric-label">{t('transactions.aiPending')}</span>
+            <span className="metric-value">{counts.ai}</span>
+          </Card>
+          <Card padding="sm">
+            <span className="metric-label">{t('review.transfers')}</span>
+            <span className="metric-value">{counts.transfers}</span>
+          </Card>
+          <Card padding="sm">
+            <span className="metric-label">{t('review.refunds')}</span>
+            <span className="metric-value">{counts.refunds}</span>
+          </Card>
+          <Card padding="sm">
+            <span className="metric-label">{t('common.pending')}</span>
+            <span className="metric-value">{counts.pending}</span>
+          </Card>
+        </div>
+      </Card>
 
       {isLoading && <div className="skeleton-card" />}
       {error && <div className="alert alert-error">{error.message}</div>}
@@ -94,24 +180,50 @@ export default function ReviewPage() {
             <div>
               <h3>{t('review.queue')}</h3>
               <p className="card-subtitle">
-                {t('review.queueSubtitle', { shown: reviewItems.length, total: data?.totalCount ?? reviewItems.length })}
+                {t('review.queueSubtitle', {
+                  shown: reviewItems.length,
+                  total: data?.totalCount ?? reviewItems.length,
+                })}
               </p>
             </div>
           </div>
           <div className="transaction-list">
             {reviewItems.map((tx) => {
               const merchant = tx.merchant_name || tx.description || t('common.unknown')
-              const account = tx.accounts?.plaid_items?.institution_name || tx.accounts?.name || tx.source
+              const account =
+                tx.accounts?.plaid_items?.institution_name || tx.accounts?.name || tx.source
               const amount = Number(tx.amount)
+              const categoryLabel = categoryName(tx.categories)
+              const primaryHref = `/transactions?tx=${encodeURIComponent(
+                tx.id
+              )}&savedView=needs_review`
+              const issues = getIssueBuckets(tx, t)
+
               return (
-                <Link key={tx.id} href="/transactions" className="tx-item" style={{ textDecoration: 'none' }}>
+                <Link key={tx.id} href={primaryHref} className="tx-item tx-item-link review-inbox-item">
                   <div className="tx-icon">{tx.categories?.icon || '•'}</div>
                   <div className="tx-details">
-                    <span className="tx-merchant">{merchant}</span>
-                    <span className="tx-category">{account} · {tx.date} · {categoryName(tx.categories)}</span>
-                    <span className="tx-badges">{getIssues(tx, t).map((issue) => <Badge key={issue.label} tone={issue.tone}>{issue.label}</Badge>)}</span>
+                    <div className="tx-merchant-row">
+                      <span className="tx-merchant">{merchant}</span>
+                      <Badge tone="accent">{t('review.title')}</Badge>
+                    </div>
+                    <span className="tx-category">
+                      {account} · {tx.date} · {categoryLabel}
+                    </span>
+                    <span className="tx-badges">
+                      {issues.map((issue) => (
+                        <Badge key={issue.key} tone={issue.tone}>
+                          {issue.label}
+                        </Badge>
+                      ))}
+                    </span>
                   </div>
-                  <span className={`tx-amount ${amount < 0 ? 'income' : 'expense'}`}>{formatCurrency(-amount, tx.iso_currency_code || 'USD')}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', flexDirection: 'column', gap: '0.35rem' }}>
+                    <span className={`tx-amount ${amount < 0 ? 'income' : 'expense'}`}>
+                      {formatCurrency(-amount, tx.iso_currency_code || 'USD')}
+                    </span>
+                    <span className="badge badge-muted">{t('review.openTransactions')}</span>
+                  </div>
                 </Link>
               )
             })}

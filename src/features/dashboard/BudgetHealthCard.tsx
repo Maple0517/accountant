@@ -3,6 +3,7 @@ import { ButtonLink } from '@/components/ui/Button'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { Badge } from '@/components/ui/Badge'
 import { formatCurrency } from '@/lib/currency'
+import Link from 'next/link'
 import type { MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 import { useI18n } from '@/i18n/client'
 
@@ -52,7 +53,7 @@ export function BudgetHealthCard({ summary }: { summary: MonthlyBudgetSummary | 
             </div>
             <div className="budget-risk-list">
               {risky.length > 0 ? risky.map((category) => (
-                <div className="budget-risk-row" key={category.categoryId}>
+                <Link className="budget-risk-row budget-risk-link" href={`/transactions?category=${category.categoryId}`} key={category.categoryId}>
                   <div>
                     <strong>{category.categoryName}</strong>
                     <span style={{ display: 'block' }}>{t('dashboard.left', { amount: formatCurrency(category.remaining, summary.currencyCode) })}</span>
@@ -60,7 +61,7 @@ export function BudgetHealthCard({ summary }: { summary: MonthlyBudgetSummary | 
                   <Badge tone={category.status === 'over' ? 'danger' : 'warning'}>
                     {Math.round((category.percentUsed ?? 0) * 100)}%
                   </Badge>
-                </div>
+                </Link>
               )) : (
                 <p className="text-secondary">{t('dashboard.noCategoriesNearLimit')}</p>
               )}
