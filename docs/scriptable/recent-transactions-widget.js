@@ -5,13 +5,13 @@ const API_URL = "https://accountant-rose.vercel.app/api/widget/recent-transactio
 const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
-const CONTENT_WIDTH = 302
+const CONTENT_WIDTH = 336
 const LIST_WIDTH = CONTENT_WIDTH
-const ROW_HEIGHT = 35
-const LEFT_WIDTH = 127
-const PILL_WIDTH = 66
-const AMOUNT_WIDTH = 72
-const DOT_WIDTH = 8
+const ROW_HEIGHT = 39
+const LEFT_WIDTH = 146
+const PILL_WIDTH = 72
+const AMOUNT_WIDTH = 78
+const DOT_WIDTH = 9
 
 const COLORS = {
   bg: new Color("#030304"),
@@ -30,7 +30,7 @@ const COLORS = {
 const widget = new ListWidget()
 widget.backgroundColor = COLORS.bg
 widget.url = APP_URL
-widget.setPadding(12, 15, 10, 15)
+widget.setPadding(12, 9, 10, 9)
 
 try {
   const payload = await loadTransactions()
@@ -70,14 +70,14 @@ function renderWidget(widget, payload) {
   header.size = new Size(CONTENT_WIDTH, 16)
 
   const title = header.addText("Recent Transactions")
-  title.font = Font.semiboldSystemFont(12)
+  title.font = Font.semiboldSystemFont(13)
   title.textColor = COLORS.text
   title.lineLimit = 1
 
   header.addSpacer()
 
   const updated = header.addText(`Fetched ${formatUpdated(payload.updatedAt)}`)
-  updated.font = Font.systemFont(9)
+  updated.font = Font.systemFont(10)
   updated.textColor = COLORS.muted
   updated.lineLimit = 1
 
@@ -127,10 +127,10 @@ function addTransactionRow(widget, tx) {
 
   const left = row.addStack()
   left.layoutVertically()
-  left.size = new Size(LEFT_WIDTH, 27)
+  left.size = new Size(LEFT_WIDTH, 31)
 
   const merchant = left.addText(truncate(tx.merchant || "Unknown merchant", 18))
-  merchant.font = Font.semiboldSystemFont(13)
+  merchant.font = Font.semiboldSystemFont(14)
   merchant.textColor = COLORS.text
   merchant.lineLimit = 1
   merchant.minimumScaleFactor = 0.85
@@ -138,19 +138,19 @@ function addTransactionRow(widget, tx) {
   left.addSpacer(1)
 
   const subtitle = left.addText(truncate(tx.subtitle || tx.dateLabel || "", 22))
-  subtitle.font = Font.systemFont(9)
+  subtitle.font = Font.systemFont(10)
   subtitle.textColor = COLORS.muted
   subtitle.lineLimit = 1
   subtitle.minimumScaleFactor = 0.85
 
-  row.addSpacer(5)
+  row.addSpacer(6)
 
   const pill = row.addStack()
   pill.layoutHorizontally()
   pill.centerAlignContent()
   pill.backgroundColor = pillColor(tx.category && tx.category.color)
   pill.cornerRadius = 8
-  pill.size = new Size(PILL_WIDTH, 16)
+  pill.size = new Size(PILL_WIDTH, 18)
   pill.setPadding(2, 4, 2, 4)
 
   const pillLabel = categoryLabel(tx.category)
@@ -168,7 +168,7 @@ function addTransactionRow(widget, tx) {
   amountStack.size = new Size(AMOUNT_WIDTH, 16)
 
   const amount = amountStack.addText(formatAmount(tx))
-  amount.font = Font.semiboldSystemFont(13)
+  amount.font = Font.semiboldSystemFont(14)
   amount.textColor = tx.isIncome ? COLORS.income : COLORS.expense
   amount.lineLimit = 1
   amount.rightAlignText()
