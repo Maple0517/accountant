@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   chunkTransactionsForGemini,
+  parseClassificationResponseText,
   validateClassificationResponse,
   type RawTransactionToClassify,
 } from '@/lib/gemini/classifier'
@@ -104,6 +105,55 @@ test('validateClassificationResponse rejects unknown or duplicate ids', () => {
       sampleTransactions
     )
   )
+})
+
+test('parseClassificationResponseText accepts fenced JSON with trailing notes', () => {
+  const parsed = parseClassificationResponseText(`\`\`\`json
+[
+  {
+    "id": "tx_1",
+    "clean_merchant_name": "Apple Store",
+    "category": {
+      "name": "Shopping",
+      "type": "expense"
+    }
+  },
+  {
+    "id": "tx_2",
+    "clean_merchant_name": "Acme Payroll",
+    "category": {
+      "name": "Income",
+      "type": "income"
+    }
+  }
+]
+\`\`\`
+These classifications use your existing categories where possible.`)
+
+  assert.ok(Array.isArray(parsed))
+  assert.equal(parsed.length, 2)
+  assert.deepEqual((parsed as Array<{ id: string }>).map((item) => item.id), [
+    'tx_1',
+    'tx_2',
+  ])
+})
+
+test('parseClassificationResponseText accepts raw JSON with trailing explanation', () => {
+  const parsed = parseClassificationResponseText(`[
+  {
+    "id": "tx_1",
+    "clean_merchant_name": "Apple Store",
+    "category": {
+      "name": "Shopping",
+      "type": "expense"
+    }
+  }
+]
+Classification completed successfully.`)
+
+  assert.ok(Array.isArray(parsed))
+  assert.equal(parsed.length, 1)
+  assert.equal((parsed as Array<{ id: string }>)[0].id, 'tx_1')
 })
 
 test('default Gemini model uses Flash Lite requested for quota-sensitive work', () => {

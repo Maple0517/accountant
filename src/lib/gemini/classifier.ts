@@ -176,6 +176,70 @@ export function validateClassificationResponse(
   })
 }
 
+function extractFirstJsonValue(text: string) {
+  const cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
+  const start = cleaned.search(/[[{]/)
+  if (start === -1) {
+    return cleaned
+  }
+
+  const opening = cleaned[start]
+  const closing = opening === '[' ? ']' : '}'
+  let depth = 0
+  let inString = false
+  let escaping = false
+
+  for (let index = start; index < cleaned.length; index += 1) {
+    const char = cleaned[index]
+
+    if (inString) {
+      if (escaping) {
+        escaping = false
+        continue
+      }
+
+      if (char === '\\') {
+        escaping = true
+        continue
+      }
+
+      if (char === '"') {
+        inString = false
+      }
+
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+      continue
+    }
+
+    if (char === opening) {
+      depth += 1
+      continue
+    }
+
+    if (char === closing) {
+      depth -= 1
+      if (depth === 0) {
+        return cleaned.slice(start, index + 1)
+      }
+    }
+  }
+
+  return cleaned
+}
+
+export function parseClassificationResponseText(text: string) {
+  const parsed: unknown = JSON.parse(extractFirstJsonValue(text))
+  return parsed
+}
+
 function buildClassificationPrompt(
   transactions: RawTransactionToClassify[],
   existingCategories: CategoryRow[]
@@ -346,13 +410,7 @@ async function classifyTransactionChunk(
   const text = response.text ?? ''
 
   try {
-    const cleanedText = text
-      .replace(/```json\s*/g, '')
-      .replace(/```\s*/g, '')
-      .trim()
-
-    const parsed: unknown = JSON.parse(cleanedText)
-
+    const parsed = parseClassificationResponseText(text)
     return validateClassificationResponse(parsed, transactions)
   } catch (parseError) {
     console.error('Failed to parse Gemini classification response:', text)
