@@ -198,6 +198,10 @@ function isZeroSplitDecimal(value: string) {
   return splitDecimalToMinor(value) === 0
 }
 
+function isDisplayedCreditAmount(amount: number | string) {
+  return Number(amount) < 0
+}
+
 function splitAmountEvenly(amount: number, count: number) {
   const cents = Math.round(amount * 100)
   const base = Math.trunc(cents / count)
@@ -213,6 +217,32 @@ function splitAmountEvenly(amount: number, count: number) {
   })
 }
 
+function getDefaultSplitSemantics(tx: TransactionWithRelations) {
+  const hasExplicitTreatment =
+    tx.semantic_override_source === 'user' ||
+    tx.semantic_override_source === 'rule' ||
+    tx.transaction_kind === 'refund' ||
+    tx.transaction_kind === 'reimbursement' ||
+    tx.transaction_kind === 'transfer'
+
+  if (hasExplicitTreatment) {
+    return {
+      transaction_kind: tx.transaction_kind || 'normal',
+      budget_behavior: tx.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+    }
+  }
+
+  return isDisplayedCreditAmount(tx.amount)
+    ? {
+        transaction_kind: 'normal' as const,
+        budget_behavior: 'count_as_income' as const,
+      }
+    : {
+        transaction_kind: 'normal' as const,
+        budget_behavior: DEFAULT_SPLIT_BEHAVIOR,
+      }
+}
+
 function addMonths(dateStr: string, offset: number) {
   const date = new Date(`${dateStr}T00:00:00`)
   date.setMonth(date.getMonth() + offset)
@@ -225,12 +255,14 @@ function createSplitLineDraft(
   index: number,
   allocationDate = tx.effective_date || tx.budget_effective_date || tx.date
 ): SplitLineDraft {
+  const defaultSemantics = getDefaultSplitSemantics(tx)
+
   return {
     amount_decimal: amountDecimal,
     category_id: tx.category_id || '',
     allocation_date: allocationDate,
-    transaction_kind: tx.transaction_kind || 'normal',
-    budget_behavior: tx.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+    transaction_kind: defaultSemantics.transaction_kind,
+    budget_behavior: defaultSemantics.budget_behavior,
     linked_transaction_id: tx.linked_transaction_id || '',
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
@@ -243,18 +275,22 @@ function buildInitialSplitLines(
   existingChildren?: TransactionWithRelations[]
 ) {
   if (existingChildren && existingChildren.length > 0) {
-    return existingChildren.map((child) => ({
-      id: child.id,
-      amount_decimal: toSplitDecimal(Number(child.amount)),
-      category_id: child.category_id || '',
-      allocation_date: child.effective_date || child.budget_effective_date || child.date,
-      transaction_kind: child.transaction_kind || 'normal',
-      budget_behavior: child.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
-      linked_transaction_id: child.linked_transaction_id || '',
-      merchant_name: child.merchant_name || '',
-      description: child.description || '',
-      notes: child.notes || '',
-    }))
+    return existingChildren.map((child) => {
+      const defaultSemantics = getDefaultSplitSemantics(child)
+
+      return {
+        id: child.id,
+        amount_decimal: toSplitDecimal(Number(child.amount)),
+        category_id: child.category_id || '',
+        allocation_date: child.effective_date || child.budget_effective_date || child.date,
+        transaction_kind: defaultSemantics.transaction_kind,
+        budget_behavior: defaultSemantics.budget_behavior,
+        linked_transaction_id: child.linked_transaction_id || '',
+        merchant_name: child.merchant_name || '',
+        description: child.description || '',
+        notes: child.notes || '',
+      }
+    })
   }
 
   return splitAmountEvenly(Number(tx.amount), 2).map((amount, index) =>
@@ -276,6 +312,17 @@ function getSplitTreatmentPresetId(line: SplitLineDraft) {
   if (line.budget_behavior === 'exclude_as_transfer') return 'transfer'
   if (line.budget_behavior === 'exclude_manual') return 'exclude'
   return 'spending'
+}
+
+function getSplitTreatmentPresetsForAmount(amountDecimal: string) {
+  if (!isDisplayedCreditAmount(amountDecimal)) {
+    return SPLIT_TREATMENT_PRESETS
+  }
+
+  const creditPresetOrder = ['income', 'refund', 'reimbursement', 'transfer', 'exclude', 'spending']
+  return creditPresetOrder
+    .map((id) => SPLIT_TREATMENT_PRESETS.find((preset) => preset.id === id))
+    .filter((preset): preset is SplitTreatmentPreset => Boolean(preset))
 }
 
 function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | null) {
@@ -2702,6 +2749,7 @@ function SplitEditorDrawer({
               <div className="split-lines">
                 {lines.map((line, index) => {
                   const treatmentPresetId = getSplitTreatmentPresetId(line)
+                  const treatmentPresets = getSplitTreatmentPresetsForAmount(line.amount_decimal)
                   return (
                     <div key={`${line.id || 'new'}-${index}`} className="split-line">
                       <div className="split-line-header">
@@ -2757,7 +2805,7 @@ function SplitEditorDrawer({
                         </label>
                       </div>
                       <div className="split-treatment-group" role="group" aria-label={t('transactions.splitTreatment')}>
-                        {SPLIT_TREATMENT_PRESETS.map((preset) => (
+                        {treatmentPresets.map((preset) => (
                           <button
                             key={preset.id}
                             type="button"
