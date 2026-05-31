@@ -639,6 +639,10 @@ export default function TransactionsPage() {
   })
 
   const debouncedSearch = useDebouncedValue(filters.search, 300)
+  const assignableCategories = useMemo(
+    () => categories.filter((category) => category.type === 'expense'),
+    [categories]
+  )
   const queryFilters = useMemo(
     () => ({
       search: debouncedSearch,
@@ -1392,7 +1396,7 @@ export default function TransactionsPage() {
         linkCandidates={
           linkCandidatesByTransactionId.get(tx.id) || EMPTY_LINK_CANDIDATES
         }
-        categories={categories}
+        categories={assignableCategories}
         categoriesLoading={categoriesLoading}
         isEditing={false}
         isSaving={savingTransactionId === tx.id}
@@ -1417,7 +1421,7 @@ export default function TransactionsPage() {
       />
     ),
     [
-      categories,
+      assignableCategories,
       categoriesLoading,
       categorySaveStatus,
       editingTransactionId,
@@ -1687,7 +1691,7 @@ export default function TransactionsPage() {
       {splitEditorTransaction && (
         <SplitEditorDrawer
           transaction={splitEditorTransaction}
-          categories={categories}
+          categories={assignableCategories}
           categoryName={categoryName}
           t={t}
           onClose={() => setSplitEditorTransaction(null)}
@@ -1706,7 +1710,7 @@ export default function TransactionsPage() {
             linkCandidates={
               linkCandidatesByTransactionId.get(selectedTransaction.id) || EMPTY_LINK_CANDIDATES
             }
-            categories={categories}
+            categories={assignableCategories}
             categoriesLoading={categoriesLoading}
             isEditing
             isSaving={savingTransactionId === selectedTransaction.id}

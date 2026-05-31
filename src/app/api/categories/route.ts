@@ -43,7 +43,6 @@ export async function POST(request: Request) {
 
     const icon = typeof body.icon === 'string' && body.icon.trim() ? body.icon.trim() : '📦'
     const color = typeof body.color === 'string' && body.color.trim() ? body.color.trim() : '#607d8b'
-    const type = ['income', 'expense', 'transfer'].includes(body.type) ? body.type : 'expense'
     const isExcludedFromBudget =
       typeof body.is_excluded_from_budget === 'boolean'
         ? body.is_excluded_from_budget
@@ -56,7 +55,7 @@ export async function POST(request: Request) {
         name,
         icon,
         color,
-        type,
+        type: 'expense',
         sort_order: nextSortOrder,
         is_excluded_from_budget: isExcludedFromBudget,
       })
