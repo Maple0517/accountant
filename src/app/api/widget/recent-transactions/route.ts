@@ -5,6 +5,7 @@ import {
   extractBearerToken,
   markApiKeyUsed,
 } from '@/lib/api-key-auth'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 import type { TransactionKind } from '@/types'
 
@@ -57,6 +58,8 @@ type WidgetTransactionRow = {
   pending?: boolean | null
   source?: string | null
   transaction_kind?: TransactionKind | null
+  treatment?: string | null
+  refund_source?: string | null
   budget_behavior?: string | null
   created_at?: string | null
   updated_at?: string | null
@@ -225,6 +228,12 @@ function toWidgetTransaction(row: WidgetTransactionRow): WidgetTransaction {
   const categoryName = category?.name?.trim() || 'Uncategorized'
   const categoryLabel = category?.name_zh?.trim() || categoryName
   const amount = Number(row.amount) || 0
+  const semantics = normalizeTransactionSemantics({
+    treatment: row.treatment,
+    refundSource: row.refund_source,
+    transactionKind: row.transaction_kind,
+    budgetBehavior: row.budget_behavior,
+  })
 
   return {
     id: row.id,
@@ -236,7 +245,7 @@ function toWidgetTransaction(row: WidgetTransactionRow): WidgetTransaction {
     dateLabel,
     pending: row.pending === true,
     isIncome: amount < 0,
-    kind: row.transaction_kind || 'normal',
+    kind: semantics.transactionKind,
     category: {
       id: category?.id || null,
       name: categoryName,
@@ -299,6 +308,8 @@ const WIDGET_TRANSACTION_SELECT = `
   description,
   pending,
   source,
+  treatment,
+  refund_source,
   transaction_kind,
   budget_behavior,
   created_at,

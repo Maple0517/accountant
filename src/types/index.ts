@@ -1,4 +1,11 @@
 export type TransactionKind = 'normal' | 'refund' | 'reimbursement' | 'transfer'
+export type TransactionTreatment =
+  | 'spending'
+  | 'income'
+  | 'refund'
+  | 'transfer'
+  | 'excluded'
+export type RefundSource = 'merchant_refund' | 'reimbursement'
 export type BudgetBehavior =
   | 'count_as_spending'
   | 'count_as_income'
@@ -42,6 +49,8 @@ export type Transaction = {
   notion_page_id?: string
   tags?: string[]
   notes?: string
+  treatment?: TransactionTreatment | null
+  refund_source?: RefundSource | null
   transaction_kind?: TransactionKind
   budget_behavior?: BudgetBehavior | null
   linked_transaction_id?: string | null

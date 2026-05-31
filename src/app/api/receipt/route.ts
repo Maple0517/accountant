@@ -10,6 +10,7 @@ import {
 import { syncSingleTransactionIfEnabled } from '@/lib/notion/sync'
 import { getUserCategories, getOrCreateCategory } from '@/lib/categories-db'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 export const dynamic = 'force-dynamic'
 
@@ -245,13 +246,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const transactionKind =
-      parsed.transaction_type === 'transfer' ? 'transfer' : 'normal'
     const categoryForBudgetBehavior = categoryId
       ? userCategories.find((category) => category.id === categoryId)
       : null
+    const semantics = normalizeTransactionSemantics({
+      category: categoryForBudgetBehavior,
+      transactionType: parsed.transaction_type,
+    })
     const budgetBehavior = deriveBudgetBehavior({
-      transactionKind,
+      treatment: semantics.treatment,
       category: categoryForBudgetBehavior,
       transactionType: parsed.transaction_type,
     })
@@ -272,7 +275,9 @@ export async function POST(request: NextRequest) {
           (tag) => tag !== 'unknown'
         ),
         notes: mergedNotes || undefined,
-        transaction_kind: transactionKind,
+        treatment: semantics.treatment,
+        refund_source: semantics.refundSource,
+        transaction_kind: semantics.transactionKind,
         budget_behavior: budgetBehavior,
         budget_effective_date: parsed.date,
         semantic_override_source: 'ai',

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { filterByCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
+import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 import type { MonthlyBudgetSummary, CategoryBudgetSummary } from './budget.types'
 import { calculateMonthlySummary } from './budget.engine'
 import { adaptCategories, adaptTransactions, adaptBudgetRules, adaptSettings } from './budget.adapter'
@@ -80,8 +81,11 @@ export async function getMonthlySummary(
       currencyTransactions
         .filter(
           (tx) =>
-            (tx.transaction_kind === 'refund' ||
-              tx.transaction_kind === 'reimbursement') &&
+            deriveTransactionTreatment({
+              treatment: tx.treatment,
+              transactionKind: tx.transaction_kind,
+              budgetBehavior: tx.budget_behavior,
+            }) === 'refund' &&
             tx.linked_transaction_id
         )
         .map((tx) => tx.linked_transaction_id!)
@@ -101,8 +105,11 @@ export async function getMonthlySummary(
     currencyTransactions
       .filter(
         (tx) =>
-          (tx.transaction_kind === 'refund' ||
-            tx.transaction_kind === 'reimbursement') &&
+          deriveTransactionTreatment({
+            treatment: tx.treatment,
+            transactionKind: tx.transaction_kind,
+            budgetBehavior: tx.budget_behavior,
+          }) === 'refund' &&
           tx.linked_transaction_id &&
           originalCategoryById.has(tx.linked_transaction_id)
       )

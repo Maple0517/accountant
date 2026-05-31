@@ -186,12 +186,16 @@ test('confirming a suggested transfer updates the matching group leg', async () 
   assert.equal(updatePayloads.length, 2)
   assert.deepEqual(updatePayloads[0], {
     semantic_override_source: 'user',
+    treatment: 'transfer',
+    refund_source: null,
     transaction_kind: 'transfer',
     budget_behavior: 'exclude_as_transfer',
     transfer_match_status: 'manually_matched',
   })
   assert.deepEqual(updatePayloads[1], {
     semantic_override_source: 'user',
+    treatment: 'transfer',
+    refund_source: null,
     transaction_kind: 'transfer',
     budget_behavior: 'exclude_as_transfer',
     category_id: 'cat_transfer',
@@ -249,6 +253,8 @@ test('rejecting a transfer clears group metadata and marks both legs ignored', a
   assert.equal(updatePayloads.length, 2)
   assert.deepEqual(updatePayloads[0], {
     semantic_override_source: 'user',
+    treatment: 'spending',
+    refund_source: null,
     transaction_kind: 'normal',
     budget_behavior: 'count_as_spending',
     transfer_match_status: 'ignored',
@@ -281,10 +287,15 @@ test('existing debt payment only updates the selected transaction', async () => 
   assert.equal(updatePayloads.length, 1)
   assert.deepEqual(updatePayloads[0], {
     semantic_override_source: 'user',
-    transaction_kind: 'transfer',
+    treatment: 'spending',
+    refund_source: null,
+    transaction_kind: 'normal',
     budget_behavior: 'count_as_spending',
     category_id: 'cat_debt',
-    transfer_match_status: 'manually_matched',
+    transfer_group_id: null,
+    transfer_match_status: null,
+    transfer_match_confidence: null,
+    transfer_match_reason: null,
   })
   assert.equal(
     operations.some((operation) =>

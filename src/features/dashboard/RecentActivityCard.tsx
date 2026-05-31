@@ -6,6 +6,7 @@ import Link from 'next/link'
 import type { DashboardRecentTransaction } from './types'
 import { formatShortDate } from './dashboard-utils'
 import { useI18n } from '@/i18n/client'
+import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 
 function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value ?? null
@@ -14,12 +15,25 @@ function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
 function badgesFor(tx: DashboardRecentTransaction, t: (key: string) => string) {
   const tags = Array.isArray(tx.tags) ? tx.tags : []
   const badges: Array<{ label: string; tone: 'accent' | 'warning' | 'info' | 'muted' | 'danger' | 'success' }> = []
+  const treatment = deriveTransactionTreatment({
+    treatment: tx.treatment,
+    transactionKind: tx.transaction_kind,
+    budgetBehavior: tx.budget_behavior,
+  })
   if (tags.some((tag) => tag.includes('ai-pending') || tag.includes('plaid-fallback'))) badges.push({ label: t('transactions.aiPending'), tone: 'accent' })
   if (tx.pending) badges.push({ label: t('common.pending'), tone: 'warning' })
-  if (tx.transaction_kind === 'refund') badges.push({ label: t('common.refund'), tone: 'success' })
-  if (tx.transaction_kind === 'reimbursement') badges.push({ label: t('common.reimbursement'), tone: 'success' })
-  if (tx.transaction_kind === 'transfer') badges.push({ label: t('common.transfer'), tone: 'info' })
-  if (tx.budget_behavior === 'exclude_as_transfer' || tx.budget_behavior === 'exclude_manual') badges.push({ label: t('common.excluded'), tone: 'muted' })
+  if (treatment === 'refund') {
+    badges.push({
+      label:
+        tx.refund_source === 'reimbursement'
+          ? t('common.reimbursement')
+          : t('common.refund'),
+      tone: 'success',
+    })
+  }
+  if (treatment === 'transfer') badges.push({ label: t('common.transfer'), tone: 'info' })
+  if (treatment === 'income') badges.push({ label: t('transactions.countsIncome'), tone: 'success' })
+  if (treatment === 'excluded') badges.push({ label: t('common.excluded'), tone: 'muted' })
   return badges.slice(0, 3)
 }
 

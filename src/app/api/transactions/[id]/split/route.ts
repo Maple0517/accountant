@@ -61,6 +61,8 @@ const TRANSACTION_SELECT = `
   notion_page_id,
   tags,
   notes,
+  treatment,
+  refund_source,
   transaction_kind,
   budget_behavior,
   linked_transaction_id,

@@ -9,7 +9,8 @@ import {
   mergeTransactionClassification,
   shouldRefreshAiClassification,
 } from '@/lib/plaid/classification'
-import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
+import { shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,8 @@ type QueueTransaction = {
   description: string
   amount: number
   tags: string[] | null
+  treatment?: string | null
+  refund_source?: string | null
   transaction_kind?: string | null
   budget_behavior?: string | null
   semantic_override_source?: string | null
@@ -153,7 +156,7 @@ export async function POST(request: Request) {
 
     const { data: transactions, error: transactionError } = await supabase
       .from('transactions')
-      .select('id, category_id, merchant_name, description, amount, tags, transaction_kind, budget_behavior, semantic_override_source')
+      .select('id, category_id, merchant_name, description, amount, tags, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source')
       .eq('user_id', user.id)
       .eq('source', 'plaid')
       .in('id', claimedTransactionIds)
@@ -330,10 +333,17 @@ export async function POST(request: Request) {
       }
 
       if (!shouldPreserveBudgetBehavior(tx.semantic_override_source)) {
-        updatePayload.budget_behavior = deriveBudgetBehavior({
+        const semantics = normalizeTransactionSemantics({
+          treatment: tx.treatment,
+          refundSource: tx.refund_source,
           transactionKind: tx.transaction_kind,
+          budgetBehavior: tx.budget_behavior,
           category,
         })
+        updatePayload.treatment = semantics.treatment
+        updatePayload.refund_source = semantics.refundSource
+        updatePayload.transaction_kind = semantics.transactionKind
+        updatePayload.budget_behavior = semantics.budgetBehavior
         updatePayload.semantic_override_source = 'ai'
       }
 

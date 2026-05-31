@@ -1,10 +1,13 @@
 import { z } from 'zod'
 import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 import type {
   BudgetBehavior,
+  RefundSource,
   Transaction,
   TransactionKind,
   TransactionSplitGroup,
+  TransactionTreatment,
 } from '@/types'
 
 export type SplitApiErrorCode =
@@ -31,6 +34,8 @@ export type SplitChildInput = {
   amount_decimal: string
   category_id: string | null
   allocation_date?: string | null
+  treatment?: TransactionTreatment
+  refund_source?: RefundSource | null
   transaction_kind: TransactionKind
   budget_behavior: BudgetBehavior
   linked_transaction_id?: string | null
@@ -88,6 +93,13 @@ export const splitChildSchema = z.object({
   amount_decimal: z.string().trim().regex(moneyPattern),
   category_id: z.union([uuidSchema, z.literal(''), z.null()]).optional(),
   allocation_date: z.union([z.string().regex(datePattern), z.literal(''), z.null()]).optional(),
+  treatment: z
+    .enum(['spending', 'income', 'refund', 'transfer', 'excluded'])
+    .optional(),
+  refund_source: z
+    .enum(['merchant_refund', 'reimbursement'])
+    .nullable()
+    .optional(),
   transaction_kind: z.enum(['normal', 'refund', 'reimbursement', 'transfer']).default('normal'),
   budget_behavior: z
     .enum([
@@ -143,18 +155,28 @@ export function normalizeSplitRequest(body: unknown):
     ok: true,
     value: {
       expected_version: parsed.data.expected_version ?? null,
-      children: parsed.data.children.map((child) => ({
-        id: emptyToUndefined(child.id),
-        amount_decimal: normalizeDecimalString(child.amount_decimal),
-        category_id: emptyToNull(child.category_id),
-        allocation_date: emptyToNull(child.allocation_date),
-        transaction_kind: child.transaction_kind,
-        budget_behavior: child.budget_behavior,
-        linked_transaction_id: emptyToNull(child.linked_transaction_id),
-        merchant_name: emptyToNull(child.merchant_name),
-        description: emptyToNull(child.description),
-        notes: emptyToNull(child.notes),
-      })),
+      children: parsed.data.children.map((child) => {
+        const semantics = normalizeTransactionSemantics({
+          treatment: child.treatment,
+          refundSource: child.refund_source ?? undefined,
+          transactionKind: child.transaction_kind,
+          budgetBehavior: child.budget_behavior,
+        })
+        return {
+          id: emptyToUndefined(child.id),
+          amount_decimal: normalizeDecimalString(child.amount_decimal),
+          category_id: emptyToNull(child.category_id),
+          allocation_date: emptyToNull(child.allocation_date),
+          treatment: semantics.treatment,
+          refund_source: semantics.refundSource,
+          transaction_kind: semantics.transactionKind,
+          budget_behavior: semantics.budgetBehavior,
+          linked_transaction_id: emptyToNull(child.linked_transaction_id),
+          merchant_name: emptyToNull(child.merchant_name),
+          description: emptyToNull(child.description),
+          notes: emptyToNull(child.notes),
+        }
+      }),
     },
   }
 }

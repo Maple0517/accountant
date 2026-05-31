@@ -14,7 +14,20 @@ import {
 } from '@/lib/plaid/classification'
 import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
-import type { AiClassificationJob, BudgetBehavior, Category, Transaction, TransactionKind, TransactionSplitGroup } from '@/types'
+import {
+  deriveTransactionTreatment,
+  normalizeTransactionSemantics,
+} from '@/lib/transactions/treatment'
+import type {
+  AiClassificationJob,
+  BudgetBehavior,
+  Category,
+  RefundSource,
+  Transaction,
+  TransactionKind,
+  TransactionSplitGroup,
+  TransactionTreatment,
+} from '@/types'
 import { useI18n } from '@/i18n/client'
 
 type TransactionFilter = {
@@ -116,6 +129,8 @@ type SplitLineDraft = {
   amount_decimal: string
   category_id: string
   allocation_date: string
+  treatment: TransactionTreatment
+  refund_source: RefundSource | ''
   transaction_kind: TransactionKind
   budget_behavior: BudgetBehavior
   linked_transaction_id: string
@@ -128,6 +143,8 @@ type SplitTreatmentPreset = {
   id: string
   labelKey: string
   hintKey: string
+  treatment: TransactionTreatment
+  refund_source?: RefundSource
   transaction_kind: TransactionKind
   budget_behavior: BudgetBehavior
 }
@@ -202,6 +219,23 @@ function isDisplayedCreditAmount(amount: number | string) {
   return Number(amount) < 0
 }
 
+function getTxTreatment(tx: Pick<Transaction, 'treatment' | 'transaction_kind' | 'budget_behavior'>) {
+  return deriveTransactionTreatment({
+    treatment: tx.treatment,
+    transactionKind: tx.transaction_kind,
+    budgetBehavior: tx.budget_behavior,
+  })
+}
+
+function getTxRefundSource(tx: Pick<Transaction, 'treatment' | 'refund_source' | 'transaction_kind' | 'budget_behavior'>) {
+  return normalizeTransactionSemantics({
+    treatment: tx.treatment,
+    refundSource: tx.refund_source,
+    transactionKind: tx.transaction_kind,
+    budgetBehavior: tx.budget_behavior,
+  }).refundSource
+}
+
 function splitAmountEvenly(amount: number, count: number) {
   const cents = Math.round(amount * 100)
   const base = Math.trunc(cents / count)
@@ -221,26 +255,20 @@ function getDefaultSplitSemantics(tx: TransactionWithRelations) {
   const hasExplicitTreatment =
     tx.semantic_override_source === 'user' ||
     tx.semantic_override_source === 'rule' ||
-    tx.transaction_kind === 'refund' ||
-    tx.transaction_kind === 'reimbursement' ||
-    tx.transaction_kind === 'transfer'
+    getTxTreatment(tx) !== 'spending'
 
   if (hasExplicitTreatment) {
-    return {
-      transaction_kind: tx.transaction_kind || 'normal',
-      budget_behavior: tx.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
-    }
+    return normalizeTransactionSemantics({
+      treatment: tx.treatment,
+      refundSource: tx.refund_source,
+      transactionKind: tx.transaction_kind,
+      budgetBehavior: tx.budget_behavior,
+    })
   }
 
-  return isDisplayedCreditAmount(tx.amount)
-    ? {
-        transaction_kind: 'normal' as const,
-        budget_behavior: 'count_as_income' as const,
-      }
-    : {
-        transaction_kind: 'normal' as const,
-        budget_behavior: DEFAULT_SPLIT_BEHAVIOR,
-      }
+  return normalizeTransactionSemantics({
+    treatment: isDisplayedCreditAmount(tx.amount) ? 'income' : 'spending',
+  })
 }
 
 function addMonths(dateStr: string, offset: number) {
@@ -261,8 +289,10 @@ function createSplitLineDraft(
     amount_decimal: amountDecimal,
     category_id: tx.category_id || '',
     allocation_date: allocationDate,
-    transaction_kind: defaultSemantics.transaction_kind,
-    budget_behavior: defaultSemantics.budget_behavior,
+    treatment: defaultSemantics.treatment,
+    refund_source: (defaultSemantics.refundSource ?? '') as RefundSource | '',
+    transaction_kind: defaultSemantics.transactionKind,
+    budget_behavior: defaultSemantics.budgetBehavior,
     linked_transaction_id: tx.linked_transaction_id || '',
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
@@ -283,8 +313,10 @@ function buildInitialSplitLines(
         amount_decimal: toSplitDecimal(Number(child.amount)),
         category_id: child.category_id || '',
         allocation_date: child.effective_date || child.budget_effective_date || child.date,
-        transaction_kind: defaultSemantics.transaction_kind,
-        budget_behavior: defaultSemantics.budget_behavior,
+        treatment: defaultSemantics.treatment,
+        refund_source: (defaultSemantics.refundSource ?? '') as RefundSource | '',
+        transaction_kind: defaultSemantics.transactionKind,
+        budget_behavior: defaultSemantics.budgetBehavior,
         linked_transaction_id: child.linked_transaction_id || '',
         merchant_name: child.merchant_name || '',
         description: child.description || '',
@@ -301,16 +333,15 @@ function buildInitialSplitLines(
 function getSplitTreatmentPresetId(line: SplitLineDraft) {
   const exactMatch = SPLIT_TREATMENT_PRESETS.find(
     (preset) =>
-      preset.transaction_kind === line.transaction_kind &&
-      preset.budget_behavior === line.budget_behavior
+      preset.treatment === line.treatment &&
+      (preset.refund_source || '') === line.refund_source
   )
   if (exactMatch) return exactMatch.id
-  if (line.transaction_kind === 'refund') return 'refund'
-  if (line.transaction_kind === 'reimbursement') return 'reimbursement'
-  if (line.transaction_kind === 'transfer') return 'transfer'
-  if (line.budget_behavior === 'count_as_income') return 'income'
-  if (line.budget_behavior === 'exclude_as_transfer') return 'transfer'
-  if (line.budget_behavior === 'exclude_manual') return 'exclude'
+  if (line.treatment === 'refund' && line.refund_source === 'reimbursement') return 'reimbursement'
+  if (line.treatment === 'refund') return 'refund'
+  if (line.treatment === 'transfer') return 'transfer'
+  if (line.treatment === 'income') return 'income'
+  if (line.treatment === 'excluded') return 'exclude'
   return 'spending'
 }
 
@@ -333,6 +364,8 @@ function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | n
       amount_decimal: line.amount_decimal,
       category_id: line.category_id || null,
       allocation_date: line.allocation_date || null,
+      treatment: line.treatment,
+      refund_source: line.refund_source || null,
       transaction_kind: line.transaction_kind,
       budget_behavior: line.budget_behavior,
       linked_transaction_id: line.linked_transaction_id || null,
@@ -437,12 +470,12 @@ function formatGroupSummary(
 const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚', '✈️', '💰', '🏠', '💻', '🎮']
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 const TRANSACTIONS_PAGE_SIZE = 50
-const DEFAULT_SPLIT_BEHAVIOR: BudgetBehavior = 'count_as_spending'
 const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
   {
     id: 'spending',
     labelKey: 'transactions.spendingOption',
     hintKey: 'transactions.spendingOptionHint',
+    treatment: 'spending',
     transaction_kind: 'normal',
     budget_behavior: 'count_as_spending',
   },
@@ -450,6 +483,7 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     id: 'income',
     labelKey: 'transactions.incomeOption',
     hintKey: 'transactions.incomeOptionHint',
+    treatment: 'income',
     transaction_kind: 'normal',
     budget_behavior: 'count_as_income',
   },
@@ -457,6 +491,7 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     id: 'transfer',
     labelKey: 'transactions.internalTransfer',
     hintKey: 'transactions.internalTransferHint',
+    treatment: 'transfer',
     transaction_kind: 'transfer',
     budget_behavior: 'exclude_as_transfer',
   },
@@ -464,6 +499,8 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     id: 'refund',
     labelKey: 'common.refund',
     hintKey: 'transactions.refundOptionHint',
+    treatment: 'refund',
+    refund_source: 'merchant_refund',
     transaction_kind: 'refund',
     budget_behavior: 'count_as_spending',
   },
@@ -471,6 +508,8 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     id: 'reimbursement',
     labelKey: 'common.reimbursement',
     hintKey: 'transactions.reimbursementOptionHint',
+    treatment: 'refund',
+    refund_source: 'reimbursement',
     transaction_kind: 'reimbursement',
     budget_behavior: 'count_as_spending',
   },
@@ -478,6 +517,7 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     id: 'exclude',
     labelKey: 'transactions.exclude',
     hintKey: 'transactions.excludeOptionHint',
+    treatment: 'excluded',
     transaction_kind: 'normal',
     budget_behavior: 'exclude_manual',
   },
@@ -1031,6 +1071,8 @@ export default function TransactionsPage() {
     async (
       transactionId: string,
       payload: {
+        treatment?: Transaction['treatment']
+        refund_source?: Transaction['refund_source']
         transaction_kind?: Transaction['transaction_kind']
         linked_transaction_id?: string | null
         budget_effective_date?: string | null
@@ -1078,6 +1120,8 @@ export default function TransactionsPage() {
     async (
       transactionId: string,
       payload: {
+        treatment?: Transaction['treatment']
+        refund_source?: Transaction['refund_source']
         transaction_kind?: Transaction['transaction_kind']
         budget_behavior?: Transaction['budget_behavior']
         transfer_match_status?: Transaction['transfer_match_status']
@@ -1688,6 +1732,8 @@ const TransactionItem = memo(function TransactionItem({
   onSaveRefundMetadata: (
     transactionId: string,
     payload: {
+      treatment?: Transaction['treatment']
+      refund_source?: Transaction['refund_source']
       transaction_kind?: Transaction['transaction_kind']
       linked_transaction_id?: string | null
       budget_effective_date?: string | null
@@ -1697,6 +1743,8 @@ const TransactionItem = memo(function TransactionItem({
   onSaveSemantics: (
     transactionId: string,
     payload: {
+      treatment?: Transaction['treatment']
+      refund_source?: Transaction['refund_source']
       transaction_kind?: Transaction['transaction_kind']
       budget_behavior?: Transaction['budget_behavior']
       transfer_match_status?: Transaction['transfer_match_status']
@@ -1713,6 +1761,8 @@ const TransactionItem = memo(function TransactionItem({
   const isIncome = amount < 0
   const displayAmount = -amount
   const isDisplayedCredit = displayAmount > 0
+  const treatment = getTxTreatment(tx)
+  const refundSource = getTxRefundSource(tx)
   const categoryIcon = tx.categories?.icon || '📦'
   const displayCategoryName = categoryName(tx.categories)
   const merchantName = tx.merchant_name || tx.description
@@ -1749,14 +1799,21 @@ const TransactionItem = memo(function TransactionItem({
     badgeParts.push({ label: classificationStatus, tone: classificationStatus === 'AI Pending' ? 'accent' : 'success' })
   }
   if (tx.pending) badgeParts.push({ label: t('common.pending'), tone: 'warning' })
-  if (tx.transaction_kind === 'refund') badgeParts.push({ label: t('common.refund'), tone: 'success' })
-  if (tx.transaction_kind === 'reimbursement') badgeParts.push({ label: t('common.reimbursement'), tone: 'success' })
-  if (tx.transaction_kind === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
+  if (treatment === 'refund') {
+    badgeParts.push({
+      label:
+        refundSource === 'reimbursement'
+          ? t('common.reimbursement')
+          : t('common.refund'),
+      tone: 'success',
+    })
+  }
+  if (treatment === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
   if (tx.split_role === 'child') badgeParts.push({ label: `Split ${tx.split_sequence || ''}`.trim(), tone: 'accent' })
   if (tx.split_status === 'out_of_balance') badgeParts.push({ label: t('transactions.splitOutOfBalance'), tone: 'warning' })
-  if (tx.budget_behavior === 'count_as_income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
-  if (tx.budget_behavior === 'exclude_as_transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
-  if (tx.budget_behavior === 'exclude_manual') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
+  if (treatment === 'income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
+  if (treatment === 'transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
+  if (treatment === 'excluded') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
   if (tx.transfer_match_status === 'auto_matched' || tx.transfer_match_status === 'manually_matched') badgeParts.push({ label: t('common.matched'), tone: 'success' })
   if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: t('common.suggested'), tone: 'warning' })
   if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: t('common.unmatched'), tone: 'warning' })
@@ -1784,7 +1841,7 @@ const TransactionItem = memo(function TransactionItem({
   } else if (tx.source === 'manual' && !accountLabel) {
     metaParts.push('Manual')
   }
-  if (tx.budget_behavior === 'count_as_income') {
+  if (treatment === 'income') {
     pushMetaPart(t('transactions.countsAsIncome'), [t('transactions.countsIncome')])
   }
   if (tx.transfer_match_status === 'auto_matched') {
@@ -1805,7 +1862,7 @@ const TransactionItem = memo(function TransactionItem({
   const hasTransferReview = needsTransferReview(tx)
   const showRefundControls =
     isDisplayedCredit &&
-    (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement')
+    treatment === 'refund'
   const reviewActions = [
     !tx.category_id || hasAutomaticClassificationTag
       ? {
@@ -1851,9 +1908,8 @@ const TransactionItem = memo(function TransactionItem({
               variant: 'ghost',
               onClick: () =>
                 onSaveSemantics(tx.id, {
-                  transaction_kind: 'normal',
+                  treatment: 'spending',
                   transfer_match_status: 'ignored',
-                  budget_behavior: 'count_as_spending',
                 }),
               disabled: isSaving,
             },
@@ -1882,7 +1938,7 @@ const TransactionItem = memo(function TransactionItem({
               variant: 'ghost',
               onClick: () =>
                 onSaveRefundMetadata(tx.id, {
-                  transaction_kind: 'normal',
+                  treatment: 'spending',
                 }),
               disabled: isSaving,
             },
@@ -2141,60 +2197,55 @@ const TransactionItem = memo(function TransactionItem({
               <>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.transaction_kind === 'refund' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'refund' && refundSource !== 'reimbursement' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'refund' })}
+                  onClick={() =>
+                    onSaveRefundMetadata(tx.id, {
+                      treatment: 'refund',
+                      refund_source: 'merchant_refund',
+                    })
+                  }
                 >
                   <strong>{t('common.refund')}</strong>
                   <span>{t('transactions.refundOptionHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.transaction_kind === 'reimbursement' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'refund' && refundSource === 'reimbursement' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'reimbursement' })}
+                  onClick={() =>
+                    onSaveRefundMetadata(tx.id, {
+                      treatment: 'refund',
+                      refund_source: 'reimbursement',
+                    })
+                  }
                 >
                   <strong>{t('common.reimbursement')}</strong>
                   <span>{t('transactions.reimbursementOptionHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.budget_behavior === 'count_as_income' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'income' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'normal',
-                      budget_behavior: 'count_as_income',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'income' })}
                 >
                   <strong>{t('transactions.incomeOption')}</strong>
                   <span>{t('transactions.incomeOptionHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.budget_behavior === 'exclude_as_transfer' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'transfer' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'transfer',
-                      budget_behavior: 'exclude_as_transfer',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'transfer' })}
                 >
                   <strong>{t('transactions.internalTransfer')}</strong>
                   <span>{t('transactions.internalTransferHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.budget_behavior === 'exclude_manual' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'excluded' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'normal',
-                      budget_behavior: 'exclude_manual',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'excluded' })}
                 >
                   <strong>{t('transactions.exclude')}</strong>
                   <span>{t('transactions.excludeOptionHint')}</span>
@@ -2204,42 +2255,27 @@ const TransactionItem = memo(function TransactionItem({
               <>
                 <button
                   type="button"
-                  className={`semantic-option ${(!tx.budget_behavior || tx.budget_behavior === 'count_as_spending') && tx.transaction_kind !== 'transfer' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'spending' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'normal',
-                      budget_behavior: 'count_as_spending',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'spending' })}
                 >
                   <strong>{t('transactions.spendingOption')}</strong>
                   <span>{t('transactions.spendingOptionHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.budget_behavior === 'exclude_as_transfer' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'transfer' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'transfer',
-                      budget_behavior: 'exclude_as_transfer',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'transfer' })}
                 >
                   <strong>{t('transactions.internalTransfer')}</strong>
                   <span>{t('transactions.internalTransferHint')}</span>
                 </button>
                 <button
                   type="button"
-                  className={`semantic-option ${tx.budget_behavior === 'exclude_manual' ? 'selected' : ''}`}
+                  className={`semantic-option ${treatment === 'excluded' ? 'selected' : ''}`}
                   disabled={isSaving}
-                  onClick={() =>
-                    onSaveSemantics(tx.id, {
-                      transaction_kind: 'normal',
-                      budget_behavior: 'exclude_manual',
-                    })
-                  }
+                  onClick={() => onSaveSemantics(tx.id, { treatment: 'excluded' })}
                 >
                   <strong>{t('transactions.exclude')}</strong>
                   <span>{t('transactions.excludeOptionHint')}</span>
@@ -2360,9 +2396,8 @@ const TransactionItem = memo(function TransactionItem({
                     disabled={isSaving}
                     onClick={() =>
                       onSaveSemantics(tx.id, {
-                        transaction_kind: 'normal',
+                        treatment: 'spending',
                         transfer_match_status: 'ignored',
-                        budget_behavior: 'count_as_spending',
                       })
                     }
                   >
@@ -2812,6 +2847,8 @@ function SplitEditorDrawer({
                             className={`split-treatment-option ${treatmentPresetId === preset.id ? 'selected' : ''}`}
                             onClick={() =>
                               setLine(index, {
+                                treatment: preset.treatment,
+                                refund_source: preset.refund_source || '',
                                 transaction_kind: preset.transaction_kind,
                                 budget_behavior: preset.budget_behavior,
                               })

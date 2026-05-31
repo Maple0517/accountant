@@ -22,12 +22,20 @@ import {
   isLikelyRefundCandidate,
 } from '@/lib/transactions/refund-matching'
 import { MANUAL_REVIEWED_REFUND_REASON } from '@/lib/transactions/review'
-import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 import {
   detectTransferSemantics,
   type TransferAccountContext,
 } from '@/lib/transactions/transfer-matching'
-import type { BudgetBehavior, SemanticOverrideSource } from '@/types'
+import {
+  deriveTransactionTreatment,
+  normalizeTransactionSemantics,
+} from '@/lib/transactions/treatment'
+import type {
+  BudgetBehavior,
+  RefundSource,
+  SemanticOverrideSource,
+  TransactionTreatment,
+} from '@/types'
 
 type PlaidSyncTransaction = PlaidCategorySource & {
   account_id: string
@@ -59,6 +67,8 @@ type ExistingPlaidTransaction = {
   category_id: string | null
   merchant_name: string | null
   tags?: string[] | null
+  treatment?: TransactionTreatment | null
+  refund_source?: RefundSource | null
   transaction_kind?: string | null
   budget_behavior?: BudgetBehavior | null
   linked_transaction_id?: string | null
@@ -376,6 +386,8 @@ export async function syncPlaidItemTransactions({
           split_group_id,
           category_id,
           tags,
+          treatment,
+          refund_source,
           transaction_kind,
           budget_behavior,
           linked_transaction_id,
@@ -488,6 +500,8 @@ export async function syncPlaidItemTransactions({
         category_id,
         merchant_name,
         tags,
+        treatment,
+        refund_source,
         transaction_kind,
         budget_behavior,
         linked_transaction_id,
@@ -600,12 +614,23 @@ export async function syncPlaidItemTransactions({
 
       const refundCandidate = isLikelyRefundCandidate(tx)
       let nextCategoryId = categoryId
-      let transactionKind =
-        existingTransaction?.transaction_kind && existingTransaction.transaction_kind !== 'normal'
-          ? existingTransaction.transaction_kind
-          : refundCandidate
-            ? 'refund'
-            : 'normal'
+      const categoryForBudgetBehavior = nextCategoryId
+        ? userCategories.find((category) => category.id === nextCategoryId)
+        : null
+      const existingSemantics = normalizeTransactionSemantics({
+        treatment: existingTransaction?.treatment,
+        refundSource: existingTransaction?.refund_source,
+        transactionKind: existingTransaction?.transaction_kind,
+        budgetBehavior: existingTransaction?.budget_behavior,
+        category: categoryForBudgetBehavior,
+      })
+      let treatment =
+        existingSemantics.treatment !== 'spending'
+          ? existingSemantics.treatment
+          : deriveTransactionTreatment({
+              category: categoryForBudgetBehavior,
+            })
+      let refundSource = existingSemantics.refundSource
       let linkedTransactionId = existingTransaction?.linked_transaction_id ?? null
       let budgetEffectiveDate = existingTransaction?.budget_effective_date ?? tx.date
       let refundMatchConfidence = existingTransaction?.refund_match_confidence ?? null
@@ -631,7 +656,8 @@ export async function syncPlaidItemTransactions({
           refundDate: tx.date,
         })
 
-        transactionKind = 'refund'
+        treatment = 'refund'
+        refundSource = refundSource ?? 'merchant_refund'
 
         if (match) {
           const refundedCategory = await getOrCreateRefundedCategory(
@@ -667,7 +693,8 @@ export async function syncPlaidItemTransactions({
             userCategories
           )
 
-          transactionKind = transferTreatment.transactionKind ?? 'transfer'
+          treatment = 'transfer'
+          refundSource = null
           nextCategoryId = transferCategory?.id ?? nextCategoryId
           linkedTransactionId = null
           budgetEffectiveDate = tx.date
@@ -681,17 +708,28 @@ export async function syncPlaidItemTransactions({
         transferMatchReason = transferTreatment.transferMatchReason
       }
 
-      const categoryForBudgetBehavior = nextCategoryId
+      const finalCategoryForBudgetBehavior = nextCategoryId
         ? userCategories.find((category) => category.id === nextCategoryId)
         : null
+      const normalizedSemantics =
+        preserveSemanticTreatment && existingTransaction
+          ? normalizeTransactionSemantics({
+              treatment: existingTransaction.treatment,
+              refundSource: existingTransaction.refund_source,
+              transactionKind: existingTransaction.transaction_kind,
+              budgetBehavior: existingTransaction.budget_behavior,
+              category: finalCategoryForBudgetBehavior,
+            })
+          : normalizeTransactionSemantics({
+              treatment,
+              refundSource,
+              category: finalCategoryForBudgetBehavior,
+            })
       const budgetBehavior =
         preserveSemanticTreatment && existingTransaction?.budget_behavior
           ? existingTransaction.budget_behavior
           : transferTreatment?.budgetBehavior ??
-            deriveBudgetBehavior({
-              transactionKind,
-              category: categoryForBudgetBehavior,
-            })
+            normalizedSemantics.budgetBehavior
       const semanticOverrideSource =
         existingTransaction?.semantic_override_source ??
         (transferTreatment ? 'system' : 'system')
@@ -711,7 +749,9 @@ export async function syncPlaidItemTransactions({
         pending: tx.pending,
         source: 'plaid',
         tags,
-        transaction_kind: transactionKind,
+        treatment: normalizedSemantics.treatment,
+        refund_source: normalizedSemantics.refundSource,
+        transaction_kind: normalizedSemantics.transactionKind,
         budget_behavior: budgetBehavior,
         linked_transaction_id: linkedTransactionId,
         budget_effective_date: budgetEffectiveDate,

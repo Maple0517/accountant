@@ -5,7 +5,8 @@ import {
   canApplySimilarCategoryUpdate,
   getTransactionMutationBlockReason,
 } from '@/lib/transactions/mutation-guard'
-import { deriveBudgetBehavior, shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
+import { shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,7 +46,7 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, category_id, tags, merchant_name, description, source, transaction_kind, budget_behavior, semantic_override_source, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
+          .select('id, user_id, category_id, tags, merchant_name, description, source, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
@@ -83,7 +84,7 @@ export async function PATCH(
     if (mode === 'similar') {
       const { data: candidates, error: candidatesError } = await supabase
         .from('transactions')
-        .select('id, tags, merchant_name, description, transaction_kind, budget_behavior, semantic_override_source')
+        .select('id, tags, merchant_name, description, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
         .is('deleted_at', null)
@@ -116,10 +117,17 @@ export async function PATCH(
           }
 
           if (!shouldPreserveBudgetBehavior(candidate.semantic_override_source)) {
-            updatePayload.budget_behavior = deriveBudgetBehavior({
+            const semantics = normalizeTransactionSemantics({
+              treatment: candidate.treatment,
+              refundSource: candidate.refund_source,
               transactionKind: candidate.transaction_kind,
+              budgetBehavior: candidate.budget_behavior,
               category,
             })
+            updatePayload.treatment = semantics.treatment
+            updatePayload.refund_source = semantics.refundSource
+            updatePayload.transaction_kind = semantics.transactionKind
+            updatePayload.budget_behavior = semantics.budgetBehavior
             updatePayload.semantic_override_source = 'user'
           }
 
@@ -145,10 +153,17 @@ export async function PATCH(
       }
 
       if (!shouldPreserveBudgetBehavior(transaction.semantic_override_source)) {
-        updatePayload.budget_behavior = deriveBudgetBehavior({
+        const semantics = normalizeTransactionSemantics({
+          treatment: transaction.treatment,
+          refundSource: transaction.refund_source,
           transactionKind: transaction.transaction_kind,
+          budgetBehavior: transaction.budget_behavior,
           category,
         })
+        updatePayload.treatment = semantics.treatment
+        updatePayload.refund_source = semantics.refundSource
+        updatePayload.transaction_kind = semantics.transactionKind
+        updatePayload.budget_behavior = semantics.budgetBehavior
         updatePayload.semantic_override_source = 'user'
       }
 

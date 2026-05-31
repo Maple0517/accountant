@@ -121,7 +121,7 @@ export async function findLikelyOriginalPurchase({
     .from('transactions')
     .select('id, account_id, category_id, amount, date, merchant_name, description')
     .eq('user_id', userId)
-    .eq('transaction_kind', 'normal')
+    .eq('treatment', 'spending')
     .is('deleted_at', null)
     .eq('is_hidden_from_reports', false)
     .gt('amount', 0)

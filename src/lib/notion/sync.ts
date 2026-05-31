@@ -61,9 +61,11 @@ const semanticPropertySchema: NonNullable<UpdateDataSourceParameters['properties
     select: {
       options: [
         { name: 'Normal', color: 'default' },
+        { name: 'Income', color: 'green' },
         { name: 'Refund', color: 'green' },
         { name: 'Reimbursement', color: 'blue' },
         { name: 'Transfer', color: 'gray' },
+        { name: 'Excluded', color: 'yellow' },
       ],
     },
   },
@@ -985,9 +987,9 @@ function buildNotionProperties(
   }
 
   const type =
-    transaction.budget_behavior === 'exclude_as_transfer'
+    transaction.treatment === 'transfer'
       ? 'transfer'
-      : transaction.budget_behavior === 'count_as_income'
+      : transaction.treatment === 'income'
         ? 'income'
         : Number(transaction.amount) < 0
           ? 'income'
@@ -995,7 +997,7 @@ function buildNotionProperties(
   properties.Type = { select: { name: type } }
 
   if (includeSemantics) {
-    const kind = formatTransactionKind(transaction.transaction_kind)
+    const kind = formatTransactionKind(transaction)
     const treatment = formatBudgetTreatment(transaction.budget_behavior)
     const transferStatus = formatTransferStatus(transaction.transfer_match_status)
 
@@ -1044,10 +1046,15 @@ function buildNotionProperties(
   return properties
 }
 
-function formatTransactionKind(kind: Transaction['transaction_kind']) {
-  if (kind === 'refund') return 'Refund'
-  if (kind === 'reimbursement') return 'Reimbursement'
-  if (kind === 'transfer') return 'Transfer'
+function formatTransactionKind(transaction: Transaction) {
+  if (transaction.treatment === 'refund') {
+    return transaction.refund_source === 'reimbursement'
+      ? 'Reimbursement'
+      : 'Refund'
+  }
+  if (transaction.treatment === 'transfer') return 'Transfer'
+  if (transaction.treatment === 'income') return 'Income'
+  if (transaction.treatment === 'excluded') return 'Excluded'
   return 'Normal'
 }
 

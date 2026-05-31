@@ -213,6 +213,8 @@ const TRANSACTION_SELECT = `
   source,
   category_id,
   tags,
+  treatment,
+  refund_source,
   transaction_kind,
   semantic_override_source,
   budget_behavior,

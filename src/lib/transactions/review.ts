@@ -1,9 +1,11 @@
 import { AI_PENDING_TAG, PLAID_FALLBACK_TAG } from '@/lib/plaid/classification'
+import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 
 export const REFUND_REVIEW_CONFIDENCE_THRESHOLD = 0.8
 export const MANUAL_REVIEWED_REFUND_REASON = 'manual-reviewed'
 
 type RefundReviewFields = {
+  treatment?: string | null
   transaction_kind?: string | null
   linked_transaction_id?: string | null
   refund_match_confidence?: number | string | null
@@ -19,7 +21,12 @@ type TransactionReviewFields = RefundReviewFields & {
 }
 
 export function needsRefundReview(tx: RefundReviewFields) {
-  if (tx.transaction_kind !== 'refund' && tx.transaction_kind !== 'reimbursement') {
+  if (
+    deriveTransactionTreatment({
+      treatment: tx.treatment,
+      transactionKind: tx.transaction_kind,
+    }) !== 'refund'
+  ) {
     return false
   }
 
@@ -43,11 +50,17 @@ export function needsRefundReview(tx: RefundReviewFields) {
 }
 
 export function needsTransferReview(tx: {
+  treatment?: string | null
   transaction_kind?: string | null
+  budget_behavior?: string | null
   transfer_match_status?: string | null
 }) {
   return (
-    tx.transaction_kind === 'transfer' &&
+    deriveTransactionTreatment({
+      treatment: tx.treatment,
+      transactionKind: tx.transaction_kind,
+      budgetBehavior: tx.budget_behavior,
+    }) === 'transfer' &&
     (!tx.transfer_match_status ||
       tx.transfer_match_status === 'unmatched' ||
       tx.transfer_match_status === 'suggested')

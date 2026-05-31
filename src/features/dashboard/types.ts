@@ -15,6 +15,8 @@ export type DashboardMonthTransaction = {
   pending?: boolean | null
   category_id?: string | null
   tags?: string[] | null
+  treatment?: string | null
+  refund_source?: string | null
   transaction_kind?: string | null
   linked_transaction_id?: string | null
   refund_match_confidence?: number | string | null
@@ -40,6 +42,8 @@ export type DashboardRecentTransaction = {
   source: string
   pending?: boolean | null
   tags?: string[] | null
+  treatment?: string | null
+  refund_source?: string | null
   transaction_kind?: string | null
   budget_behavior?: string | null
   transfer_match_status?: string | null

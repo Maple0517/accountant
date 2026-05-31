@@ -1,8 +1,16 @@
 import { getTransactionMutationBlockReason } from '@/lib/transactions/mutation-guard'
-import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
+import {
+  deriveLegacyTransactionKind,
+  deriveTransactionTreatment,
+  isRefundSource,
+  isTransactionTreatment,
+  normalizeTransactionSemantics,
+} from '@/lib/transactions/treatment'
 import type {
   BudgetBehavior,
+  RefundSource,
   TransactionKind,
+  TransactionTreatment,
   TransactionSplitRole,
   TransferMatchStatus,
 } from '@/types'
@@ -17,7 +25,10 @@ type TransactionSemanticsRow = {
   user_id: string
   date: string
   category_id: string | null
+  treatment: TransactionTreatment | null
+  refund_source: RefundSource | null
   transaction_kind: TransactionKind | null
+  budget_behavior: BudgetBehavior | null
   transfer_group_id: string | null
   deleted_at?: string | null
   is_hidden_from_reports?: boolean | null
@@ -81,6 +92,14 @@ const VALID_KINDS = new Set<TransactionKind>([
   'transfer',
 ])
 
+const VALID_TREATMENTS = new Set<TransactionTreatment>([
+  'spending',
+  'income',
+  'refund',
+  'transfer',
+  'excluded',
+])
+
 const VALID_BUDGET_BEHAVIORS = new Set<BudgetBehavior>([
   'count_as_spending',
   'count_as_income',
@@ -120,9 +139,20 @@ export async function updateTransactionSemantics({
   body: unknown
   ensureCategory: EnsureSemanticCategory
 }): Promise<TransactionSemanticsUpdateResult> {
+  const rawTreatment = readBodyValue(body, 'treatment')
+  const rawRefundSource = readBodyValue(body, 'refund_source')
   const rawKind = readBodyValue(body, 'transaction_kind')
   const rawBudgetBehavior = readBodyValue(body, 'budget_behavior')
   const rawTransferStatus = readBodyValue(body, 'transfer_match_status')
+  const requestedTreatment =
+    typeof rawTreatment === 'string' &&
+    VALID_TREATMENTS.has(rawTreatment as TransactionTreatment)
+      ? (rawTreatment as TransactionTreatment)
+      : undefined
+  const requestedRefundSource =
+    typeof rawRefundSource === 'string' && isRefundSource(rawRefundSource)
+      ? rawRefundSource
+      : undefined
   const requestedKind =
     typeof rawKind === 'string' && VALID_KINDS.has(rawKind as TransactionKind)
       ? (rawKind as TransactionKind)
@@ -139,6 +169,14 @@ export async function updateTransactionSemantics({
       : undefined
   const isExistingDebtPayment =
     readBodyValue(body, 'existing_debt_payment') === true
+
+  if (rawTreatment !== undefined && requestedTreatment === undefined) {
+    return { ok: false, status: 400, error: 'Invalid treatment' }
+  }
+
+  if (rawRefundSource !== undefined && requestedRefundSource === undefined) {
+    return { ok: false, status: 400, error: 'Invalid refund_source' }
+  }
 
   if (rawKind !== undefined && requestedKind === undefined) {
     return { ok: false, status: 400, error: 'Invalid transaction_kind' }
@@ -159,7 +197,10 @@ export async function updateTransactionSemantics({
       user_id,
       date,
       category_id,
+      treatment,
+      refund_source,
       transaction_kind,
+      budget_behavior,
       transfer_group_id,
       deleted_at,
       is_hidden_from_reports,
@@ -199,10 +240,15 @@ export async function updateTransactionSemantics({
       type: 'expense',
     })
 
-    update.transaction_kind = 'transfer'
+    update.treatment = 'spending'
+    update.refund_source = null
+    update.transaction_kind = 'normal'
     update.budget_behavior = 'count_as_spending'
     update.category_id = debtCategory?.id ?? transaction.category_id
-    update.transfer_match_status = requestedTransferStatus ?? 'manually_matched'
+    update.transfer_group_id = null
+    update.transfer_match_status = null
+    update.transfer_match_confidence = null
+    update.transfer_match_reason = null
   } else if (requestedTransferStatus === 'manually_matched') {
     const transferCategory = await ensureCategory(supabase, userId, {
       name: 'Transfer',
@@ -211,39 +257,75 @@ export async function updateTransactionSemantics({
       type: 'transfer',
     })
 
+    update.treatment = 'transfer'
+    update.refund_source = null
     update.transaction_kind = 'transfer'
     update.budget_behavior = 'exclude_as_transfer'
     update.category_id = transferCategory?.id ?? transaction.category_id
     update.transfer_match_status = 'manually_matched'
     applyToTransferGroup = true
   } else {
-    const nextKind = requestedKind ?? transaction.transaction_kind ?? 'normal'
+    const requestedLegacyTreatment =
+      requestedKind || requestedBudgetBehavior
+        ? normalizeTransactionSemantics({
+            transactionKind: requestedKind,
+            budgetBehavior: requestedBudgetBehavior,
+            category: requestedBudgetBehavior ? undefined : currentCategory,
+          })
+        : null
+    const nextTreatment =
+      requestedTransferStatus === 'ignored' &&
+      requestedTreatment === undefined &&
+      requestedLegacyTreatment == null
+        ? 'spending'
+        : requestedTreatment ??
+          requestedLegacyTreatment?.treatment ??
+          transaction.treatment ??
+          deriveTransactionTreatment({
+            transactionKind: transaction.transaction_kind,
+            budgetBehavior: transaction.budget_behavior,
+            category: currentCategory,
+          })
+    const nextRefundSource =
+      nextTreatment === 'refund'
+        ? requestedRefundSource ??
+          requestedLegacyTreatment?.refundSource ??
+          transaction.refund_source ??
+          (transaction.transaction_kind === 'reimbursement'
+            ? 'reimbursement'
+            : 'merchant_refund')
+        : null
+    const normalized = normalizeTransactionSemantics({
+      treatment: nextTreatment,
+      refundSource: nextRefundSource,
+      category: currentCategory,
+    })
 
-    if (requestedKind) {
-      update.transaction_kind = requestedKind
-    }
-
-    update.budget_behavior =
-      requestedBudgetBehavior ??
-      deriveBudgetBehavior({
-        transactionKind: nextKind,
-        category: currentCategory,
-      })
+    update.treatment = normalized.treatment
+    update.refund_source = normalized.refundSource
+    update.transaction_kind = normalized.transactionKind
+    update.budget_behavior = normalized.budgetBehavior
 
     if (requestedTransferStatus) {
       update.transfer_match_status = requestedTransferStatus
     }
   }
 
-  if (update.transaction_kind === 'normal') {
+  if (
+    isTransactionTreatment(update.treatment as string | undefined) &&
+    update.treatment !== 'transfer'
+  ) {
     update.transfer_group_id = null
     update.transfer_match_status =
       requestedTransferStatus === 'ignored' ? 'ignored' : null
     update.transfer_match_confidence = null
     update.transfer_match_reason = null
     applyToTransferGroup = requestedTransferStatus === 'ignored'
-  } else if (update.budget_behavior === 'exclude_as_transfer') {
-    update.transaction_kind = 'transfer'
+  } else if (update.treatment === 'transfer') {
+    update.transaction_kind = deriveLegacyTransactionKind({
+      treatment: 'transfer',
+      refundSource: null,
+    })
   }
 
   let groupUpdated = false

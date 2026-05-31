@@ -1,4 +1,10 @@
-import type { BudgetBehavior, TransactionKind } from '@/types'
+import type {
+  BudgetBehavior,
+  RefundSource,
+  TransactionKind,
+  TransactionTreatment,
+} from '@/types'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 type CategoryBudgetSemantics = {
   type?: 'income' | 'expense' | 'transfer' | null
@@ -6,37 +12,30 @@ type CategoryBudgetSemantics = {
 } | null | undefined
 
 type TransactionSemanticsInput = {
+  treatment?: TransactionTreatment | string | null
+  refundSource?: RefundSource | string | null
   transactionKind?: TransactionKind | string | null
+  budgetBehavior?: BudgetBehavior | string | null
   category?: CategoryBudgetSemantics
   transactionType?: 'expense' | 'income' | 'transfer' | 'unknown' | null
 }
 
 export function deriveBudgetBehavior({
+  treatment,
+  refundSource,
   transactionKind,
+  budgetBehavior,
   category,
   transactionType,
 }: TransactionSemanticsInput): BudgetBehavior {
-  if (transactionKind === 'transfer' || transactionType === 'transfer') {
-    return 'exclude_as_transfer'
-  }
-
-  if (transactionKind === 'refund' || transactionKind === 'reimbursement') {
-    return 'count_as_spending'
-  }
-
-  if (category?.is_excluded_from_budget === true) {
-    return category.type === 'transfer' ? 'exclude_as_transfer' : 'exclude_manual'
-  }
-
-  if (category?.type === 'income' || transactionType === 'income') {
-    return 'count_as_income'
-  }
-
-  if (category?.type === 'transfer') {
-    return 'exclude_as_transfer'
-  }
-
-  return 'count_as_spending'
+  return normalizeTransactionSemantics({
+    treatment,
+    refundSource,
+    transactionKind,
+    budgetBehavior,
+    category,
+    transactionType,
+  }).budgetBehavior
 }
 
 export function shouldPreserveBudgetBehavior(

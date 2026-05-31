@@ -136,7 +136,7 @@ export function applySavedViewFilters(
   switch (savedView) {
     case 'needs_review':
       return query.or(
-        `category_id.is.null,tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"},pending.eq.true,and(transaction_kind.in.(refund,reimbursement),or(refund_match_reason.is.null,refund_match_reason.neq.${MANUAL_REVIEWED_REFUND_REASON}),or(linked_transaction_id.is.null,and(refund_match_confidence.is.null,or(semantic_override_source.is.null,semantic_override_source.neq.user)),refund_match_confidence.lt.${REFUND_REVIEW_CONFIDENCE_THRESHOLD})),and(transaction_kind.eq.transfer,or(transfer_match_status.is.null,transfer_match_status.in.(unmatched,suggested)))`
+        `category_id.is.null,tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"},pending.eq.true,and(treatment.eq.refund,or(refund_match_reason.is.null,refund_match_reason.neq.${MANUAL_REVIEWED_REFUND_REASON}),or(linked_transaction_id.is.null,and(refund_match_confidence.is.null,or(semantic_override_source.is.null,semantic_override_source.neq.user)),refund_match_confidence.lt.${REFUND_REVIEW_CONFIDENCE_THRESHOLD})),and(treatment.eq.transfer,or(transfer_match_status.is.null,transfer_match_status.in.(unmatched,suggested)))`
       )
     case 'uncategorized':
       return query.is('category_id', null)
@@ -145,9 +145,9 @@ export function applySavedViewFilters(
         `tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"}`
       )
     case 'refunds':
-      return query.in('transaction_kind', ['refund', 'reimbursement'])
+      return query.eq('treatment', 'refund')
     case 'transfers':
-      return query.or('transaction_kind.eq.transfer,transfer_match_status.not.is.null')
+      return query.or('treatment.eq.transfer,transfer_match_status.not.is.null')
     case 'pending':
       return query.eq('pending', true)
     case 'large':
