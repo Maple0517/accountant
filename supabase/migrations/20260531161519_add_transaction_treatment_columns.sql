@@ -45,6 +45,8 @@ BEGIN
   END IF;
 END $$;
 
+SELECT set_config('app.split_write_context', 'trusted_sync', true);
+
 WITH resolved AS (
   SELECT
     t.id,
