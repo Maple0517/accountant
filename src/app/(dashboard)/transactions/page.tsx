@@ -1460,7 +1460,7 @@ export default function TransactionsPage() {
       )}
       <Drawer
         open={Boolean(selectedTransaction)}
-        title={selectedTransaction ? (selectedTransaction.merchant_name || selectedTransaction.description) : t('transactions.transactionDetails')}
+        title={t('transactions.transactionDetails')}
         onClose={handleCloseDetail}
         className="transaction-detail-panel"
       >
@@ -1573,6 +1573,7 @@ const TransactionItem = memo(function TransactionItem({
   const amount = Number(tx.amount)
   const isIncome = amount < 0
   const displayAmount = -amount
+  const isDisplayedCredit = displayAmount > 0
   const categoryIcon = tx.categories?.icon || '📦'
   const displayCategoryName = categoryName(tx.categories)
   const merchantName = tx.merchant_name || tx.description
@@ -1663,6 +1664,9 @@ const TransactionItem = memo(function TransactionItem({
     tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
   const hasRefundReview = needsRefundReview(tx)
   const hasTransferReview = needsTransferReview(tx)
+  const showRefundControls =
+    isDisplayedCredit &&
+    (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement')
   const reviewActions = [
     !tx.category_id || hasAutomaticClassificationTag
       ? {
@@ -1766,111 +1770,125 @@ const TransactionItem = memo(function TransactionItem({
     }>
   }>
 
-  return (
-    <div className={`transaction-item ${detailMode ? 'transaction-item-detail' : ''}`}>
-      <div
-        className={`tx-row-main ${detailMode ? '' : 'tx-row-clickable'}`}
-        role={detailMode ? undefined : 'button'}
-        tabIndex={detailMode ? undefined : 0}
-        onClick={detailMode ? undefined : () => onOpenDetails(tx.id)}
-        onKeyDown={detailMode ? undefined : (event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            onOpenDetails(tx.id)
-          }
-        }}
-      >
-        <div className="tx-icon">{categoryIcon}</div>
-        <div className="tx-details">
-          <span className="tx-merchant">{merchantName}</span>
-          {metaText && <span className="tx-meta">{metaText}</span>}
-          {badgeParts.length > 0 && (
-            <span className="tx-badges">
-              {badgeParts.slice(0, 5).map((badge) => (
+  const renderReviewActions = (panelClassName = 'review-action-panel') => (
+    <div className={panelClassName}>
+      <div className="review-action-panel-header">
+        <span>{t('transactions.recommendedActions')}</span>
+        {isSaving && <span>{t('common.saving')}</span>}
+      </div>
+      <div className="review-action-list">
+        {reviewActions.map((action) => (
+          <div key={action.key} className="review-action-item">
+            <div className="review-action-copy">
+              <strong>{action.title}</strong>
+              <span>{action.copy}</span>
+            </div>
+            {action.actions.length > 0 && (
+              <div className="review-action-buttons">
+                {action.actions.map((button) => (
+                  <button
+                    key={button.label}
+                    type="button"
+                    className={`btn btn-sm ${button.variant === 'primary' ? 'btn-primary' : 'btn-ghost'}`}
+                    disabled={button.disabled}
+                    onClick={button.onClick}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const renderStatusFeedback = (detailFeedback = false) => (
+    (statusMessage || similarSuggestion) && (
+      <div className={detailFeedback ? 'detail-feedback-bar' : 'inline-similar-suggestion'}>
+        <div className="similar-suggestion-copy">
+          {similarSuggestion ? (
+            <span className="similar-suggestion-text">
+              {t('transactions.similarPrompt', { category: similarSuggestion.categoryName, count: similarSuggestion.similarCount })}
+            </span>
+          ) : statusMessage && (
+            <span className="category-save-status">{statusMessage}</span>
+          )}
+        </div>
+        {similarSuggestion && (
+          <div className="similar-suggestion-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={isSaving}
+              onClick={() =>
+                onApplySimilar(
+                  similarSuggestion.transactionId,
+                  similarSuggestion.categoryId,
+                  'similar'
+                )
+              }
+            >
+              {t('transactions.syncSimilar')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={onDismissSimilar}
+            >
+              {t('transactions.onlyThis')}
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  )
+
+  if (detailMode) {
+    return (
+      <div className="transaction-command-sheet">
+        <div className="transaction-command-hero">
+          <div className="transaction-command-icon">{categoryIcon}</div>
+          <div className="transaction-command-copy">
+            <span className="transaction-command-merchant">{merchantName}</span>
+            {metaText && <span className="transaction-command-meta">{metaText}</span>}
+            <span className="transaction-command-badges">
+              <Badge tone="accent">
+                <span>{categoryIcon}</span>
+                <span>{displayCategoryName}</span>
+              </Badge>
+              {badgeParts.slice(0, 4).map((badge) => (
                 <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
               ))}
             </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="tx-category-pill"
-          style={getCategoryButtonStyle(
-            (tx.categories || {
-              id: tx.category_id || 'uncategorized',
-              name: t('common.uncategorized'),
-              user_id: '',
-              type: 'expense',
-              sort_order: 0,
-              created_at: '',
-            }) as Category,
-            true
-          )}
-          aria-expanded={isEditing}
-          aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
-          onClick={(event) => {
-            event.stopPropagation()
-            onOpenDetails(tx.id)
-          }}
-        >
-          <span className="tx-category-pill-icon">{categoryIcon}</span>
-          <span className="tx-category-pill-label">{displayCategoryName}</span>
-        </button>
-        <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
-          {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
-        </div>
-      </div>
-      {detailMode && reviewActions.length > 0 && (
-        <div className="review-action-panel">
-          <div className="review-action-panel-header">
-            <span>{t('transactions.recommendedActions')}</span>
-            {isSaving && <span>{t('common.saving')}</span>}
           </div>
-          <div className="review-action-list">
-            {reviewActions.map((action) => (
-              <div key={action.key} className="review-action-item">
-                <div className="review-action-copy">
-                  <strong>{action.title}</strong>
-                  <span>{action.copy}</span>
-                </div>
-                {action.actions.length > 0 && (
-                  <div className="review-action-buttons">
-                    {action.actions.map((button) => (
-                      <button
-                        key={button.label}
-                        type="button"
-                        className={`btn btn-sm ${button.variant === 'primary' ? 'btn-primary' : 'btn-ghost'}`}
-                        disabled={button.disabled}
-                        onClick={button.onClick}
-                      >
-                        {button.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className={`transaction-command-amount ${isIncome ? 'income' : 'expense'}`}>
+            {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
           </div>
         </div>
-      )}
-      {isEditing && (
-        <div className="tx-category-popover">
-          <div className="tx-category-popover-header">
-            <span>{t('transactions.pickCategory')}</span>
+
+        {reviewActions.length > 0 && renderReviewActions('review-action-panel detail-card detail-review-card')}
+
+        <section className="detail-card category-command-card">
+          <div className="detail-card-header">
+            <div>
+              <h3>{t('transactions.pickCategory')}</h3>
+              <p>{t('transactions.categoryCommandHint')}</p>
+            </div>
             {isSaving && <span>{t('common.saving')}</span>}
           </div>
           {categoriesLoading ? (
             <p className="text-secondary">{t('transactions.loadingCategories')}</p>
           ) : (
-            <div className="tx-category-options">
+            <div className="tx-category-options detail-category-options">
               {categories.map((category) => {
                 const isSelected = category.id === tx.category_id
                 return (
                   <button
                     key={category.id}
                     type="button"
-                    className={`category-chip ${isSelected ? 'selected' : ''}`}
-                    style={getCategoryButtonStyle(category, isSelected)}
+                    className={`category-chip detail-category-option ${isSelected ? 'selected' : ''}`}
                     disabled={isSaving}
                     onClick={() => onSaveCategory(tx.id, category.id)}
                   >
@@ -1879,259 +1897,15 @@ const TransactionItem = memo(function TransactionItem({
                       {categoryName(category)}
                     </span>
                     {category.is_excluded_from_budget && (
-                      <span className="category-chip-badge">{t('transactions.excludedFromBudget')}</span>
+                      <span className="category-chip-badge">{t('transactions.excludedShort')}</span>
                     )}
+                    {isSelected && <span className="category-selected-mark">✓</span>}
                   </button>
                 )
               })}
             </div>
           )}
-          <div className="refund-tools">
-            <div className="tx-category-popover-header">
-              <span>{t('transactions.refundHandling')}</span>
-              {isSaving && <span>{t('common.saving')}</span>}
-            </div>
-            <div className="refund-kind-actions">
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.transaction_kind === 'refund' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'refund' })}
-              >
-                Refund
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.transaction_kind === 'reimbursement' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'reimbursement' })}
-              >
-                Reimbursement
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${!tx.transaction_kind || tx.transaction_kind === 'normal' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'normal' })}
-              >
-                Normal
-              </button>
-            </div>
-            {tx.linked_transaction_id && (
-              <p className="refund-hint">
-                {t('transactions.appliedOriginalBudget')}
-                {tx.refund_match_confidence != null &&
-                  tx.refund_match_confidence < 0.8 &&
-                  tx.refund_match_reason &&
-                  ` · ${t('transactions.possibleRefundMatch', { reason: tx.refund_match_reason })}`}
-              </p>
-            )}
-            <div className="refund-link-row">
-              <select
-                className="input"
-                aria-label={t('transactions.linkedPurchaseAria', { merchant: merchantName })}
-                value={selectedLinkId}
-                disabled={isSaving}
-                onChange={(e) => setSelectedLinkId(e.target.value)}
-              >
-                <option value="">{t('transactions.noLinkedPurchase')}</option>
-                {linkCandidates.map((candidate) => (
-                  <option key={candidate.id} value={candidate.id}>
-                    {candidate.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={!selectedLinkId || isSaving}
-                onClick={() =>
-                  onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
-                }
-              >
-                {t('transactions.link')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={!tx.linked_transaction_id || isSaving}
-                onClick={() => {
-                  setRefundFormDraft({
-                    ...syncedRefundFormDraft,
-                    selectedLinkId: '',
-                    budgetEffectiveDate: tx.date,
-                  })
-                  onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
-                }}
-              >
-                Clear
-              </button>
-            </div>
-            <div className="refund-link-row">
-              <input
-                type="date"
-                className="input"
-                aria-label={t('transactions.budgetDateAria', { merchant: merchantName })}
-                value={budgetEffectiveDate}
-                disabled={isSaving}
-                onChange={(e) => setBudgetEffectiveDate(e.target.value)}
-              />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={!budgetEffectiveDate || isSaving}
-                onClick={() =>
-                  onSaveRefundMetadata(tx.id, {
-                    budget_effective_date: budgetEffectiveDate,
-                    reviewed: true,
-                  })
-                }
-              >
-                {t('transactions.applyDate')}
-              </button>
-            </div>
-            {hasRefundReview && (
-              <div className="refund-link-row">
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={isSaving}
-                  onClick={() => onSaveRefundMetadata(tx.id, { reviewed: true })}
-                >
-                  {t('transactions.confirmRefund')}
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="refund-tools">
-            <div className="tx-category-popover-header">
-              <span>{t('transactions.budgetTreatment')}</span>
-              {isSaving && <span>{t('common.saving')}</span>}
-            </div>
-            <div className="refund-kind-actions">
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.budget_behavior === 'count_as_spending' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    transaction_kind:
-                      tx.transaction_kind === 'transfer' ? 'transfer' : 'normal',
-                    budget_behavior: 'count_as_spending',
-                  })
-                }
-              >
-                {t('transactions.defaultTreatment')}
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.budget_behavior === 'count_as_income' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    transaction_kind: 'normal',
-                    budget_behavior: 'count_as_income',
-                  })
-                }
-              >
-                Count income
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.budget_behavior === 'exclude_as_transfer' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    transaction_kind: 'transfer',
-                    budget_behavior: 'exclude_as_transfer',
-                  })
-                }
-              >
-                Transfer
-              </button>
-              <button
-                type="button"
-                className={`btn btn-sm ${tx.budget_behavior === 'exclude_manual' ? 'btn-primary' : 'btn-ghost'}`}
-                disabled={isSaving}
-                onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    budget_behavior: 'exclude_manual',
-                  })
-                }
-              >
-                Exclude
-              </button>
-            </div>
-            <div className="refund-kind-actions">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                disabled={isSaving}
-                onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    existing_debt_payment: true,
-                  })
-                }
-              >
-                Existing debt
-              </button>
-              {tx.transfer_match_status && tx.transfer_match_status !== 'ignored' && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  disabled={isSaving}
-                  onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    transaction_kind: 'normal',
-                    transfer_match_status: 'ignored',
-                      budget_behavior: 'count_as_spending',
-                    })
-                  }
-                >
-                  Not transfer
-                </button>
-              )}
-              {tx.transfer_match_status === 'suggested' && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  disabled={isSaving}
-                  onClick={() =>
-                  onSaveSemantics(tx.id, {
-                    transfer_match_status: 'manually_matched',
-                    })
-                  }
-                >
-                  Confirm match
-                </button>
-              )}
-            </div>
-            {tx.transfer_match_reason && (
-              <p className="refund-hint">{tx.transfer_match_reason}</p>
-            )}
-          </div>
-          <div className="refund-tools">
-            <div className="tx-category-popover-header">
-              <span>{t('transactions.splitSectionTitle')}</span>
-            </div>
-            <p className="refund-hint">{t('transactions.splitSectionHint')}</p>
-            <div className="refund-kind-actions">
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-                aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-                disabled={tx.pending}
-                onClick={() => onOpenSplitEditor(tx)}
-              >
-                {t('transactions.splitAction')}
-              </button>
-            </div>
-            {tx.pending && (
-              <p className="refund-hint">{t('transactions.splitPendingDisabled')}</p>
-            )}
-          </div>
-          <div className="new-category-section">
+          <div className="new-category-section detail-new-category-section">
             {showNewCategoryForm ? (
               <div className="new-category-form">
                 <input
@@ -2195,14 +1969,14 @@ const TransactionItem = memo(function TransactionItem({
                       setNewCategoryName('')
                     }}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                 </div>
               </div>
             ) : (
               <button
                 type="button"
-                className="new-category-toggle"
+                className="new-category-toggle detail-new-category-toggle"
                 onClick={() => {
                   setShowNewCategoryForm(true)
                   setSelectedNewIcon(CATEGORY_ICONS[0])
@@ -2213,46 +1987,350 @@ const TransactionItem = memo(function TransactionItem({
               </button>
             )}
           </div>
-        </div>
-      )}
-      {(statusMessage || similarSuggestion) && (
-        <div className="inline-similar-suggestion">
-          <div className="similar-suggestion-copy">
-            {similarSuggestion ? (
-              <span className="similar-suggestion-text">
-                {t('transactions.similarPrompt', { category: similarSuggestion.categoryName, count: similarSuggestion.similarCount })}
-              </span>
-            ) : statusMessage && (
-              <span className="category-save-status">{statusMessage}</span>
+        </section>
+
+        <section className="detail-card semantic-command-card">
+          <div className="detail-card-header">
+            <div>
+              <h3>{isDisplayedCredit ? t('transactions.creditMeaning') : t('transactions.budgetMeaning')}</h3>
+              <p>{isDisplayedCredit ? t('transactions.creditMeaningHint') : t('transactions.budgetMeaningHint')}</p>
+            </div>
+            {isSaving && <span>{t('common.saving')}</span>}
+          </div>
+          <div className="semantic-option-grid">
+            {isDisplayedCredit ? (
+              <>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.transaction_kind === 'refund' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'refund' })}
+                >
+                  <strong>{t('common.refund')}</strong>
+                  <span>{t('transactions.refundOptionHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.transaction_kind === 'reimbursement' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() => onSaveRefundMetadata(tx.id, { transaction_kind: 'reimbursement' })}
+                >
+                  <strong>{t('common.reimbursement')}</strong>
+                  <span>{t('transactions.reimbursementOptionHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.budget_behavior === 'count_as_income' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'normal',
+                      budget_behavior: 'count_as_income',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.incomeOption')}</strong>
+                  <span>{t('transactions.incomeOptionHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.budget_behavior === 'exclude_as_transfer' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'transfer',
+                      budget_behavior: 'exclude_as_transfer',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.internalTransfer')}</strong>
+                  <span>{t('transactions.internalTransferHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.budget_behavior === 'exclude_manual' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'normal',
+                      budget_behavior: 'exclude_manual',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.exclude')}</strong>
+                  <span>{t('transactions.excludeOptionHint')}</span>
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className={`semantic-option ${(!tx.budget_behavior || tx.budget_behavior === 'count_as_spending') && tx.transaction_kind !== 'transfer' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'normal',
+                      budget_behavior: 'count_as_spending',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.spendingOption')}</strong>
+                  <span>{t('transactions.spendingOptionHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.budget_behavior === 'exclude_as_transfer' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'transfer',
+                      budget_behavior: 'exclude_as_transfer',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.internalTransfer')}</strong>
+                  <span>{t('transactions.internalTransferHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`semantic-option ${tx.budget_behavior === 'exclude_manual' ? 'selected' : ''}`}
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      transaction_kind: 'normal',
+                      budget_behavior: 'exclude_manual',
+                    })
+                  }
+                >
+                  <strong>{t('transactions.exclude')}</strong>
+                  <span>{t('transactions.excludeOptionHint')}</span>
+                </button>
+                <button
+                  type="button"
+                  className="semantic-option"
+                  disabled={isSaving}
+                  onClick={() =>
+                    onSaveSemantics(tx.id, {
+                      existing_debt_payment: true,
+                    })
+                  }
+                >
+                  <strong>{t('transactions.existingDebt')}</strong>
+                  <span>{t('transactions.existingDebtHint')}</span>
+                </button>
+              </>
             )}
           </div>
-          {similarSuggestion && (
-            <div className="similar-suggestion-actions">
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={isSaving}
-                onClick={() =>
-                  onApplySimilar(
-                    similarSuggestion.transactionId,
-                    similarSuggestion.categoryId,
-                    'similar'
-                  )
-                }
-              >
-                {t('transactions.syncSimilar')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={onDismissSimilar}
-              >
-                {t('transactions.onlyThis')}
-              </button>
+
+          {showRefundControls && (
+            <div className="refund-detail-controls">
+              {tx.linked_transaction_id && (
+                <p className="refund-hint">
+                  {t('transactions.appliedOriginalBudget')}
+                  {tx.refund_match_confidence != null &&
+                    tx.refund_match_confidence < 0.8 &&
+                    tx.refund_match_reason &&
+                    ` · ${t('transactions.possibleRefundMatch', { reason: tx.refund_match_reason })}`}
+                </p>
+              )}
+              <label className="field-row">
+                <span>{t('transactions.originalPurchase')}</span>
+                <div className="refund-link-row compact">
+                  <select
+                    className="input"
+                    aria-label={t('transactions.linkedPurchaseAria', { merchant: merchantName })}
+                    value={selectedLinkId}
+                    disabled={isSaving}
+                    onChange={(e) => setSelectedLinkId(e.target.value)}
+                  >
+                    <option value="">{t('transactions.noLinkedPurchase')}</option>
+                    {linkCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={!selectedLinkId || isSaving}
+                    onClick={() =>
+                      onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
+                    }
+                  >
+                    {t('transactions.link')}
+                  </button>
+                  {tx.linked_transaction_id && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={isSaving}
+                      onClick={() => {
+                        setRefundFormDraft({
+                          ...syncedRefundFormDraft,
+                          selectedLinkId: '',
+                          budgetEffectiveDate: tx.date,
+                        })
+                        onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
+                      }}
+                    >
+                      {t('transactions.clear')}
+                    </button>
+                  )}
+                </div>
+              </label>
+              <label className="field-row">
+                <span>{t('transactions.budgetDate')}</span>
+                <div className="refund-link-row compact">
+                  <input
+                    type="date"
+                    className="input"
+                    aria-label={t('transactions.budgetDateAria', { merchant: merchantName })}
+                    value={budgetEffectiveDate}
+                    disabled={isSaving}
+                    onChange={(e) => setBudgetEffectiveDate(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={!budgetEffectiveDate || isSaving}
+                    onClick={() =>
+                      onSaveRefundMetadata(tx.id, {
+                        budget_effective_date: budgetEffectiveDate,
+                        reviewed: true,
+                      })
+                    }
+                  >
+                    {t('transactions.applyDate')}
+                  </button>
+                </div>
+              </label>
             </div>
           )}
+
+          {(tx.transfer_match_reason || (tx.transfer_match_status && tx.transfer_match_status !== 'ignored')) && (
+            <div className="transfer-detail-controls">
+              {tx.transfer_match_reason && (
+                <p className="refund-hint">{tx.transfer_match_reason}</p>
+              )}
+              <div className="refund-kind-actions">
+                {tx.transfer_match_status && tx.transfer_match_status !== 'ignored' && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={isSaving}
+                    onClick={() =>
+                      onSaveSemantics(tx.id, {
+                        transaction_kind: 'normal',
+                        transfer_match_status: 'ignored',
+                        budget_behavior: 'count_as_spending',
+                      })
+                    }
+                  >
+                    {t('transactions.notTransfer')}
+                  </button>
+                )}
+                {tx.transfer_match_status === 'suggested' && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={isSaving}
+                    onClick={() =>
+                      onSaveSemantics(tx.id, {
+                        transfer_match_status: 'manually_matched',
+                      })
+                    }
+                  >
+                    {t('transactions.confirmMatch')}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className={`detail-card split-action-card ${tx.pending ? 'disabled' : ''}`}>
+          <div>
+            <div className="detail-card-header split-action-header">
+              <div>
+                <h3>{t('transactions.splitSectionTitle')}</h3>
+                <p>{tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitSectionHint')}</p>
+              </div>
+              {tx.split_status && <Badge tone={tx.split_status === 'out_of_balance' ? 'warning' : 'muted'}>{tx.split_status}</Badge>}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+            aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+            disabled={tx.pending}
+            onClick={() => onOpenSplitEditor(tx)}
+          >
+            {tx.split_group_id ? t('transactions.editSplit') : t('transactions.splitAction')}
+          </button>
+        </section>
+
+        {renderStatusFeedback(true)}
+      </div>
+    )
+  }
+
+  return (
+    <div className="transaction-item">
+      <div
+        className="tx-row-main tx-row-clickable"
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpenDetails(tx.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpenDetails(tx.id)
+          }
+        }}
+      >
+        <div className="tx-icon">{categoryIcon}</div>
+        <div className="tx-details">
+          <span className="tx-merchant">{merchantName}</span>
+          {metaText && <span className="tx-meta">{metaText}</span>}
+          {badgeParts.length > 0 && (
+            <span className="tx-badges">
+              {badgeParts.slice(0, 5).map((badge) => (
+                <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
+              ))}
+            </span>
+          )}
         </div>
-      )}
+        <button
+          type="button"
+          className="tx-category-pill"
+          style={getCategoryButtonStyle(
+            (tx.categories || {
+              id: tx.category_id || 'uncategorized',
+              name: t('common.uncategorized'),
+              user_id: '',
+              type: 'expense',
+              sort_order: 0,
+              created_at: '',
+            }) as Category,
+            true
+          )}
+          aria-expanded={isEditing}
+          aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenDetails(tx.id)
+          }}
+        >
+          <span className="tx-category-pill-icon">{categoryIcon}</span>
+          <span className="tx-category-pill-label">{displayCategoryName}</span>
+        </button>
+        <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
+          {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}
+        </div>
+      </div>
+      {renderStatusFeedback(false)}
     </div>
   )
 })
