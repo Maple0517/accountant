@@ -35,6 +35,7 @@ ChartJS.register(
 const gridColor = 'rgba(52, 59, 77, 0.45)'
 const tickColor = '#687083'
 const textColor = '#a3aab8'
+const chartRoundedFont = 'ui-rounded, "SF Pro Rounded", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Rounded", "Segoe UI", system-ui, sans-serif'
 
 function money(value: string | number, currencyCode: string) {
   return formatCurrency(Number(value), currencyCode).replace(/\.00$/, '')
@@ -70,7 +71,7 @@ export default function AnalyticsCharts({
     scales: {
       x: {
         grid: { color: gridColor },
-        ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) },
+        ticks: { color: tickColor, font: { family: chartRoundedFont, size: 11 }, callback: (value: string | number) => money(value, currencyCode) },
       },
       y: { grid: { display: false }, ticks: { color: textColor, font: { size: 11 } } },
     },
@@ -109,7 +110,7 @@ export default function AnalyticsCharts({
     maintainAspectRatio: false,
     scales: {
       x: { grid: { color: gridColor }, ticks: { color: tickColor, font: { size: 11 }, maxTicksLimit: 10 } },
-      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
+      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: chartRoundedFont, size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
     },
     plugins: { legend: { display: false } },
   }
@@ -130,7 +131,7 @@ export default function AnalyticsCharts({
     maintainAspectRatio: false,
     scales: {
       x: { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } } },
-      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: 'JetBrains Mono', size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
+      y: { grid: { color: gridColor }, ticks: { color: tickColor, font: { family: chartRoundedFont, size: 11 }, callback: (value: string | number) => money(value, currencyCode) } },
     },
     plugins: { legend: { labels: { color: textColor, font: { size: 12 }, usePointStyle: true, pointStyleWidth: 10 } } },
   }

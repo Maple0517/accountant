@@ -1,16 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-})
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-jetbrains-mono',
-})
 
 export const metadata: Metadata = {
   title: 'Accountant | Personal Finance',
@@ -23,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en">
       <body className="antialiased bg-[#0a0a0f] text-white selection:bg-[#6c5ce7] selection:text-white">
         {children}
       </body>
