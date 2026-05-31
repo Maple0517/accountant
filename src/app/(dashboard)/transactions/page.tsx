@@ -219,6 +219,10 @@ function isDisplayedCreditAmount(amount: number | string) {
   return Number(amount) < 0
 }
 
+function isIncomingSplitAmount(amount: number | string) {
+  return Number(amount) > 0
+}
+
 function getTxTreatment(tx: Pick<Transaction, 'treatment' | 'transaction_kind' | 'budget_behavior'>) {
   return deriveTransactionTreatment({
     treatment: tx.treatment,
@@ -285,7 +289,7 @@ function createSplitLineDraft(
 ): SplitLineDraft {
   const defaultSemantics = getDefaultSplitSemantics(tx)
 
-  return {
+  return normalizeSplitLineForAmount({
     amount_decimal: amountDecimal,
     category_id: tx.category_id || '',
     allocation_date: allocationDate,
@@ -297,7 +301,7 @@ function createSplitLineDraft(
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
     notes: '',
-  }
+  }, Number(tx.amount))
 }
 
 function buildInitialSplitLines(
@@ -308,7 +312,7 @@ function buildInitialSplitLines(
     return existingChildren.map((child) => {
       const defaultSemantics = getDefaultSplitSemantics(child)
 
-      return {
+      return normalizeSplitLineForAmount({
         id: child.id,
         amount_decimal: toSplitDecimal(Number(child.amount)),
         category_id: child.category_id || '',
@@ -321,7 +325,7 @@ function buildInitialSplitLines(
         merchant_name: child.merchant_name || '',
         description: child.description || '',
         notes: child.notes || '',
-      }
+      }, Number(tx.amount))
     })
   }
 
@@ -345,6 +349,10 @@ function getSplitTreatmentPresetId(line: SplitLineDraft) {
   return 'spending'
 }
 
+function getSplitTreatmentPresetById(id: string) {
+  return SPLIT_TREATMENT_PRESETS.find((preset) => preset.id === id)
+}
+
 function getSplitTreatmentPresetsForLine(
   line: SplitLineDraft,
   parentAmount: number
@@ -352,13 +360,41 @@ function getSplitTreatmentPresetsForLine(
   const referenceAmount = isZeroSplitDecimal(line.amount_decimal)
     ? parentAmount
     : Number(line.amount_decimal)
-  const presetOrder = isDisplayedCreditAmount(referenceAmount)
+  const presetOrder = isIncomingSplitAmount(referenceAmount)
     ? ['refund', 'reimbursement', 'income', 'transfer', 'exclude']
     : ['spending', 'transfer', 'exclude']
 
   return presetOrder
-    .map((id) => SPLIT_TREATMENT_PRESETS.find((preset) => preset.id === id))
+    .map((id) => getSplitTreatmentPresetById(id))
     .filter((preset): preset is SplitTreatmentPreset => Boolean(preset))
+}
+
+function applySplitTreatmentPreset(
+  line: SplitLineDraft,
+  preset: SplitTreatmentPreset
+): SplitLineDraft {
+  return {
+    ...line,
+    treatment: preset.treatment,
+    refund_source: preset.refund_source || '',
+    transaction_kind: preset.transaction_kind,
+    budget_behavior: preset.budget_behavior,
+  }
+}
+
+function normalizeSplitLineForAmount(
+  line: SplitLineDraft,
+  parentAmount: number
+): SplitLineDraft {
+  const allowedPresets = getSplitTreatmentPresetsForLine(line, parentAmount)
+  const currentPresetId = getSplitTreatmentPresetId(line)
+
+  if (allowedPresets.some((preset) => preset.id === currentPresetId)) {
+    return line
+  }
+
+  const fallbackPreset = allowedPresets[0] || getSplitTreatmentPresetById('spending')
+  return fallbackPreset ? applySplitTreatmentPreset(line, fallbackPreset) : line
 }
 
 function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | null) {
@@ -2620,7 +2656,12 @@ function SplitEditorDrawer({
   const setLine = (index: number, patch: Partial<SplitLineDraft>) => {
     setLines((current) =>
       current.map((line, lineIndex) =>
-        lineIndex === index ? { ...line, ...patch } : line
+        lineIndex === index
+          ? normalizeSplitLineForAmount(
+              { ...line, ...patch },
+              Number(parent.amount)
+            )
+          : line
       )
     )
   }
