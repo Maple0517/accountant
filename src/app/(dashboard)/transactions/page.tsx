@@ -2706,7 +2706,7 @@ function SplitEditorDrawer({
                     <div key={`${line.id || 'new'}-${index}`} className="split-line">
                       <div className="split-line-header">
                         <div>
-                          <span>{t('transactions.splitLine', { index: index + 1 })}</span>
+                          <span>{t('transactions.splitAllocation', { index: index + 1 })}</span>
                           <small>{getLineCategoryLabel(line)}</small>
                         </div>
                         <button
@@ -2816,19 +2816,19 @@ function SplitEditorDrawer({
                 {hasExistingSplit && (
                   <button
                     type="button"
-                    className="btn btn-danger"
+                    className="btn btn-danger btn-md"
                     disabled={saving}
                     onClick={restoreSplit}
                   >
                     {t('transactions.splitRestore')}
                   </button>
                 )}
-                <button type="button" className="btn btn-ghost" onClick={onClose}>
+                <button type="button" className="btn btn-ghost btn-md" onClick={onClose}>
                   {t('common.cancel')}
                 </button>
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-md"
                   disabled={saving || !preview?.balanced}
                   onClick={saveSplit}
                 >
