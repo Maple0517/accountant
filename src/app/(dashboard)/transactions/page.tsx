@@ -345,13 +345,18 @@ function getSplitTreatmentPresetId(line: SplitLineDraft) {
   return 'spending'
 }
 
-function getSplitTreatmentPresetsForAmount(amountDecimal: string) {
-  if (!isDisplayedCreditAmount(amountDecimal)) {
-    return SPLIT_TREATMENT_PRESETS
-  }
+function getSplitTreatmentPresetsForLine(
+  line: SplitLineDraft,
+  parentAmount: number
+) {
+  const referenceAmount = isZeroSplitDecimal(line.amount_decimal)
+    ? parentAmount
+    : Number(line.amount_decimal)
+  const presetOrder = isDisplayedCreditAmount(referenceAmount)
+    ? ['refund', 'reimbursement', 'income', 'transfer', 'exclude']
+    : ['spending', 'transfer', 'exclude']
 
-  const creditPresetOrder = ['income', 'refund', 'reimbursement', 'transfer', 'exclude', 'spending']
-  return creditPresetOrder
+  return presetOrder
     .map((id) => SPLIT_TREATMENT_PRESETS.find((preset) => preset.id === id))
     .filter((preset): preset is SplitTreatmentPreset => Boolean(preset))
 }
@@ -2784,7 +2789,10 @@ function SplitEditorDrawer({
               <div className="split-lines">
                 {lines.map((line, index) => {
                   const treatmentPresetId = getSplitTreatmentPresetId(line)
-                  const treatmentPresets = getSplitTreatmentPresetsForAmount(line.amount_decimal)
+                  const treatmentPresets = getSplitTreatmentPresetsForLine(
+                    line,
+                    Number(parent.amount)
+                  )
                   return (
                     <div key={`${line.id || 'new'}-${index}`} className="split-line">
                       <div className="split-line-header">
