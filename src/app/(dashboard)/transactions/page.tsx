@@ -118,9 +118,18 @@ type SplitLineDraft = {
   allocation_date: string
   transaction_kind: TransactionKind
   budget_behavior: BudgetBehavior
+  linked_transaction_id: string
   merchant_name: string
   description: string
   notes: string
+}
+
+type SplitTreatmentPreset = {
+  id: string
+  labelKey: string
+  hintKey: string
+  transaction_kind: TransactionKind
+  budget_behavior: BudgetBehavior
 }
 
 type SplitPreviewResponse = {
@@ -169,6 +178,26 @@ function toSplitDecimal(value: number) {
   return value.toFixed(decimalPlaces(value)).replace(/\.?0+$/, '')
 }
 
+function splitDecimalToMinor(value: string) {
+  const normalized = value.trim()
+  if (!normalized) return 0
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.round(parsed * 10000)
+}
+
+function splitMinorToDecimal(value: number) {
+  return (value / 10000).toFixed(4).replace(/\.?0+$/, '')
+}
+
+function addSplitDecimals(left: string, right: string) {
+  return splitMinorToDecimal(splitDecimalToMinor(left) + splitDecimalToMinor(right))
+}
+
+function isZeroSplitDecimal(value: string) {
+  return splitDecimalToMinor(value) === 0
+}
+
 function splitAmountEvenly(amount: number, count: number) {
   const cents = Math.round(amount * 100)
   const base = Math.trunc(cents / count)
@@ -202,6 +231,7 @@ function createSplitLineDraft(
     allocation_date: allocationDate,
     transaction_kind: tx.transaction_kind || 'normal',
     budget_behavior: tx.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+    linked_transaction_id: tx.linked_transaction_id || '',
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
     notes: '',
@@ -220,6 +250,7 @@ function buildInitialSplitLines(
       allocation_date: child.effective_date || child.budget_effective_date || child.date,
       transaction_kind: child.transaction_kind || 'normal',
       budget_behavior: child.budget_behavior || DEFAULT_SPLIT_BEHAVIOR,
+      linked_transaction_id: child.linked_transaction_id || '',
       merchant_name: child.merchant_name || '',
       description: child.description || '',
       notes: child.notes || '',
@@ -229,6 +260,22 @@ function buildInitialSplitLines(
   return splitAmountEvenly(Number(tx.amount), 2).map((amount, index) =>
     createSplitLineDraft(tx, amount, index)
   )
+}
+
+function getSplitTreatmentPresetId(line: SplitLineDraft) {
+  const exactMatch = SPLIT_TREATMENT_PRESETS.find(
+    (preset) =>
+      preset.transaction_kind === line.transaction_kind &&
+      preset.budget_behavior === line.budget_behavior
+  )
+  if (exactMatch) return exactMatch.id
+  if (line.transaction_kind === 'refund') return 'refund'
+  if (line.transaction_kind === 'reimbursement') return 'reimbursement'
+  if (line.transaction_kind === 'transfer') return 'transfer'
+  if (line.budget_behavior === 'count_as_income') return 'income'
+  if (line.budget_behavior === 'exclude_as_transfer') return 'transfer'
+  if (line.budget_behavior === 'exclude_manual') return 'exclude'
+  return 'spending'
 }
 
 function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | null) {
@@ -241,6 +288,7 @@ function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | n
       allocation_date: line.allocation_date || null,
       transaction_kind: line.transaction_kind,
       budget_behavior: line.budget_behavior,
+      linked_transaction_id: line.linked_transaction_id || null,
       merchant_name: line.merchant_name || null,
       description: line.description || null,
       notes: line.notes || null,
@@ -343,6 +391,50 @@ const CATEGORY_ICONS = ['🍔', '🚗', '🛍️', '🎬', '💡', '🏥', '📚
 const CATEGORY_COLORS = ['#ff9800', '#2196f3', '#e91e63', '#9c27b0', '#4caf50', '#00bcd4', '#f44336', '#607d8b']
 const TRANSACTIONS_PAGE_SIZE = 50
 const DEFAULT_SPLIT_BEHAVIOR: BudgetBehavior = 'count_as_spending'
+const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
+  {
+    id: 'spending',
+    labelKey: 'transactions.spendingOption',
+    hintKey: 'transactions.spendingOptionHint',
+    transaction_kind: 'normal',
+    budget_behavior: 'count_as_spending',
+  },
+  {
+    id: 'income',
+    labelKey: 'transactions.incomeOption',
+    hintKey: 'transactions.incomeOptionHint',
+    transaction_kind: 'normal',
+    budget_behavior: 'count_as_income',
+  },
+  {
+    id: 'transfer',
+    labelKey: 'transactions.internalTransfer',
+    hintKey: 'transactions.internalTransferHint',
+    transaction_kind: 'transfer',
+    budget_behavior: 'exclude_as_transfer',
+  },
+  {
+    id: 'refund',
+    labelKey: 'common.refund',
+    hintKey: 'transactions.refundOptionHint',
+    transaction_kind: 'refund',
+    budget_behavior: 'count_as_spending',
+  },
+  {
+    id: 'reimbursement',
+    labelKey: 'common.reimbursement',
+    hintKey: 'transactions.reimbursementOptionHint',
+    transaction_kind: 'reimbursement',
+    budget_behavior: 'count_as_spending',
+  },
+  {
+    id: 'exclude',
+    labelKey: 'transactions.exclude',
+    hintKey: 'transactions.excludeOptionHint',
+    transaction_kind: 'normal',
+    budget_behavior: 'exclude_manual',
+  },
+]
 
 function emptyViewCounts(): Record<SavedView, number> {
   return Object.fromEntries(SAVED_VIEWS.map((view) => [view.id, 0])) as Record<SavedView, number>
@@ -2364,6 +2456,15 @@ function SplitEditorDrawer({
   const notionSchemaBlocked =
     splitState?.notionSchemaReady === false ||
     splitState?.issues?.includes('NOTION_SCHEMA_NOT_READY')
+  const remainingIsBalanced = preview ? isZeroSplitDecimal(preview.remainingAmountDecimal) : false
+
+  const getLineCategoryLabel = (line: SplitLineDraft) => {
+    if (!line.category_id) return t('common.uncategorized')
+    return categoryName(
+      categories.find((category) => category.id === line.category_id),
+      t('common.uncategorized')
+    )
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -2467,6 +2568,23 @@ function SplitEditorDrawer({
     )
   }
 
+  const applyRemainingToLine = (index: number) => {
+    if (!preview || isZeroSplitDecimal(preview.remainingAmountDecimal)) return
+    setLines((current) =>
+      current.map((line, lineIndex) =>
+        lineIndex === index
+          ? {
+              ...line,
+              amount_decimal: addSplitDecimals(
+                line.amount_decimal,
+                preview.remainingAmountDecimal
+              ),
+            }
+          : line
+      )
+    )
+  }
+
   const saveSplit = async () => {
     setSaving(true)
     setMessage(null)
@@ -2539,18 +2657,27 @@ function SplitEditorDrawer({
             </div>
           ) : (
             <>
-              <div className="split-editor-summary">
-                <span>{formatCurrency(-Number(parent.amount), currency)}</span>
-                <span>
-                  {preview
-                    ? t('transactions.splitRemaining', {
-                        amount: formatCurrency(
-                          -Number(preview.remainingAmountDecimal),
-                          currency
-                        ),
-                      })
-                    : t('common.loading')}
-                </span>
+              <div className="split-allocation-overview">
+                <div className="split-allocation-metric">
+                  <span>{t('transactions.splitOriginalAmount')}</span>
+                  <strong>{formatCurrency(-Number(parent.amount), currency)}</strong>
+                </div>
+                <div className="split-allocation-metric">
+                  <span>{t('transactions.splitAllocatedAmount')}</span>
+                  <strong>
+                    {preview
+                      ? formatCurrency(-Number(preview.childAmountSumDecimal), currency)
+                      : t('common.loading')}
+                  </strong>
+                </div>
+                <div className={`split-allocation-metric ${remainingIsBalanced ? 'balanced' : 'unbalanced'}`}>
+                  <span>{t('transactions.splitRemainingLabel')}</span>
+                  <strong>
+                    {preview
+                      ? formatCurrency(-Number(preview.remainingAmountDecimal), currency)
+                      : t('common.loading')}
+                  </strong>
+                </div>
               </div>
               {parent.split_status === 'out_of_balance' && (
                 <div className="split-editor-status warning">
@@ -2561,6 +2688,7 @@ function SplitEditorDrawer({
                 <div className="split-editor-status danger">{message}</div>
               )}
               <div className="split-editor-toolbar">
+                <span className="split-toolbar-label">{t('transactions.splitQuickActions')}</span>
                 <button type="button" className="btn btn-sm btn-ghost" onClick={applyEqualSplit}>
                   {t('transactions.splitEqual')}
                 </button>
@@ -2572,85 +2700,100 @@ function SplitEditorDrawer({
                 </button>
               </div>
               <div className="split-lines">
-                {lines.map((line, index) => (
-                  <div key={`${line.id || 'new'}-${index}`} className="split-line">
-                    <div className="split-line-header">
-                      <span>{t('transactions.splitLine', { index: index + 1 })}</span>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost"
-                        disabled={lines.length <= 2}
-                        onClick={() => removeLine(index)}
-                      >
-                        {t('transactions.clear')}
-                      </button>
+                {lines.map((line, index) => {
+                  const treatmentPresetId = getSplitTreatmentPresetId(line)
+                  return (
+                    <div key={`${line.id || 'new'}-${index}`} className="split-line">
+                      <div className="split-line-header">
+                        <div>
+                          <span>{t('transactions.splitLine', { index: index + 1 })}</span>
+                          <small>{getLineCategoryLabel(line)}</small>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={lines.length <= 2}
+                          onClick={() => removeLine(index)}
+                        >
+                          {t('transactions.clear')}
+                        </button>
+                      </div>
+                      <div className="split-line-main">
+                        <label className="split-field">
+                          <span>{t('transactions.splitAmountLabel')}</span>
+                          <input
+                            className="input"
+                            inputMode="decimal"
+                            aria-label={t('transactions.splitAmountAria', { index: index + 1 })}
+                            value={line.amount_decimal}
+                            onChange={(event) => setLine(index, { amount_decimal: event.target.value })}
+                          />
+                        </label>
+                        <label className="split-field">
+                          <span>{t('transactions.category')}</span>
+                          <select
+                            className="input"
+                            aria-label={t('transactions.category')}
+                            value={line.category_id}
+                            onChange={(event) => setLine(index, { category_id: event.target.value })}
+                          >
+                            <option value="">{t('common.uncategorized')}</option>
+                            {categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.icon || '•'} {categoryName(category)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="split-field">
+                          <span>{t('transactions.splitAllocationDate')}</span>
+                          <input
+                            type="date"
+                            className="input"
+                            aria-label={t('transactions.splitAllocationDate')}
+                            value={line.allocation_date}
+                            onChange={(event) => setLine(index, { allocation_date: event.target.value })}
+                          />
+                        </label>
+                      </div>
+                      <div className="split-treatment-group" role="group" aria-label={t('transactions.splitTreatment')}>
+                        {SPLIT_TREATMENT_PRESETS.map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            className={`split-treatment-option ${treatmentPresetId === preset.id ? 'selected' : ''}`}
+                            onClick={() =>
+                              setLine(index, {
+                                transaction_kind: preset.transaction_kind,
+                                budget_behavior: preset.budget_behavior,
+                              })
+                            }
+                          >
+                            <strong>{t(preset.labelKey)}</strong>
+                            <span>{t(preset.hintKey)}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="split-line-footer">
+                        <input
+                          className="input"
+                          aria-label={t('transactions.splitNote')}
+                          placeholder={t('transactions.splitNote')}
+                          value={line.notes}
+                          onChange={(event) => setLine(index, { notes: event.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          disabled={!preview || remainingIsBalanced}
+                          onClick={() => applyRemainingToLine(index)}
+                        >
+                          {t('transactions.splitFillRemaining')}
+                        </button>
+                      </div>
                     </div>
-                    <input
-                      className="input"
-                      inputMode="decimal"
-                      aria-label={t('transactions.splitAmountAria', { index: index + 1 })}
-                      value={line.amount_decimal}
-                      onChange={(event) => setLine(index, { amount_decimal: event.target.value })}
-                    />
-                    <select
-                      className="input"
-                      aria-label={t('transactions.category')}
-                      value={line.category_id}
-                      onChange={(event) => setLine(index, { category_id: event.target.value })}
-                    >
-                      <option value="">{t('common.uncategorized')}</option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.icon || '•'} {categoryName(category)}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      type="date"
-                      className="input"
-                      aria-label={t('transactions.splitAllocationDate')}
-                      value={line.allocation_date}
-                      onChange={(event) => setLine(index, { allocation_date: event.target.value })}
-                    />
-                    <input
-                      className="input"
-                      aria-label={t('transactions.splitNote')}
-                      placeholder={t('transactions.splitNote')}
-                      value={line.notes}
-                      onChange={(event) => setLine(index, { notes: event.target.value })}
-                    />
-                    <div className="split-advanced-row">
-                      <select
-                        className="input"
-                        value={line.transaction_kind}
-                        onChange={(event) =>
-                          setLine(index, {
-                            transaction_kind: event.target.value as TransactionKind,
-                          })
-                        }
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="refund">Refund</option>
-                        <option value="reimbursement">Reimbursement</option>
-                        <option value="transfer">Transfer</option>
-                      </select>
-                      <select
-                        className="input"
-                        value={line.budget_behavior}
-                        onChange={(event) =>
-                          setLine(index, {
-                            budget_behavior: event.target.value as BudgetBehavior,
-                          })
-                        }
-                      >
-                        <option value="count_as_spending">{t('transactions.countSpending')}</option>
-                        <option value="count_as_income">{t('transactions.countIncome')}</option>
-                        <option value="exclude_as_transfer">{t('common.transfer')}</option>
-                        <option value="exclude_manual">{t('transactions.exclude')}</option>
-                      </select>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {preview && (
                 <div className={`split-preview ${preview.balanced ? 'balanced' : 'unbalanced'}`}>
@@ -2659,9 +2802,12 @@ function SplitEditorDrawer({
                       ? t('transactions.splitBalanced')
                       : t('transactions.splitUnbalanced')}
                   </span>
+                  {preview.warnings.map((warning) => (
+                    <span key={warning}>{warning}</span>
+                  ))}
                   {preview.budgetImpactByMonth.map((month) => (
                     <span key={month.month}>
-                      {month.month}: {formatCurrency(-Number(month.netSpendingDeltaDecimal), currency)}
+                      {t('transactions.splitBudgetImpact')}: {month.month} · {formatCurrency(-Number(month.netSpendingDeltaDecimal), currency)}
                     </span>
                   ))}
                 </div>
