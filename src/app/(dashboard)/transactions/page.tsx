@@ -215,6 +215,18 @@ function isZeroSplitDecimal(value: string) {
   return splitDecimalToMinor(value) === 0
 }
 
+function toDisplayedTransactionAmount(amount: number | string) {
+  return -Number(amount)
+}
+
+function toDisplayedSplitDecimal(amount: number | string) {
+  return toSplitDecimal(toDisplayedTransactionAmount(amount))
+}
+
+function toStoredSplitDecimal(amountDecimal: string) {
+  return splitMinorToDecimal(-splitDecimalToMinor(amountDecimal))
+}
+
 function isDisplayedCreditAmount(amount: number | string) {
   return Number(amount) < 0
 }
@@ -301,7 +313,7 @@ function createSplitLineDraft(
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
     notes: '',
-  }, Number(tx.amount))
+  }, toDisplayedTransactionAmount(tx.amount))
 }
 
 function buildInitialSplitLines(
@@ -314,7 +326,7 @@ function buildInitialSplitLines(
 
       return normalizeSplitLineForAmount({
         id: child.id,
-        amount_decimal: toSplitDecimal(Number(child.amount)),
+        amount_decimal: toDisplayedSplitDecimal(child.amount),
         category_id: child.category_id || '',
         allocation_date: child.effective_date || child.budget_effective_date || child.date,
         treatment: defaultSemantics.treatment,
@@ -325,11 +337,11 @@ function buildInitialSplitLines(
         merchant_name: child.merchant_name || '',
         description: child.description || '',
         notes: child.notes || '',
-      }, Number(tx.amount))
+      }, toDisplayedTransactionAmount(tx.amount))
     })
   }
 
-  return splitAmountEvenly(Number(tx.amount), 2).map((amount, index) =>
+  return splitAmountEvenly(toDisplayedTransactionAmount(tx.amount), 2).map((amount, index) =>
     createSplitLineDraft(tx, amount, index)
   )
 }
@@ -402,7 +414,7 @@ function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | n
     expected_version: expectedVersion ?? null,
     children: lines.map((line) => ({
       id: line.id,
-      amount_decimal: line.amount_decimal,
+      amount_decimal: toStoredSplitDecimal(line.amount_decimal),
       category_id: line.category_id || null,
       allocation_date: line.allocation_date || null,
       treatment: line.treatment,
@@ -2659,7 +2671,7 @@ function SplitEditorDrawer({
         lineIndex === index
           ? normalizeSplitLineForAmount(
               { ...line, ...patch },
-              Number(parent.amount)
+              toDisplayedTransactionAmount(parent.amount)
             )
           : line
       )
@@ -2678,7 +2690,10 @@ function SplitEditorDrawer({
   }
 
   const applyEqualSplit = () => {
-    const amounts = splitAmountEvenly(Number(parent.amount), Math.max(lines.length, 2))
+    const amounts = splitAmountEvenly(
+      toDisplayedTransactionAmount(parent.amount),
+      Math.max(lines.length, 2)
+    )
     setLines((current) =>
       (current.length >= 2 ? current : buildInitialSplitLines(parent)).map(
         (line, index) => ({ ...line, amount_decimal: amounts[index] || '0' })
@@ -2705,7 +2720,7 @@ function SplitEditorDrawer({
               ...line,
               amount_decimal: addSplitDecimals(
                 line.amount_decimal,
-                preview.remainingAmountDecimal
+                toDisplayedSplitDecimal(preview.remainingAmountDecimal)
               ),
             }
           : line
@@ -2832,7 +2847,7 @@ function SplitEditorDrawer({
                   const treatmentPresetId = getSplitTreatmentPresetId(line)
                   const treatmentPresets = getSplitTreatmentPresetsForLine(
                     line,
-                    Number(parent.amount)
+                    toDisplayedTransactionAmount(parent.amount)
                   )
                   return (
                     <div key={`${line.id || 'new'}-${index}`} className="split-line">

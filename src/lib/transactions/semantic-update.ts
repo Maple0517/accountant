@@ -24,6 +24,7 @@ type TransactionSemanticsRow = {
   id: string
   user_id: string
   date: string
+  amount: number
   category_id: string | null
   treatment: TransactionTreatment | null
   refund_source: RefundSource | null
@@ -196,6 +197,7 @@ export async function updateTransactionSemantics({
       id,
       user_id,
       date,
+      amount,
       category_id,
       treatment,
       refund_source,
@@ -298,6 +300,7 @@ export async function updateTransactionSemantics({
     const normalized = normalizeTransactionSemantics({
       treatment: nextTreatment,
       refundSource: nextRefundSource,
+      amount: transaction.amount,
       category: currentCategory,
     })
 

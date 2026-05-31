@@ -102,6 +102,7 @@ export async function PATCH(
         id,
         user_id,
         date,
+        amount,
         category_id,
         treatment,
         refund_source,
@@ -156,6 +157,7 @@ export async function PATCH(
           requestedRefundSource ??
           transaction.refund_source ??
           (requestedKind === 'reimbursement' ? 'reimbursement' : undefined),
+        amount: transaction.amount,
         category: transactionCategory,
       })
       update.treatment = normalized.treatment
@@ -204,6 +206,7 @@ export async function PATCH(
             (transaction.transaction_kind === 'reimbursement'
               ? 'reimbursement'
               : 'merchant_refund'),
+          amount: transaction.amount,
         })
 
         update.treatment = normalized.treatment
@@ -230,6 +233,7 @@ export async function PATCH(
             (transaction.transaction_kind === 'reimbursement'
               ? 'reimbursement'
               : 'merchant_refund'),
+          amount: transaction.amount,
           category: transactionCategory,
         })
         update.treatment = normalized.treatment

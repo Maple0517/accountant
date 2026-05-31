@@ -15,6 +15,7 @@ type TransactionSemanticInput = {
   refundSource?: RefundSource | string | null
   transactionKind?: TransactionKind | string | null
   budgetBehavior?: BudgetBehavior | string | null
+  amount?: number | null
   category?: CategoryBudgetSemantics
   transactionType?: 'expense' | 'income' | 'transfer' | 'unknown' | null
 }
@@ -148,6 +149,49 @@ export function deriveLegacyTransactionKind({
   return 'normal'
 }
 
+export function coerceTreatmentForAmount({
+  treatment,
+  refundSource,
+  amount,
+}: {
+  treatment: TransactionTreatment
+  refundSource?: RefundSource | null
+  amount?: number | null
+}): {
+  treatment: TransactionTreatment
+  refundSource: RefundSource | null
+} {
+  const normalizedRefundSource = isRefundSource(refundSource) ? refundSource : null
+
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount === 0) {
+    return {
+      treatment,
+      refundSource: treatment === 'refund' ? normalizedRefundSource : null,
+    }
+  }
+
+  if (amount > 0) {
+    if (treatment === 'income' || treatment === 'refund') {
+      return {
+        treatment,
+        refundSource: treatment === 'refund' ? normalizedRefundSource : null,
+      }
+    }
+
+    if (treatment === 'transfer' || treatment === 'excluded') {
+      return { treatment, refundSource: null }
+    }
+
+    return { treatment: 'income' as TransactionTreatment, refundSource: null }
+  }
+
+  if (treatment === 'spending' || treatment === 'transfer' || treatment === 'excluded') {
+    return { treatment, refundSource: null }
+  }
+
+  return { treatment: 'spending' as TransactionTreatment, refundSource: null }
+}
+
 export function isRefundTreatment(
   input: Pick<TransactionSemanticInput, 'treatment' | 'transactionKind'>
 ) {
@@ -171,12 +215,21 @@ export function normalizeTransactionSemantics(
   budgetBehavior: BudgetBehavior
   transactionKind: TransactionKind
 } {
-  const treatment = deriveTransactionTreatment(input)
+  const derivedTreatment = deriveTransactionTreatment(input)
+  const normalizedInputRefundSource = isRefundSource(input.refundSource)
+    ? input.refundSource
+    : null
+  const coerced = coerceTreatmentForAmount({
+    treatment: derivedTreatment,
+    refundSource: normalizedInputRefundSource,
+    amount: input.amount,
+  })
+  const treatment = coerced.treatment
   const refundSource =
     treatment === 'refund'
       ? deriveRefundSourceValue({
           treatment,
-          refundSource: input.refundSource,
+          refundSource: coerced.refundSource,
           transactionKind: input.transactionKind,
         })
       : null
