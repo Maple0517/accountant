@@ -140,6 +140,15 @@ test('saved view filters keep the expensive counts isolated and reusable', () =>
   applySavedViewFilters(query, 'needs_review' satisfies SavedView)
 
   assert.ok(operations[0].filters.some((filter) => filter.method === 'or'))
+  assert.ok(
+    operations[0].filters.some(
+      (filter) =>
+        filter.method === 'or' &&
+        typeof filter.value === 'string' &&
+        filter.value.includes('refund_match_confidence.lt.0.8') &&
+        filter.value.includes('refund_match_reason.neq.manual-reviewed')
+    )
+  )
 })
 
 test('countAllPendingAiClassifications ignores page filters but keeps safe visibility filters', async () => {

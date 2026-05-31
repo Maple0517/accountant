@@ -21,6 +21,7 @@ import {
   findLikelyOriginalPurchase,
   isLikelyRefundCandidate,
 } from '@/lib/transactions/refund-matching'
+import { MANUAL_REVIEWED_REFUND_REASON } from '@/lib/transactions/review'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
 import {
   detectTransferSemantics,
@@ -618,6 +619,7 @@ export async function syncPlaidItemTransactions({
         !shouldApplyTransferExclusion &&
         refundCandidate &&
         !existingTransaction?.linked_transaction_id &&
+        existingTransaction?.refund_match_reason !== MANUAL_REVIEWED_REFUND_REASON &&
         existingTransaction?.transaction_kind !== 'reimbursement'
       ) {
         const match = await findLikelyOriginalPurchase({

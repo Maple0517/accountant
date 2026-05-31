@@ -12,6 +12,7 @@ import {
   PLAID_FALLBACK_TAG,
   stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
+import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
 import type { AiClassificationJob, BudgetBehavior, Category, Transaction, TransactionKind, TransactionSplitGroup } from '@/types'
 import { useI18n } from '@/i18n/client'
@@ -894,6 +895,7 @@ export default function TransactionsPage() {
         transaction_kind?: Transaction['transaction_kind']
         linked_transaction_id?: string | null
         budget_effective_date?: string | null
+        reviewed?: boolean
       }
     ) => {
       setSavingTransactionId(transactionId)
@@ -1550,6 +1552,7 @@ const TransactionItem = memo(function TransactionItem({
       transaction_kind?: Transaction['transaction_kind']
       linked_transaction_id?: string | null
       budget_effective_date?: string | null
+      reviewed?: boolean
     }
   ) => void
   onSaveSemantics: (
@@ -1658,13 +1661,8 @@ const TransactionItem = memo(function TransactionItem({
   const metaText = metaParts.join(' · ')
   const hasAutomaticClassificationTag =
     tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
-  const hasRefundReview =
-    tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement'
-  const hasTransferReview =
-    tx.transaction_kind === 'transfer' &&
-    (!tx.transfer_match_status ||
-      tx.transfer_match_status === 'unmatched' ||
-      tx.transfer_match_status === 'suggested')
+  const hasRefundReview = needsRefundReview(tx)
+  const hasTransferReview = needsTransferReview(tx)
   const reviewActions = [
     !tx.category_id || hasAutomaticClassificationTag
       ? {
@@ -1727,6 +1725,15 @@ const TransactionItem = memo(function TransactionItem({
             ? t('transactions.reviewRefundLinkedCopy')
             : t('transactions.reviewRefundCopy'),
           actions: [
+            {
+              label: t('transactions.confirmRefund'),
+              variant: 'primary',
+              onClick: () =>
+                onSaveRefundMetadata(tx.id, {
+                  reviewed: true,
+                }),
+              disabled: isSaving,
+            },
             {
               label: t('transactions.notRefund'),
               variant: 'ghost',
@@ -1942,7 +1949,7 @@ const TransactionItem = memo(function TransactionItem({
                   onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
                 }
               >
-                Link
+                {t('transactions.link')}
               </button>
               <button
                 type="button"
@@ -1976,12 +1983,25 @@ const TransactionItem = memo(function TransactionItem({
                 onClick={() =>
                   onSaveRefundMetadata(tx.id, {
                     budget_effective_date: budgetEffectiveDate,
+                    reviewed: true,
                   })
                 }
               >
-                Apply Date
+                {t('transactions.applyDate')}
               </button>
             </div>
+            {hasRefundReview && (
+              <div className="refund-link-row">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={isSaving}
+                  onClick={() => onSaveRefundMetadata(tx.id, { reviewed: true })}
+                >
+                  {t('transactions.confirmRefund')}
+                </button>
+              </div>
+            )}
           </div>
           <div className="refund-tools">
             <div className="tx-category-popover-header">

@@ -58,7 +58,7 @@ export async function GET(request: Request) {
         supabase
           .from('transactions')
           .select(
-            'id, amount, iso_currency_code, pending, category_id, tags, transaction_kind, budget_behavior, budget_effective_date, effective_date, date, transfer_match_status, deleted_at, is_hidden_from_reports, split_role, categories!transactions_category_id_fkey ( is_excluded_from_budget )'
+            'id, amount, iso_currency_code, pending, category_id, tags, transaction_kind, linked_transaction_id, refund_match_confidence, refund_match_reason, semantic_override_source, budget_behavior, budget_effective_date, effective_date, date, transfer_match_status, deleted_at, is_hidden_from_reports, split_role, categories!transactions_category_id_fkey ( is_excluded_from_budget )'
           )
           .eq('user_id', user.id)
           .is('deleted_at', null)

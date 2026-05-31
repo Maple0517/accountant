@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getOrCreateRefundedCategory } from '@/lib/categories-db'
 import { getTransactionMutationBlockReason } from '@/lib/transactions/mutation-guard'
 import { deriveBudgetBehavior } from '@/lib/transactions/semantics'
+import { MANUAL_REVIEWED_REFUND_REASON } from '@/lib/transactions/review'
 import type { TransactionKind } from '@/types'
 
 export const dynamic = 'force-dynamic'
@@ -49,6 +50,7 @@ export async function PATCH(
           ? null
           : undefined
     const requestedBudgetDate = parseDate(body.budget_effective_date)
+    const requestedReviewed = body.reviewed === true
 
     if (
       body.budget_effective_date !== undefined &&
@@ -151,6 +153,22 @@ export async function PATCH(
         update.refund_match_reason = 'manual link'
         update.semantic_override_source = 'user'
       }
+    }
+
+    if (requestedReviewed) {
+      update.semantic_override_source = 'user'
+      if (!update.transaction_kind) {
+        update.transaction_kind = transaction.transaction_kind || 'refund'
+      }
+      if (!update.budget_behavior) {
+        update.budget_behavior = deriveBudgetBehavior({
+          transactionKind: update.transaction_kind as TransactionKind,
+          category: transactionCategory,
+        })
+      }
+      update.budget_effective_date = update.budget_effective_date ?? transaction.date
+      update.refund_match_confidence = null
+      update.refund_match_reason = MANUAL_REVIEWED_REFUND_REASON
     }
 
     if (update.transaction_kind === 'normal') {

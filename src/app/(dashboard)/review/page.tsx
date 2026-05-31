@@ -11,6 +11,7 @@ import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
 } from '@/lib/plaid/classification'
+import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
 import type { Category, Transaction } from '@/types'
 import { useI18n } from '@/i18n/client'
 
@@ -58,15 +59,10 @@ function getIssueBuckets(tx: ReviewTransaction, t: (key: string) => string) {
   if (!tx.category_id) {
     issues.push({ key: 'uncategorized', label: t('common.uncategorized'), tone: 'warning' })
   }
-  if (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement') {
+  if (needsRefundReview(tx)) {
     issues.push({ key: 'refund', label: t('review.refundReview'), tone: 'info' })
   }
-  if (
-    tx.transaction_kind === 'transfer' &&
-    (!tx.transfer_match_status ||
-      tx.transfer_match_status === 'unmatched' ||
-      tx.transfer_match_status === 'suggested')
-  ) {
+  if (needsTransferReview(tx)) {
     issues.push({ key: 'transfer', label: t('review.transferMatch'), tone: 'danger' })
   }
   if (tx.pending) {
@@ -104,13 +100,28 @@ export default function ReviewPage() {
     fetcher
   )
   const reviewItems = data?.transactions ?? []
-  const counts = {
-    ai: data?.viewCounts?.ai_pending ?? 0,
-    uncategorized: data?.viewCounts?.uncategorized ?? 0,
-    refunds: data?.viewCounts?.refunds ?? 0,
-    transfers: data?.viewCounts?.transfers ?? 0,
-    pending: data?.viewCounts?.pending ?? 0,
-  }
+  const counts = reviewItems.reduce(
+    (
+      next: {
+        ai: number
+        uncategorized: number
+        refunds: number
+        transfers: number
+        pending: number
+      },
+      tx: ReviewTransaction
+    ) => {
+      for (const issue of getIssueBuckets(tx, t)) {
+        if (issue.key === 'ai') next.ai += 1
+        if (issue.key === 'uncategorized') next.uncategorized += 1
+        if (issue.key === 'refund') next.refunds += 1
+        if (issue.key === 'transfer') next.transfers += 1
+        if (issue.key === 'pending') next.pending += 1
+      }
+      return next
+    },
+    { ai: 0, uncategorized: 0, refunds: 0, transfers: 0, pending: 0 }
+  )
   const queueTotal =
     data?.totalCount ??
     counts.ai + counts.uncategorized + counts.refunds + counts.transfers + counts.pending

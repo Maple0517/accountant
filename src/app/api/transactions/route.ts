@@ -214,6 +214,7 @@ const TRANSACTION_SELECT = `
   category_id,
   tags,
   transaction_kind,
+  semantic_override_source,
   budget_behavior,
       linked_transaction_id,
       budget_effective_date,
