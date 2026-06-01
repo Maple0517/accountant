@@ -960,15 +960,6 @@ const zh: TranslationDictionary = {
   'settings.endpointLabel': '端点',
 }
 
-function readStoredLocale(): Locale | null {
-  try {
-    const stored = window.localStorage?.getItem(STORAGE_KEY)
-    return stored === 'en' || stored === 'zh' ? stored : null
-  } catch {
-    return null
-  }
-}
-
 function readCookieLocale(): Locale | null {
   try {
     const cookies = document.cookie.split(';')
@@ -987,10 +978,7 @@ function readCookieLocale(): Locale | null {
 function detectBrowserLocale(fallback: Locale = 'en'): Locale {
   if (clientLocaleOverride) return clientLocaleOverride
   const cookieLocale = readCookieLocale()
-  if (cookieLocale) return cookieLocale
-  const stored = readStoredLocale()
-  if (stored) return stored
-  return fallback
+  return cookieLocale ?? fallback
 }
 
 function persistLocale(locale: Locale) {

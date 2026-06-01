@@ -38,13 +38,11 @@ function applyTheme(theme: ThemeMode) {
 export default function Header({ userEmail }: { userEmail: string | null }) {
   const router = useRouter()
   const { locale, toggleLocale, t } = useI18n()
-  const [theme, setTheme] = useState<ThemeMode>('light')
+  const [theme, setTheme] = useState<ThemeMode>(() => detectPreferredTheme())
 
   useEffect(() => {
-    const preferredTheme = detectPreferredTheme()
-    setTheme(preferredTheme)
-    applyTheme(preferredTheme)
-  }, [])
+    applyTheme(theme)
+  }, [theme])
 
   const handleSignOut = async () => {
     const { createClient } = await import('@/lib/supabase/client')
@@ -54,9 +52,7 @@ export default function Header({ userEmail }: { userEmail: string | null }) {
   }
 
   const toggleTheme = () => {
-    const nextTheme = theme === 'light' ? 'dark' : 'light'
-    setTheme(nextTheme)
-    applyTheme(nextTheme)
+    setTheme((currentTheme) => currentTheme === 'light' ? 'dark' : 'light')
   }
 
   return (

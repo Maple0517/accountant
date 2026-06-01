@@ -87,21 +87,18 @@ function buildCategoryLink(categoryId: string, categoryName: string) {
   return `/transactions?${query.toString()}`
 }
 
+const GROUP_LABEL_KEYS = {
+  over: 'budgets.over',
+  watch: 'budgets.watch',
+  onTrack: 'budgets.groupOnTrack',
+  noBudget: 'budgets.groupNoBudget',
+} as const
+
 function getGroupLabel(
-  group: 'over' | 'watch' | 'onTrack' | 'noBudget',
-  locale: string
+  group: keyof typeof GROUP_LABEL_KEYS,
+  t: (key: string) => string
 ) {
-  switch (group) {
-    case 'over':
-      return locale === 'zh' ? '超支' : 'Over'
-    case 'watch':
-      return locale === 'zh' ? '需关注' : 'Watch'
-    case 'onTrack':
-      return locale === 'zh' ? '正常' : 'On track'
-    case 'noBudget':
-    default:
-      return locale === 'zh' ? '未设置预算' : 'No budget'
-  }
+  return t(GROUP_LABEL_KEYS[group])
 }
 
 export default function BudgetsPage() {
@@ -292,7 +289,7 @@ export default function BudgetsPage() {
             </EmptyState>
           ) : sectionOrder.map((group) => {
             const items = groupedCategories[group]
-            const groupLabel = getGroupLabel(group, locale)
+            const groupLabel = getGroupLabel(group, t)
 
             return (
               <Card key={group} padding="md">

@@ -64,7 +64,7 @@ function LoginFormContent() {
             aria-label={locale === 'en' ? t('app.switchToChinese') : t('app.switchToEnglish')}
             style={{ alignSelf: 'flex-end' }}
           >
-            {locale === 'en' ? '中文' : 'EN'}
+            {locale === 'en' ? t('app.languageChinese') : t('app.languageEnglish')}
           </button>
           <span className="logo-emoji">👛</span>
           <h1>Accountant</h1>

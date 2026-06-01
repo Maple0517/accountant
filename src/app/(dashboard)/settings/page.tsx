@@ -231,7 +231,7 @@ export default function SettingsPage() {
       <form onSubmit={handleSave} className="settings-grid settings-workspace">
         <div className="settings-form-rail">
           <Card className="settings-card settings-profile-card">
-            <h2>Profile</h2>
+            <h2>{t('settings.profile')}</h2>
             <p className="settings-card-intro">{t('settings.profileIntro')}</p>
             <div className="input-group">
               <label className="input-label" htmlFor="settings-display-name">{t('settings.displayName')}</label>
@@ -255,7 +255,7 @@ export default function SettingsPage() {
           <Card className="settings-card">
             <div className="card-header settings-section-header">
               <div>
-                <h2>Notion</h2>
+                <h2>{t('settings.notion')}</h2>
                 <p className="settings-card-intro">{t('settings.notionIntro')}</p>
               </div>
               <Badge tone={profile?.notion_token_configured ? 'success' : 'muted'}>{profile?.notion_token_configured ? t('common.connected') : t('common.notConnected')}</Badge>
