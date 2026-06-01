@@ -721,13 +721,15 @@ a {
 .api-key-reveal > div { min-width: 0; flex: 1; }
 .api-key-actions {
   display: grid;
-  grid-template-columns: minmax(14rem, 1fr) max-content max-content;
+  grid-template-columns: minmax(11rem, 1fr) minmax(8.75rem, auto) minmax(8.75rem, auto);
   align-items: end;
   gap: 0.75rem;
   margin-bottom: 1rem;
 }
 .api-key-actions .btn {
+  min-width: 8.75rem;
   min-height: 2.7rem;
+  padding-inline: 0.85rem;
   white-space: nowrap;
 }
 .api-key-name { min-width: 0; margin-bottom: 0; }
@@ -795,6 +797,19 @@ a {
 .theme-toggle-option strong { font-size: 0.92rem; font-weight: 800; }
 .theme-toggle-option span { color: var(--text-secondary); font-size: 0.76rem; line-height: 1.35; }
 .theme-toggle-current { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+
+@media (max-width: 1180px) and (min-width: 1025px) {
+  .settings-workspace .api-key-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .settings-workspace .api-key-name {
+    grid-column: 1 / -1;
+  }
+  .settings-workspace .api-key-actions .btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
 
 /* Budgets */
 .budget-health-card { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr); gap: 1.25rem; align-items: center; }
