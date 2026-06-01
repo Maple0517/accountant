@@ -1855,8 +1855,17 @@ const TransactionItem = memo(function TransactionItem({
     classificationStatus = t('transactions.aiPending')
   }
 
+  const hasAutomaticClassificationTag =
+    tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
+  const hasRefundReview = needsRefundReview(tx)
+  const hasTransferReview = needsTransferReview(tx)
+  const needsReviewBadge =
+    !tx.category_id || hasAutomaticClassificationTag || hasRefundReview || hasTransferReview
+
   const badgeParts: Array<{ label: string; tone: 'accent' | 'success' | 'warning' | 'info' | 'muted' }> = []
-  if (classificationStatus) {
+  if (needsReviewBadge) {
+    badgeParts.push({ label: t('transactions.needsReview'), tone: 'warning' })
+  } else if (classificationStatus) {
     badgeParts.push({ label: classificationStatus, tone: classificationStatus === 'AI Pending' ? 'accent' : 'success' })
   }
   if (tx.pending) badgeParts.push({ label: t('common.pending'), tone: 'warning' })
@@ -1872,12 +1881,7 @@ const TransactionItem = memo(function TransactionItem({
   if (treatment === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
   if (tx.split_role === 'child') badgeParts.push({ label: `Split ${tx.split_sequence || ''}`.trim(), tone: 'accent' })
   if (tx.split_status === 'out_of_balance') badgeParts.push({ label: t('transactions.splitOutOfBalance'), tone: 'warning' })
-  if (treatment === 'income') badgeParts.push({ label: t('transactions.countsIncome'), tone: 'success' })
-  if (treatment === 'transfer') badgeParts.push({ label: t('transactions.excludedTransfer'), tone: 'muted' })
   if (treatment === 'excluded') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
-  if (tx.transfer_match_status === 'auto_matched' || tx.transfer_match_status === 'manually_matched') badgeParts.push({ label: t('common.matched'), tone: 'success' })
-  if (tx.transfer_match_status === 'suggested') badgeParts.push({ label: t('common.suggested'), tone: 'warning' })
-  if (tx.transfer_match_status === 'unmatched') badgeParts.push({ label: t('common.unmatched'), tone: 'warning' })
 
   const badgeLabels = new Set(badgeParts.map((badge) => badge.label))
   const metaParts: string[] = []
@@ -1902,25 +1906,10 @@ const TransactionItem = memo(function TransactionItem({
   } else if (tx.source === 'manual' && !accountLabel) {
     metaParts.push('Manual')
   }
-  if (treatment === 'income') {
-    pushMetaPart(t('transactions.countsAsIncome'), [t('transactions.countsIncome')])
-  }
-  if (tx.transfer_match_status === 'auto_matched') {
-    pushMetaPart(t('common.matched'))
-  } else if (tx.transfer_match_status === 'manually_matched') {
-    pushMetaPart(t('common.matched'))
-  } else if (tx.transfer_match_status === 'suggested') {
-    pushMetaPart(t('common.suggested'))
-  } else if (tx.transfer_match_status === 'unmatched') {
-    pushMetaPart(t('common.unmatched'))
-  } else if (tx.transfer_match_status === 'ignored') {
+  if (!needsReviewBadge && tx.transfer_match_status === 'ignored') {
     pushMetaPart(t('common.notTransfer'))
   }
   const metaText = metaParts.join(' · ')
-  const hasAutomaticClassificationTag =
-    tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
-  const hasRefundReview = needsRefundReview(tx)
-  const hasTransferReview = needsTransferReview(tx)
   const showRefundControls =
     isDisplayedCredit &&
     treatment === 'refund'
