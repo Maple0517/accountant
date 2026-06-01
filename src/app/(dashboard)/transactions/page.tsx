@@ -2715,7 +2715,23 @@ const TransactionItem = memo(function TransactionItem({
             type="button"
             className="detail-section-toggle"
             aria-expanded={openSections.split}
-            onClick={() => toggleSection('split')}
+            onClick={() => {
+              if (tx.pending) {
+                toggleSection('split')
+                return
+              }
+
+              if (!openSections.split) {
+                setOpenSections((current) => ({
+                  ...current,
+                  split: true,
+                }))
+                onOpenSplitEditor(tx)
+                return
+              }
+
+              toggleSection('split')
+            }}
           >
             <div className="detail-card-header split-action-header">
               <div>

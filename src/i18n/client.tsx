@@ -28,8 +28,12 @@ const en: TranslationDictionary = {
   'app.user': 'User',
   'app.signOut': 'Sign out',
   'app.language': 'Language',
+  'app.switchToDark': 'Switch to dark mode',
+  'app.switchToLight': 'Switch to light mode',
   'app.switchToChinese': 'Switch to Chinese',
   'app.switchToEnglish': 'Switch to English',
+  'app.languageChinese': 'Chinese',
+  'app.languageEnglish': 'English',
   'nav.primary': 'Primary navigation',
   'nav.overview': 'Overview',
   'nav.review': 'Review',
@@ -213,17 +217,20 @@ const en: TranslationDictionary = {
   'analytics.categoryShareAria': 'Spending share by category',
   'analytics.incomeVsSpending': 'Income vs spending',
   'analytics.incomeVsSpendingAria': 'Income versus spending chart',
+  'analytics.currencyScope': 'Currency scope',
   'budgets.title': 'Budgets',
   'budgets.subtitle': 'See which categories are safe, close, or over for the selected month.',
   'budgets.prevMonth': 'Previous month',
   'budgets.nextMonth': 'Next month',
   'budgets.notConfigured': 'Not configured',
+  'budgets.groupNoBudget': 'No budget',
   'budgets.setGuidance': 'Set budgets to unlock monthly guidance.',
   'budgets.over': 'Over',
   'budgets.overCopy': 'Spending has exceeded the monthly plan.',
   'budgets.watch': 'Watch',
   'budgets.watchCopy': 'You are close to the monthly limit.',
   'budgets.safe': 'Safe',
+  'budgets.groupOnTrack': 'On track',
   'budgets.safeCopy': 'Current spending is inside the monthly plan.',
   'budgets.loadError': ({ status } = {}) => `Failed to load budget data (${status})`,
   'budgets.nonNegative': 'Budget amount must be a non-negative number.',
@@ -458,6 +465,7 @@ const en: TranslationDictionary = {
   'settings.profileIntro': 'Defaults used across the workspace.',
   'settings.displayName': 'Display name',
   'settings.defaultCurrency': 'Default currency',
+  'settings.notion': 'Notion',
   'settings.notionIntro': 'Single-direction transaction sync to your own database.',
   'settings.enableNotion': 'Enable Notion sync',
   'settings.notionToken': 'Notion internal integration token',
@@ -502,8 +510,12 @@ const zh: TranslationDictionary = {
   'app.user': '用户',
   'app.signOut': '退出登录',
   'app.language': '语言',
+  'app.switchToDark': '切换到深色模式',
+  'app.switchToLight': '切换到浅色模式',
   'app.switchToChinese': '切换到中文',
   'app.switchToEnglish': '切换到英文',
+  'app.languageChinese': '中文',
+  'app.languageEnglish': '英文',
   'nav.primary': '主导航',
   'nav.overview': '总览',
   'nav.review': '复核',
@@ -687,17 +699,20 @@ const zh: TranslationDictionary = {
   'analytics.categoryShareAria': '按分类划分的支出占比',
   'analytics.incomeVsSpending': '收入与支出',
   'analytics.incomeVsSpendingAria': '收入与支出图表',
+  'analytics.currencyScope': '币种范围',
   'budgets.title': '预算',
   'budgets.subtitle': '查看所选月份各分类是否安全、接近上限或超支。',
   'budgets.prevMonth': '上个月',
   'budgets.nextMonth': '下个月',
   'budgets.notConfigured': '未配置',
+  'budgets.groupNoBudget': '未设置预算',
   'budgets.setGuidance': '设置预算后可解锁月度指引。',
   'budgets.over': '超支',
   'budgets.overCopy': '支出已超过本月计划。',
   'budgets.watch': '关注',
   'budgets.watchCopy': '你已接近本月上限。',
   'budgets.safe': '安全',
+  'budgets.groupOnTrack': '正常',
   'budgets.safeCopy': '当前支出仍在本月计划内。',
   'budgets.nonNegative': '预算金额必须是非负数。',
   'budgets.updateError': '更新预算失败',
@@ -908,6 +923,7 @@ const zh: TranslationDictionary = {
   'settings.profileIntro': '整个工作区使用的默认设置。',
   'settings.displayName': '显示名称',
   'settings.defaultCurrency': '默认货币',
+  'settings.notion': 'Notion',
   'settings.notionIntro': '单向同步交易到你自己的数据库。',
   'settings.enableNotion': '启用 Notion 同步',
   'settings.notionToken': 'Notion 内部集成 token',
@@ -953,16 +969,28 @@ function readStoredLocale(): Locale | null {
   }
 }
 
+function readCookieLocale(): Locale | null {
+  try {
+    const cookies = document.cookie.split(';')
+    for (const cookie of cookies) {
+      const [rawKey, ...rawValue] = cookie.trim().split('=')
+      if (rawKey !== COOKIE_KEY) continue
+      const value = decodeURIComponent(rawValue.join('='))
+      return value === 'en' || value === 'zh' ? value : null
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
 function detectBrowserLocale(fallback: Locale = 'en'): Locale {
   if (clientLocaleOverride) return clientLocaleOverride
+  const cookieLocale = readCookieLocale()
+  if (cookieLocale) return cookieLocale
   const stored = readStoredLocale()
-  if (stored === 'en' || stored === 'zh') return stored
-  const languages = window.navigator.languages?.length
-    ? window.navigator.languages
-    : [window.navigator.language]
-  return languages.some((language) => language.toLowerCase().startsWith('zh'))
-    ? 'zh'
-    : fallback
+  if (stored) return stored
+  return fallback
 }
 
 function persistLocale(locale: Locale) {
