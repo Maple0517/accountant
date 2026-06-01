@@ -20,6 +20,7 @@ test('normalizeSplitRequest accepts decimal strings and normalizes optional blan
         category_id: '',
         allocation_date: '2026-05-01',
         treatment: 'spending',
+        refund_source: null,
         linked_transaction_id: '',
         merchant_name: 'Groceries',
       },
@@ -27,6 +28,7 @@ test('normalizeSplitRequest accepts decimal strings and normalizes optional blan
         amount_decimal: '29.9',
         category_id: null,
         treatment: 'spending',
+        refund_source: null,
       },
     ],
   })
@@ -75,10 +77,12 @@ test('normalizeSplitRequest rejects malformed money', () => {
       {
         amount_decimal: '10.12345',
         treatment: 'spending',
+        refund_source: null,
       },
       {
         amount_decimal: '5',
         treatment: 'spending',
+        refund_source: null,
       },
     ],
   })
@@ -105,16 +109,14 @@ test('buildSplitPreview returns decimal-string balance and monthly impact', () =
         category_id: '11111111-1111-1111-1111-111111111111',
         allocation_date: '2026-05-10',
         treatment: 'spending',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        refund_source: null,
       },
       {
         amount_decimal: '40',
         category_id: null,
         allocation_date: '2026-06-01',
         treatment: 'spending',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        refund_source: null,
       },
     ]
   )
@@ -152,16 +154,14 @@ test('buildSplitPreview excludes category-level budget exclusions from budget im
         category_id: '11111111-1111-1111-1111-111111111111',
         allocation_date: '2026-05-10',
         treatment: 'spending',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        refund_source: null,
       },
       {
         amount_decimal: '40',
         category_id: '22222222-2222-2222-2222-222222222222',
         allocation_date: '2026-05-10',
         treatment: 'excluded',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        refund_source: null,
       },
     ],
     {
@@ -185,16 +185,13 @@ test('validateCanonicalSplitSigns rejects opposite-sign children', () => {
         amount_decimal: '80',
         category_id: null,
         treatment: 'spending',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        refund_source: null,
       },
       {
         amount_decimal: '-20',
         category_id: null,
         treatment: 'refund',
         refund_source: 'merchant_refund',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
       },
     ]),
     ['children.1.amount_decimal has the wrong sign']
