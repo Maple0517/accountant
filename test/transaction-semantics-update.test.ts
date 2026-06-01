@@ -240,9 +240,8 @@ test('rejecting a transfer clears group metadata and marks both legs ignored', a
     userId: 'user_1',
     transactionId: 'tx_current',
     body: {
-      transaction_kind: 'normal',
+      treatment: 'spending',
       transfer_match_status: 'ignored',
-      budget_behavior: 'count_as_spending',
     },
     ensureCategory: async () => {
       throw new Error('rejecting a match should not create categories')
@@ -324,6 +323,45 @@ test('invalid semantic values are rejected before database access', async () => 
     error: 'Invalid budget_behavior',
   })
   assert.equal(operations.length, 0)
+})
+
+test('canonical semantics input wins over conflicting legacy fields', async () => {
+  const { supabase, updatePayloads } = createSupabaseMock({
+    transaction: {
+      ...baseTransaction,
+      transaction_kind: 'transfer',
+      categories: {
+        type: 'transfer',
+        is_excluded_from_budget: true,
+      },
+    },
+  })
+
+  const result = await updateTransactionSemantics({
+    supabase,
+    userId: 'user_1',
+    transactionId: 'tx_current',
+    body: {
+      treatment: 'spending',
+      transaction_kind: 'transfer',
+      budget_behavior: 'exclude_as_transfer',
+    },
+    ensureCategory: async () => null,
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(updatePayloads.length, 1)
+  assert.deepEqual(updatePayloads[0], {
+    semantic_override_source: 'user',
+    treatment: 'spending',
+    refund_source: null,
+    transaction_kind: 'normal',
+    budget_behavior: 'count_as_spending',
+    transfer_group_id: null,
+    transfer_match_status: null,
+    transfer_match_confidence: null,
+    transfer_match_reason: null,
+  })
 })
 
 test('semantics update rejects split parent transactions', async () => {

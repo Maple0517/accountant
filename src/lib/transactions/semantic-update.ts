@@ -145,6 +145,10 @@ export async function updateTransactionSemantics({
   const rawKind = readBodyValue(body, 'transaction_kind')
   const rawBudgetBehavior = readBodyValue(body, 'budget_behavior')
   const rawTransferStatus = readBodyValue(body, 'transfer_match_status')
+  const hasCanonicalSemanticInput =
+    rawTreatment !== undefined || rawRefundSource !== undefined
+  const hasLegacySemanticInput =
+    rawKind !== undefined || rawBudgetBehavior !== undefined
   const requestedTreatment =
     typeof rawTreatment === 'string' &&
     VALID_TREATMENTS.has(rawTreatment as TransactionTreatment)
@@ -268,7 +272,7 @@ export async function updateTransactionSemantics({
     applyToTransferGroup = true
   } else {
     const requestedLegacyTreatment =
-      requestedKind || requestedBudgetBehavior
+      !hasCanonicalSemanticInput && (requestedKind || requestedBudgetBehavior)
         ? normalizeTransactionSemantics({
             transactionKind: requestedKind,
             budgetBehavior: requestedBudgetBehavior,
@@ -311,6 +315,14 @@ export async function updateTransactionSemantics({
 
     if (requestedTransferStatus) {
       update.transfer_match_status = requestedTransferStatus
+    }
+
+    if (
+      !hasCanonicalSemanticInput &&
+      hasLegacySemanticInput &&
+      requestedLegacyTreatment == null
+    ) {
+      return { ok: false, status: 400, error: 'Invalid legacy transaction semantics' }
     }
   }
 
