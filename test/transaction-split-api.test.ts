@@ -19,16 +19,14 @@ test('normalizeSplitRequest accepts decimal strings and normalizes optional blan
         amount_decimal: '70.1000',
         category_id: '',
         allocation_date: '2026-05-01',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        treatment: 'spending',
         linked_transaction_id: '',
         merchant_name: 'Groceries',
       },
       {
         amount_decimal: '29.9',
         category_id: null,
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        treatment: 'spending',
       },
     ],
   })
@@ -76,13 +74,11 @@ test('normalizeSplitRequest rejects malformed money', () => {
     children: [
       {
         amount_decimal: '10.12345',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        treatment: 'spending',
       },
       {
         amount_decimal: '5',
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
+        treatment: 'spending',
       },
     ],
   })
@@ -100,6 +96,7 @@ test('buildSplitPreview returns decimal-string balance and monthly impact', () =
       date: '2026-05-10',
       budget_effective_date: null,
       effective_date: '2026-05-10',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
     },
     [
@@ -146,6 +143,7 @@ test('buildSplitPreview excludes category-level budget exclusions from budget im
       date: '2026-05-10',
       budget_effective_date: null,
       effective_date: '2026-05-10',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
     },
     [

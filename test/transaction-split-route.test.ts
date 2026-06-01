@@ -215,8 +215,8 @@ test('PUT split route rejects pending parents before calling RPC', async () => {
       method: 'PUT',
       body: JSON.stringify({
         children: [
-          { amount_decimal: '50', transaction_kind: 'normal', budget_behavior: 'count_as_spending' },
-          { amount_decimal: '50', transaction_kind: 'normal', budget_behavior: 'count_as_spending' },
+          { amount_decimal: '50', treatment: 'spending' },
+          { amount_decimal: '50', treatment: 'spending' },
         ],
       }),
     }),
@@ -261,8 +261,8 @@ test('PUT split route calls replace RPC and enqueues Notion jobs after success',
       body: JSON.stringify({
         expected_version: 1,
         children: [
-          { amount_decimal: '60', transaction_kind: 'normal', budget_behavior: 'count_as_spending' },
-          { amount_decimal: '40', transaction_kind: 'normal', budget_behavior: 'count_as_spending' },
+          { amount_decimal: '60', treatment: 'spending' },
+          { amount_decimal: '40', treatment: 'spending' },
         ],
       }),
     }),

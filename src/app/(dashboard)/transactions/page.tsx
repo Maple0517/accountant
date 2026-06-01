@@ -132,8 +132,6 @@ type SplitLineDraft = {
   allocation_date: string
   treatment: TransactionTreatment
   refund_source: RefundSource | ''
-  transaction_kind: TransactionKind
-  budget_behavior: BudgetBehavior
   linked_transaction_id: string
   merchant_name: string
   description: string
@@ -146,8 +144,6 @@ type SplitTreatmentPreset = {
   hintKey: string
   treatment: TransactionTreatment
   refund_source?: RefundSource
-  transaction_kind: TransactionKind
-  budget_behavior: BudgetBehavior
 }
 
 type SplitPreviewResponse = {
@@ -308,8 +304,6 @@ function createSplitLineDraft(
     allocation_date: allocationDate,
     treatment: defaultSemantics.treatment,
     refund_source: (defaultSemantics.refundSource ?? '') as RefundSource | '',
-    transaction_kind: defaultSemantics.transactionKind,
-    budget_behavior: defaultSemantics.budgetBehavior,
     linked_transaction_id: tx.linked_transaction_id || '',
     merchant_name: tx.merchant_name || '',
     description: index === 0 ? tx.description || '' : '',
@@ -332,8 +326,6 @@ function buildInitialSplitLines(
         allocation_date: child.effective_date || child.budget_effective_date || child.date,
         treatment: defaultSemantics.treatment,
         refund_source: (defaultSemantics.refundSource ?? '') as RefundSource | '',
-        transaction_kind: defaultSemantics.transactionKind,
-        budget_behavior: defaultSemantics.budgetBehavior,
         linked_transaction_id: child.linked_transaction_id || '',
         merchant_name: child.merchant_name || '',
         description: child.description || '',
@@ -390,8 +382,6 @@ function applySplitTreatmentPreset(
     ...line,
     treatment: preset.treatment,
     refund_source: preset.refund_source || '',
-    transaction_kind: preset.transaction_kind,
-    budget_behavior: preset.budget_behavior,
   }
 }
 
@@ -420,8 +410,6 @@ function buildSplitPayload(lines: SplitLineDraft[], expectedVersion?: number | n
       allocation_date: line.allocation_date || null,
       treatment: line.treatment,
       refund_source: line.refund_source || null,
-      transaction_kind: line.transaction_kind,
-      budget_behavior: line.budget_behavior,
       linked_transaction_id: line.linked_transaction_id || null,
       merchant_name: line.merchant_name || null,
       description: line.description || null,
@@ -530,24 +518,18 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     labelKey: 'transactions.spendingOption',
     hintKey: 'transactions.spendingOptionHint',
     treatment: 'spending',
-    transaction_kind: 'normal',
-    budget_behavior: 'count_as_spending',
   },
   {
     id: 'income',
     labelKey: 'transactions.incomeOption',
     hintKey: 'transactions.incomeOptionHint',
     treatment: 'income',
-    transaction_kind: 'normal',
-    budget_behavior: 'count_as_income',
   },
   {
     id: 'transfer',
     labelKey: 'transactions.internalTransfer',
     hintKey: 'transactions.internalTransferHint',
     treatment: 'transfer',
-    transaction_kind: 'transfer',
-    budget_behavior: 'exclude_as_transfer',
   },
   {
     id: 'refund',
@@ -555,8 +537,6 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     hintKey: 'transactions.refundOptionHint',
     treatment: 'refund',
     refund_source: 'merchant_refund',
-    transaction_kind: 'refund',
-    budget_behavior: 'count_as_spending',
   },
   {
     id: 'reimbursement',
@@ -564,16 +544,12 @@ const SPLIT_TREATMENT_PRESETS: SplitTreatmentPreset[] = [
     hintKey: 'transactions.reimbursementOptionHint',
     treatment: 'refund',
     refund_source: 'reimbursement',
-    transaction_kind: 'reimbursement',
-    budget_behavior: 'count_as_spending',
   },
   {
     id: 'exclude',
     labelKey: 'transactions.exclude',
     hintKey: 'transactions.excludeOptionHint',
     treatment: 'excluded',
-    transaction_kind: 'normal',
-    budget_behavior: 'exclude_manual',
   },
 ]
 
@@ -1135,7 +1111,6 @@ export default function TransactionsPage() {
       payload: {
         treatment?: Transaction['treatment']
         refund_source?: Transaction['refund_source']
-        transaction_kind?: Transaction['transaction_kind']
         linked_transaction_id?: string | null
         budget_effective_date?: string | null
         reviewed?: boolean
@@ -1184,8 +1159,6 @@ export default function TransactionsPage() {
       payload: {
         treatment?: Transaction['treatment']
         refund_source?: Transaction['refund_source']
-        transaction_kind?: Transaction['transaction_kind']
-        budget_behavior?: Transaction['budget_behavior']
         transfer_match_status?: Transaction['transfer_match_status']
         existing_debt_payment?: boolean
       }
@@ -1796,7 +1769,6 @@ const TransactionItem = memo(function TransactionItem({
     payload: {
       treatment?: Transaction['treatment']
       refund_source?: Transaction['refund_source']
-      transaction_kind?: Transaction['transaction_kind']
       linked_transaction_id?: string | null
       budget_effective_date?: string | null
       reviewed?: boolean
@@ -1807,8 +1779,6 @@ const TransactionItem = memo(function TransactionItem({
     payload: {
       treatment?: Transaction['treatment']
       refund_source?: Transaction['refund_source']
-      transaction_kind?: Transaction['transaction_kind']
-      budget_behavior?: Transaction['budget_behavior']
       transfer_match_status?: Transaction['transfer_match_status']
       existing_debt_payment?: boolean
     }
@@ -2891,8 +2861,6 @@ function SplitEditorDrawer({
                               setLine(index, {
                                 treatment: preset.treatment,
                                 refund_source: preset.refund_source || '',
-                                transaction_kind: preset.transaction_kind,
-                                budget_behavior: preset.budget_behavior,
                               })
                             }
                           >

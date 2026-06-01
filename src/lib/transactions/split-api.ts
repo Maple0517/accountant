@@ -2,10 +2,8 @@ import { z } from 'zod'
 import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 import type {
-  BudgetBehavior,
   RefundSource,
   Transaction,
-  TransactionKind,
   TransactionSplitGroup,
   TransactionTreatment,
 } from '@/types'
@@ -36,8 +34,8 @@ export type SplitChildInput = {
   allocation_date?: string | null
   treatment?: TransactionTreatment
   refund_source?: RefundSource | null
-  transaction_kind: TransactionKind
-  budget_behavior: BudgetBehavior
+  transaction_kind?: string | null
+  budget_behavior?: string | null
   linked_transaction_id?: string | null
   merchant_name?: string | null
   description?: string | null
@@ -100,7 +98,9 @@ export const splitChildSchema = z.object({
     .enum(['merchant_refund', 'reimbursement'])
     .nullable()
     .optional(),
-  transaction_kind: z.enum(['normal', 'refund', 'reimbursement', 'transfer']).default('normal'),
+  transaction_kind: z
+    .enum(['normal', 'refund', 'reimbursement', 'transfer'])
+    .optional(),
   budget_behavior: z
     .enum([
       'count_as_spending',
@@ -108,7 +108,7 @@ export const splitChildSchema = z.object({
       'exclude_as_transfer',
       'exclude_manual',
     ])
-    .default('count_as_spending'),
+    .optional(),
   linked_transaction_id: optionalUuidSchema,
   merchant_name: z.union([z.string().trim().max(200), z.literal(''), z.null()]).optional(),
   description: z.union([z.string().trim().max(500), z.literal(''), z.null()]).optional(),
