@@ -1739,6 +1739,11 @@ body {
 .detail-feedback-bar {
   background: rgba(250, 252, 248, 0.92);
 }
+.transaction-command-hero {
+  background:
+    radial-gradient(circle at 12% -20%, rgba(183, 121, 31, 0.13), transparent 32%),
+    rgba(250, 252, 248, 0.96);
+}
 .transaction-command-icon,
 .detail-category-option,
 .semantic-option,

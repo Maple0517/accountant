@@ -1327,6 +1327,7 @@ export default function TransactionsPage() {
     Boolean(aiJob && (aiJob.pending_count > 0 || aiJob.failed_count > 0))
   const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
+  const [detailEntryMode, setDetailEntryMode] = useState<'row' | 'category'>('row')
   const selectedTransaction = editingTransactionId
     ? transactions.find((tx) => tx.id === editingTransactionId) ?? null
     : null
@@ -1554,14 +1555,23 @@ export default function TransactionsPage() {
     })
   }, [localeCode, t])
 
-  const handleToggleCategoryPicker = useCallback((transactionId: string) => {
+  const handleOpenTransactionDetail = useCallback((transactionId: string) => {
     setCategorySaveStatus(null)
     setSimilarSuggestion(null)
+    setDetailEntryMode('row')
+    setEditingTransactionId(transactionId)
+  }, [])
+
+  const handleOpenCategoryDetail = useCallback((transactionId: string) => {
+    setCategorySaveStatus(null)
+    setSimilarSuggestion(null)
+    setDetailEntryMode('category')
     setEditingTransactionId(transactionId)
   }, [])
 
   const handleCloseDetail = useCallback(() => {
     setEditingTransactionId(null)
+    setDetailEntryMode('row')
     setSimilarSuggestion(null)
     if (!focusedTransactionId) return
     setFocusedTransactionId('')
@@ -1602,7 +1612,8 @@ export default function TransactionsPage() {
         onSaveRefundMetadata={handleRefundMetadataSave}
         onSaveSemantics={handleSemanticsSave}
         onOpenSplitEditor={handleOpenSplitEditor}
-        onOpenDetails={handleToggleCategoryPicker}
+        onOpenDetails={handleOpenTransactionDetail}
+        onOpenCategoryDetails={handleOpenCategoryDetail}
         categoryName={categoryName}
         t={t}
       />
@@ -1618,7 +1629,8 @@ export default function TransactionsPage() {
       handleRefundMetadataSave,
       handleSemanticsSave,
       handleOpenSplitEditor,
-      handleToggleCategoryPicker,
+      handleOpenCategoryDetail,
+      handleOpenTransactionDetail,
       categoryName,
       linkCandidatesByTransactionId,
       t,
@@ -1915,7 +1927,7 @@ export default function TransactionsPage() {
       >
         {selectedTransaction && (
           <TransactionItem
-            key={selectedTransaction.id}
+            key={`${selectedTransaction.id}:${detailEntryMode}`}
             transaction={selectedTransaction}
             linkCandidates={
               linkCandidatesByTransactionId.get(selectedTransaction.id) || EMPTY_LINK_CANDIDATES
@@ -1939,10 +1951,12 @@ export default function TransactionsPage() {
             onSaveRefundMetadata={handleRefundMetadataSave}
             onSaveSemantics={handleSemanticsSave}
             onOpenSplitEditor={handleOpenSplitEditor}
-            onOpenDetails={handleToggleCategoryPicker}
+            onOpenDetails={handleOpenTransactionDetail}
+            onOpenCategoryDetails={handleOpenCategoryDetail}
             categoryName={categoryName}
             t={t}
             detailMode
+            defaultCategoryOpen={detailEntryMode === 'category'}
           />
         )}
       </Drawer>
@@ -1967,9 +1981,11 @@ const TransactionItem = memo(function TransactionItem({
   onSaveSemantics,
   onOpenSplitEditor,
   onOpenDetails,
+  onOpenCategoryDetails,
   categoryName,
   t,
   detailMode = false,
+  defaultCategoryOpen = false,
 }: {
   transaction: TransactionWithRelations
   linkCandidates: RefundLinkCandidate[]
@@ -2020,9 +2036,11 @@ const TransactionItem = memo(function TransactionItem({
   ) => void
   onOpenSplitEditor: (transaction: TransactionWithRelations) => void
   onOpenDetails: (transactionId: string) => void
+  onOpenCategoryDetails: (transactionId: string) => void
   categoryName: (category?: { name?: string | null; name_zh?: string | null } | null, fallback?: string) => string
   t: (key: string, params?: Record<string, string | number>) => string
   detailMode?: boolean
+  defaultCategoryOpen?: boolean
 }) {
   const amount = Number(tx.amount)
   const isIncome = amount < 0
@@ -2283,7 +2301,7 @@ const TransactionItem = memo(function TransactionItem({
 
   const [openSections, setOpenSections] = useState<Record<DetailSectionKey, boolean>>(
     () => ({
-      category: !tx.category_id || hasAutomaticClassificationTag,
+      category: defaultCategoryOpen || !tx.category_id || hasAutomaticClassificationTag,
       semantics: hasRefundReview || hasTransferReview || isDisplayedCredit,
       split: Boolean(tx.split_group_id || tx.split_status === 'out_of_balance'),
     })
@@ -2808,7 +2826,7 @@ const TransactionItem = memo(function TransactionItem({
           aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
           onClick={(event) => {
             event.stopPropagation()
-            onOpenDetails(tx.id)
+            onOpenCategoryDetails(tx.id)
           }}
         >
           <span className="tx-category-pill-icon">{categoryIcon}</span>
