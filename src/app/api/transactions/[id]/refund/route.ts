@@ -56,6 +56,8 @@ export async function PATCH(
 
     const { id } = await context.params
     const body = await request.json()
+    const hasCanonicalSemanticInput =
+      body.treatment !== undefined || body.refund_source !== undefined
     const requestedTreatment =
       typeof body.treatment === 'string' &&
       VALID_TREATMENTS.has(body.treatment as TransactionTreatment)
@@ -147,7 +149,7 @@ export async function PATCH(
       const normalized = normalizeTransactionSemantics({
         treatment:
           requestedTreatment ??
-          (requestedKind
+          (!hasCanonicalSemanticInput && requestedKind
             ? normalizeTransactionSemantics({
                 transactionKind: requestedKind,
                 category: transactionCategory,
@@ -156,7 +158,9 @@ export async function PATCH(
         refundSource:
           requestedRefundSource ??
           transaction.refund_source ??
-          (requestedKind === 'reimbursement' ? 'reimbursement' : undefined),
+          (!hasCanonicalSemanticInput && requestedKind === 'reimbursement'
+            ? 'reimbursement'
+            : undefined),
         amount: transaction.amount,
         category: transactionCategory,
       })
