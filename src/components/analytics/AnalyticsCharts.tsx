@@ -32,9 +32,9 @@ ChartJS.register(
   Filler
 )
 
-const gridColor = 'rgba(52, 59, 77, 0.45)'
-const tickColor = '#687083'
-const textColor = '#a3aab8'
+const gridColor = 'rgba(186, 203, 187, 0.55)'
+const tickColor = '#7b8a82'
+const textColor = '#56665d'
 const chartRoundedFont = 'ui-rounded, "SF Pro Rounded", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Rounded", "Segoe UI", system-ui, sans-serif'
 
 function money(value: string | number, currencyCode: string) {
@@ -57,7 +57,7 @@ export default function AnalyticsCharts({
       {
         label: t('analytics.spending'),
         data: positiveCategories.map((c) => c.total),
-        backgroundColor: positiveCategories.map((c) => c.color || '#7c5cff'),
+        backgroundColor: positiveCategories.map((c) => c.color || '#176b4d'),
         borderRadius: 8,
         borderSkipped: false,
       },
@@ -87,18 +87,18 @@ export default function AnalyticsCharts({
       {
         label: t('analytics.dailySpending'),
         data: data.byDay.map((d) => d.total),
-        borderColor: '#7c5cff',
+        borderColor: '#176b4d',
         backgroundColor: (context: ScriptableContext<'line'>) => {
           const ctx = context.chart.ctx
           const gradient = ctx.createLinearGradient(0, 0, 0, 220)
-          gradient.addColorStop(0, 'rgba(124, 92, 255, 0.28)')
-          gradient.addColorStop(1, 'rgba(124, 92, 255, 0)')
+          gradient.addColorStop(0, 'rgba(23, 107, 77, 0.22)')
+          gradient.addColorStop(1, 'rgba(23, 107, 77, 0)')
           return gradient
         },
         fill: true,
         tension: 0.35,
         pointRadius: 2,
-        pointBackgroundColor: '#b5a6ff',
+        pointBackgroundColor: '#176b4d',
         pointBorderWidth: 0,
         borderWidth: 2,
       },
@@ -121,8 +121,8 @@ export default function AnalyticsCharts({
       return new Date(Number(y), Number(mo) - 1).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', { month: 'short', year: '2-digit' })
     }),
     datasets: [
-      { label: t('analytics.income'), data: data.byMonth.map((m) => m.income), backgroundColor: 'rgba(32, 201, 151, 0.72)', borderRadius: 8, borderSkipped: false },
-      { label: t('analytics.spending'), data: data.byMonth.map((m) => m.spending), backgroundColor: 'rgba(255, 92, 122, 0.72)', borderRadius: 8, borderSkipped: false },
+      { label: t('analytics.income'), data: data.byMonth.map((m) => m.income), backgroundColor: 'rgba(18, 128, 92, 0.72)', borderRadius: 8, borderSkipped: false },
+      { label: t('analytics.spending'), data: data.byMonth.map((m) => m.spending), backgroundColor: 'rgba(200, 63, 73, 0.72)', borderRadius: 8, borderSkipped: false },
     ],
   }
 
@@ -138,7 +138,7 @@ export default function AnalyticsCharts({
 
   const donutData = {
     labels: positiveCategories.map((c) => categoryName(c)),
-    datasets: [{ data: positiveCategories.map((c) => c.total), backgroundColor: positiveCategories.map((c) => c.color || '#7c5cff'), borderWidth: 0, spacing: 2 }],
+    datasets: [{ data: positiveCategories.map((c) => c.total), backgroundColor: positiveCategories.map((c) => c.color || '#176b4d'), borderWidth: 0, spacing: 2 }],
   }
 
   const donutOptions = {
