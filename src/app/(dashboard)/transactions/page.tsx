@@ -975,11 +975,32 @@ export default function TransactionsPage() {
     }
   }, [aiJob, fetchTransactions, fetchViewCounts, processAiQueue, t])
 
+  const closeDetailDrawerForTransaction = useCallback(
+    (transactionId: string) => {
+      if (editingTransactionId !== transactionId) return
+
+      setEditingTransactionId(null)
+      setSimilarSuggestion(null)
+
+      if (!focusedTransactionId) return
+
+      setFocusedTransactionId('')
+      const nextParams = new URLSearchParams(searchParams.toString())
+      nextParams.delete('tx')
+      const query = nextParams.toString()
+      router.replace(query ? `/transactions?${query}` : '/transactions', {
+        scroll: false,
+      })
+    },
+    [editingTransactionId, focusedTransactionId, router, searchParams]
+  )
+
   const handleCategorySave = useCallback(
     async (
       transactionId: string,
       categoryId: string,
-      applyMode: 'single' | 'similar' = 'single'
+      applyMode: 'single' | 'similar' = 'single',
+      options: { closeOnSuccess?: boolean } = {}
     ) => {
       setSavingTransactionId(transactionId)
       setCategorySaveStatus(null)
@@ -1053,6 +1074,10 @@ export default function TransactionsPage() {
             })
           }
         }
+
+        if (options.closeOnSuccess) {
+          closeDetailDrawerForTransaction(transactionId)
+        }
       } catch (error) {
         console.error('Failed to update category:', error)
         setCategorySaveStatus({
@@ -1064,7 +1089,7 @@ export default function TransactionsPage() {
         setSavingTransactionId(null)
       }
     },
-    [categories, categoryName, fetchTransactions, t]
+    [categories, categoryName, closeDetailDrawerForTransaction, fetchTransactions, t]
   )
 
   const handleCreateCategory = useCallback(
@@ -1108,7 +1133,8 @@ export default function TransactionsPage() {
         linked_transaction_id?: string | null
         budget_effective_date?: string | null
         reviewed?: boolean
-      }
+      },
+      options: { closeOnSuccess?: boolean } = {}
     ) => {
       setSavingTransactionId(transactionId)
       setCategorySaveStatus(null)
@@ -1133,6 +1159,10 @@ export default function TransactionsPage() {
           transactionId,
           message: t('transactions.refundSettingsSaved'),
         })
+
+        if (options.closeOnSuccess) {
+          closeDetailDrawerForTransaction(transactionId)
+        }
       } catch (error) {
         console.error('Failed to update refund metadata:', error)
         setCategorySaveStatus({
@@ -1144,7 +1174,7 @@ export default function TransactionsPage() {
         setSavingTransactionId(null)
       }
     },
-    [t]
+    [closeDetailDrawerForTransaction, t]
   )
 
   const handleSemanticsSave = useCallback(
@@ -1155,7 +1185,8 @@ export default function TransactionsPage() {
         refund_source?: Transaction['refund_source']
         transfer_match_status?: Transaction['transfer_match_status']
         existing_debt_payment?: boolean
-      }
+      },
+      options: { closeOnSuccess?: boolean } = {}
     ) => {
       setSavingTransactionId(transactionId)
       setCategorySaveStatus(null)
@@ -1180,6 +1211,10 @@ export default function TransactionsPage() {
           transactionId,
           message: t('transactions.treatmentSaved'),
         })
+
+        if (options.closeOnSuccess) {
+          closeDetailDrawerForTransaction(transactionId)
+        }
       } catch (error) {
         console.error('Failed to update transaction treatment:', error)
         setCategorySaveStatus({
@@ -1191,7 +1226,7 @@ export default function TransactionsPage() {
         setSavingTransactionId(null)
       }
     },
-    [t]
+    [closeDetailDrawerForTransaction, t]
   )
 
   const handleOpenSplitEditor = useCallback((tx: TransactionWithRelations) => {
@@ -1744,7 +1779,8 @@ const TransactionItem = memo(function TransactionItem({
   onSaveCategory: (
     transactionId: string,
     categoryId: string,
-    applyMode?: 'single' | 'similar'
+    applyMode?: 'single' | 'similar',
+    options?: { closeOnSuccess?: boolean }
   ) => void
   onApplySimilar: (
     transactionId: string,
@@ -1766,7 +1802,8 @@ const TransactionItem = memo(function TransactionItem({
       linked_transaction_id?: string | null
       budget_effective_date?: string | null
       reviewed?: boolean
-    }
+    },
+    options?: { closeOnSuccess?: boolean }
   ) => void
   onSaveSemantics: (
     transactionId: string,
@@ -1775,7 +1812,8 @@ const TransactionItem = memo(function TransactionItem({
       refund_source?: Transaction['refund_source']
       transfer_match_status?: Transaction['transfer_match_status']
       existing_debt_payment?: boolean
-    }
+    },
+    options?: { closeOnSuccess?: boolean }
   ) => void
   onOpenSplitEditor: (transaction: TransactionWithRelations) => void
   onOpenDetails: (transactionId: string) => void
@@ -1875,7 +1913,11 @@ const TransactionItem = memo(function TransactionItem({
                     label: t('transactions.confirmCategory'),
                     variant: 'primary',
                     onClick: () => {
-                      if (tx.category_id) onSaveCategory(tx.id, tx.category_id)
+                      if (tx.category_id) {
+                        onSaveCategory(tx.id, tx.category_id, 'single', {
+                          closeOnSuccess: true,
+                        })
+                      }
                     },
                     disabled: isSaving,
                   },
@@ -1895,6 +1937,8 @@ const TransactionItem = memo(function TransactionItem({
               onClick: () =>
                 onSaveSemantics(tx.id, {
                   transfer_match_status: 'manually_matched',
+                }, {
+                  closeOnSuccess: true,
                 }),
               disabled: isSaving,
             },
@@ -1905,6 +1949,8 @@ const TransactionItem = memo(function TransactionItem({
                 onSaveSemantics(tx.id, {
                   treatment: 'spending',
                   transfer_match_status: 'ignored',
+                }, {
+                  closeOnSuccess: true,
                 }),
               disabled: isSaving,
             },
@@ -1925,6 +1971,8 @@ const TransactionItem = memo(function TransactionItem({
               onClick: () =>
                 onSaveRefundMetadata(tx.id, {
                   reviewed: true,
+                }, {
+                  closeOnSuccess: true,
                 }),
               disabled: isSaving,
             },
@@ -1934,6 +1982,8 @@ const TransactionItem = memo(function TransactionItem({
               onClick: () =>
                 onSaveRefundMetadata(tx.id, {
                   treatment: 'spending',
+                }, {
+                  closeOnSuccess: true,
                 }),
               disabled: isSaving,
             },

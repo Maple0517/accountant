@@ -11,7 +11,6 @@ export function NeedsReviewCard({
     uncategorized: number
     possibleRefunds: number
     unmatchedTransfers: number
-    pending: number
   }
 }) {
   const { t } = useI18n()
@@ -21,7 +20,6 @@ export function NeedsReviewCard({
     { label: t('common.uncategorized'), value: counts.uncategorized, hint: t('dashboard.uncategorizedHint'), href: '/transactions?savedView=uncategorized' },
     { label: t('dashboard.refundsLabel'), value: counts.possibleRefunds, hint: t('dashboard.refundsHint'), href: '/transactions?savedView=refunds' },
     { label: t('dashboard.transfersLabel'), value: counts.unmatchedTransfers, hint: t('dashboard.transfersHint'), href: '/transactions?savedView=transfers' },
-    { label: t('common.pending'), value: counts.pending, hint: t('dashboard.pendingHint'), href: '/transactions?savedView=pending' },
   ]
 
   return (

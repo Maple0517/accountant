@@ -1,7 +1,6 @@
 import { AI_PENDING_TAG, PLAID_FALLBACK_TAG } from '@/lib/plaid/classification'
 import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 
-export const REFUND_REVIEW_CONFIDENCE_THRESHOLD = 0.8
 export const MANUAL_REVIEWED_REFUND_REASON = 'manual-reviewed'
 
 type RefundReviewFields = {
@@ -16,7 +15,6 @@ type RefundReviewFields = {
 type TransactionReviewFields = RefundReviewFields & {
   category_id?: string | null
   tags?: string[] | null
-  pending?: boolean | null
   transfer_match_status?: string | null
 }
 
@@ -37,15 +35,7 @@ export function needsRefundReview(tx: RefundReviewFields) {
     return true
   }
 
-  const confidence = Number(tx.refund_match_confidence)
-  if (!Number.isFinite(confidence) && tx.semantic_override_source === 'user') {
-    return false
-  }
-
-  return (
-    !Number.isFinite(confidence) ||
-    confidence < REFUND_REVIEW_CONFIDENCE_THRESHOLD
-  )
+  return false
 }
 
 export function needsTransferReview(tx: {
@@ -69,7 +59,6 @@ export function needsTransactionReview(tx: TransactionReviewFields) {
     !tx.category_id ||
     tags.includes(AI_PENDING_TAG) ||
     tags.includes(PLAID_FALLBACK_TAG) ||
-    tx.pending === true ||
     needsRefundReview(tx) ||
     needsTransferReview(tx)
   )

@@ -66,9 +66,6 @@ function getIssueBuckets(tx: ReviewTransaction, t: (key: string) => string) {
   if (needsTransferReview(tx)) {
     issues.push({ key: 'transfer', label: t('review.transferMatch'), tone: 'danger' })
   }
-  if (tx.pending) {
-    issues.push({ key: 'pending', label: t('common.pending'), tone: 'muted' })
-  }
 
   return issues
 }
@@ -79,7 +76,6 @@ function getIssueSummaryLabel(
     uncategorized: number
     refunds: number
     transfers: number
-    pending: number
   },
   t: (key: string) => string
 ) {
@@ -88,7 +84,6 @@ function getIssueSummaryLabel(
     counts.ai > 0 ? `${counts.ai} ${t('transactions.aiPending')}` : null,
     counts.transfers > 0 ? `${counts.transfers} ${t('review.transfers')}` : null,
     counts.refunds > 0 ? `${counts.refunds} ${t('review.refunds')}` : null,
-    counts.pending > 0 ? `${counts.pending} ${t('common.pending')}` : null,
   ]
     .filter(Boolean)
     .join(' · ')
@@ -108,7 +103,6 @@ export default function ReviewPage() {
         uncategorized: number
         refunds: number
         transfers: number
-        pending: number
       },
       tx: ReviewTransaction
     ) => {
@@ -117,15 +111,14 @@ export default function ReviewPage() {
         if (issue.key === 'uncategorized') next.uncategorized += 1
         if (issue.key === 'refund') next.refunds += 1
         if (issue.key === 'transfer') next.transfers += 1
-        if (issue.key === 'pending') next.pending += 1
       }
       return next
     },
-    { ai: 0, uncategorized: 0, refunds: 0, transfers: 0, pending: 0 }
+    { ai: 0, uncategorized: 0, refunds: 0, transfers: 0 }
   )
   const queueTotal =
     data?.totalCount ??
-    counts.ai + counts.uncategorized + counts.refunds + counts.transfers + counts.pending
+    counts.ai + counts.uncategorized + counts.refunds + counts.transfers
   const bucketSummary = getIssueSummaryLabel(counts, t)
 
   return (
@@ -171,10 +164,6 @@ export default function ReviewPage() {
           <Card padding="sm">
             <span className="metric-label">{t('review.refunds')}</span>
             <span className="metric-value">{counts.refunds}</span>
-          </Card>
-          <Card padding="sm">
-            <span className="metric-label">{t('common.pending')}</span>
-            <span className="metric-value">{counts.pending}</span>
           </Card>
         </div>
       </Card>

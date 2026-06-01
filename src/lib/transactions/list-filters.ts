@@ -1,7 +1,6 @@
 import { AI_PENDING_TAG, PLAID_FALLBACK_TAG } from '@/lib/plaid/classification'
 import {
   MANUAL_REVIEWED_REFUND_REASON,
-  REFUND_REVIEW_CONFIDENCE_THRESHOLD,
 } from '@/lib/transactions/review'
 
 export type SavedView =
@@ -136,7 +135,7 @@ export function applySavedViewFilters(
   switch (savedView) {
     case 'needs_review':
       return query.or(
-        `category_id.is.null,tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"},pending.eq.true,and(treatment.eq.refund,or(refund_match_reason.is.null,refund_match_reason.neq.${MANUAL_REVIEWED_REFUND_REASON}),or(linked_transaction_id.is.null,and(refund_match_confidence.is.null,or(semantic_override_source.is.null,semantic_override_source.neq.user)),refund_match_confidence.lt.${REFUND_REVIEW_CONFIDENCE_THRESHOLD})),and(treatment.eq.transfer,or(transfer_match_status.is.null,transfer_match_status.in.(unmatched,suggested)))`
+        `category_id.is.null,tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"},and(treatment.eq.refund,linked_transaction_id.is.null,or(refund_match_reason.is.null,refund_match_reason.neq.${MANUAL_REVIEWED_REFUND_REASON})),and(treatment.eq.transfer,or(transfer_match_status.is.null,transfer_match_status.in.(unmatched,suggested)))`
       )
     case 'uncategorized':
       return query.is('category_id', null)

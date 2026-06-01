@@ -8,7 +8,7 @@ import {
   needsTransferReview,
 } from '@/lib/transactions/review'
 
-test('refund review only flags unconfirmed or low-confidence refund handling', () => {
+test('refund review only flags unlinked refund handling', () => {
   assert.equal(
     needsRefundReview({ treatment: 'refund', refund_source: 'merchant_refund', linked_transaction_id: null }),
     true
@@ -21,7 +21,7 @@ test('refund review only flags unconfirmed or low-confidence refund handling', (
       refund_match_confidence: 0.79,
       semantic_override_source: 'system',
     }),
-    true
+    false
   )
   assert.equal(
     needsRefundReview({
@@ -58,7 +58,14 @@ test('transaction review helper keeps other review reasons independent', () => {
     needsTransactionReview({
       category_id: 'cat_1',
       tags: [],
-      pending: false,
+      treatment: 'spending',
+    }),
+    false
+  )
+  assert.equal(
+    needsTransactionReview({
+      category_id: 'cat_1',
+      tags: [],
       treatment: 'refund',
       refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
@@ -71,7 +78,6 @@ test('transaction review helper keeps other review reasons independent', () => {
     needsTransactionReview({
       category_id: 'cat_1',
       tags: [],
-      pending: false,
       treatment: 'refund',
       refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
@@ -89,7 +95,6 @@ test('transaction review helper keeps other review reasons independent', () => {
     needsTransactionReview({
       category_id: 'cat_1',
       tags: [],
-      pending: false,
       treatment: 'transfer',
       transfer_match_status: 'suggested',
     }),

@@ -63,10 +63,9 @@ export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
       if (needsTransferReview(tx)) {
         counts.unmatchedTransfers += 1
       }
-      if (tx.pending) counts.pending += 1
       return counts
     },
-    { aiPending: 0, uncategorized: 0, possibleRefunds: 0, unmatchedTransfers: 0, pending: 0 }
+    { aiPending: 0, uncategorized: 0, possibleRefunds: 0, unmatchedTransfers: 0 }
   )
 }
 

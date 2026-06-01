@@ -145,9 +145,19 @@ test('saved view filters keep the expensive counts isolated and reusable', () =>
       (filter) =>
         filter.method === 'or' &&
         typeof filter.value === 'string' &&
-        filter.value.includes('refund_match_confidence.lt.0.8') &&
+        filter.value.includes('linked_transaction_id.is.null') &&
         filter.value.includes('refund_match_reason.neq.manual-reviewed')
     )
+  )
+  assert.equal(
+    operations[0].filters.some(
+      (filter) =>
+        filter.method === 'or' &&
+        typeof filter.value === 'string' &&
+        (filter.value.includes('pending.eq.true') ||
+          filter.value.includes('refund_match_confidence.lt'))
+    ),
+    false
   )
 })
 
