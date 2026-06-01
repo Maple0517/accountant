@@ -1,6 +1,40 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
+export const PROTECTED_PATH_PREFIXES = [
+  '/dashboard',
+  '/transactions',
+  '/analytics',
+  '/accounts',
+  '/budgets',
+  '/settings',
+  '/review',
+] as const
+
+export function isProtectedPath(pathname: string) {
+  return PROTECTED_PATH_PREFIXES.some((prefix) =>
+    pathname === prefix || pathname.startsWith(`${prefix}/`)
+  )
+}
+
+export function getAuthRedirectPath({
+  pathname,
+  hasUser,
+}: {
+  pathname: string
+  hasUser: boolean
+}) {
+  if (!hasUser && isProtectedPath(pathname)) {
+    return '/auth/login'
+  }
+
+  if (hasUser && (pathname === '/' || pathname.startsWith('/auth/login'))) {
+    return '/dashboard'
+  }
+
+  return null
+}
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -39,28 +73,14 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  // Allow access to login, auth callback, and webhooks
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/api/receipt') &&
-    !request.nextUrl.pathname.startsWith('/api/cron') &&
-    !request.nextUrl.pathname.startsWith('/api/plaid/webhook') &&
-    request.nextUrl.pathname !== '/'
-  ) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/auth/login'
-    return NextResponse.redirect(url)
-  }
+  const redirectPath = getAuthRedirectPath({
+    pathname: request.nextUrl.pathname,
+    hasUser: Boolean(user),
+  })
 
-  // If user is logged in and trying to access root or auth pages, redirect to dashboard
-  if (
-    user &&
-    (request.nextUrl.pathname === '/' ||
-      request.nextUrl.pathname.startsWith('/auth/login'))
-  ) {
+  if (redirectPath) {
     const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
+    url.pathname = redirectPath
     return NextResponse.redirect(url)
   }
 
@@ -76,6 +96,7 @@ export const config = {
     '/analytics/:path*',
     '/accounts/:path*',
     '/budgets/:path*',
+    '/review/:path*',
     '/settings/:path*',
   ],
 }

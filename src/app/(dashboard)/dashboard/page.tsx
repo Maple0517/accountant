@@ -19,8 +19,6 @@ import {
   summarizeBalances,
 } from '@/features/dashboard/dashboard-utils'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
-import type { AnalyticsData } from '@/modules/analytics/analytics.types'
-import type { MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 
 const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
@@ -31,16 +29,11 @@ const fetcher = async <T,>(url: string): Promise<T> => {
 
 export default function DashboardPage() {
   const { t } = useI18n()
-  const { data, error, isLoading } = useSWR<DashboardData>('/api/dashboard', fetcher)
+  const { data, error, isLoading } = useSWR<DashboardData>('/api/dashboard?include=full', fetcher)
 
   const currencyCode = data?.currencyCode || 'USD'
-  const currentMonth = data?.currentMonth
-  const analyticsKey = data ? `/api/analytics?period=month&currency=${currencyCode}` : null
-  const budgetKey = currentMonth ? `/api/budget/monthly-summary?month=${currentMonth}` : null
-  const { data: analyticsData } = useSWR<AnalyticsData>(analyticsKey, fetcher)
-  const { data: budgetData } = useSWR<MonthlyBudgetSummary>(budgetKey, fetcher)
-  const analytics = analyticsData ?? data?.analytics ?? null
-  const budget = budgetData ?? data?.budget ?? null
+  const analytics = data?.analytics ?? null
+  const budget = data?.budget ?? null
   const balances = summarizeBalances(data?.accounts ?? [], currencyCode)
   const monthlyTotals = (data?.monthTx ?? []).reduce(
     (totals, tx) => {
