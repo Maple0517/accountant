@@ -316,6 +316,7 @@ a {
   line-height: 1;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 .badge-neutral { background: rgba(255,255,255,0.06); color: var(--text-secondary); border-color: var(--border-subtle); }
 .badge-muted { background: var(--bg-muted); color: var(--text-muted); border-color: var(--border-subtle); }
@@ -703,17 +704,66 @@ a {
   background: rgba(255,255,255,0.025);
 }
 .settings-save-panel .btn { width: 100%; }
-.settings-capture-card { overflow: hidden; }
+.settings-capture-card { overflow: visible; }
+.settings-capture-card .settings-section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+}
+.settings-capture-card .settings-section-header .badge {
+  flex-shrink: 0;
+  justify-self: end;
+  margin-top: 0.05rem;
+}
 .toggle-label { display: flex; align-items: center; gap: 0.55rem; cursor: pointer; font-weight: 650; color: var(--text-primary); }
 .toggle-checkbox { width: 1.05rem; height: 1.05rem; accent-color: var(--accent); }
 .api-key-reveal { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 1rem; margin-bottom: 1rem; border: 1px solid rgba(32,201,151,0.24); border-radius: var(--radius-md); background: rgba(32,201,151,0.08); }
 .api-key-reveal > div { min-width: 0; flex: 1; }
-.api-key-actions { display: flex; align-items: flex-end; gap: 0.75rem; margin-bottom: 1rem; }
-.api-key-name { flex: 1; margin-bottom: 0; }
-.api-key-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: #0d1017; }
-.api-key-title { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-weight: 700; }
+.api-key-actions {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1fr) max-content max-content;
+  align-items: end;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.api-key-actions .btn {
+  min-height: 2.7rem;
+  white-space: nowrap;
+}
+.api-key-name { min-width: 0; margin-bottom: 0; }
+.api-key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: #0d1017;
+}
+.api-key-row > div { min-width: 0; }
+.api-key-row .btn-danger {
+  flex-shrink: 0;
+  justify-self: end;
+  min-width: 5.8rem;
+  white-space: nowrap;
+}
+.api-key-title { display: flex; align-items: center; gap: 0.5rem; min-width: 0; margin-bottom: 0.35rem; font-weight: 700; }
+.api-key-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .api-key-meta { display: flex; flex-wrap: wrap; gap: 0.75rem; color: var(--text-muted); font-size: 0.75rem; }
-.api-key-meta code { color: var(--text-secondary); font-family: var(--font-mono); }
+.api-key-meta code {
+  max-width: 12rem;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .api-key-active { background: rgba(32,201,151,0.12); color: var(--income); }
 .api-key-revoked { background: rgba(255,92,122,0.12); color: var(--expense); }
 .form-actions { display: flex; justify-content: flex-end; padding-top: 0.35rem; }
@@ -1501,6 +1551,10 @@ a {
   .dashboard-grid, .settings-grid, .budget-health-card, .home-hero { grid-template-columns: 1fr; }
   .home-hero-secondary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .settings-form-rail { position: static; }
+  .api-key-actions { grid-template-columns: 1fr; align-items: stretch; }
+  .api-key-actions .btn { width: 100%; }
+  .api-key-row { grid-template-columns: 1fr; align-items: stretch; }
+  .api-key-row .btn-danger { width: 100%; justify-self: stretch; }
   .budget-category-row { grid-template-columns: minmax(12rem, 1fr) minmax(9rem, auto); }
   .budget-category-progress-cell { grid-column: 1 / -1; }
   .budget-category-progress-cell .budget-cell-value { text-align: left; }
@@ -1557,10 +1611,12 @@ a {
   .budget-health-metrics { grid-template-columns: 1fr; }
   .budget-detail-metrics { grid-template-columns: 1fr; }
   .settings-section-header { flex-direction: column; align-items: flex-start; }
+  .settings-capture-card .settings-section-header { grid-template-columns: 1fr; }
+  .settings-capture-card .settings-section-header .badge { justify-self: start; }
   .settings-save-panel { padding: 0.9rem; }
   .group-header { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
   .group-summary { white-space: normal; }
-  .api-key-actions, .api-key-reveal, .api-key-row, .inline-similar-suggestion { align-items: stretch; flex-direction: column; }
+  .api-key-reveal, .inline-similar-suggestion { align-items: stretch; flex-direction: column; }
   .budget-category-row { grid-template-columns: 1fr; align-items: stretch; }
   .budget-category-edit-cell { justify-content: flex-start; }
   .charts-grid { grid-template-columns: 1fr; }
