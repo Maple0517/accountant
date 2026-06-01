@@ -1,12 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { stripAutomaticClassificationTags } from '@/lib/plaid/classification'
+import { deriveCategoryChangeSemantics } from '@/lib/transactions/category-semantics'
 import {
   canApplySimilarCategoryUpdate,
   getTransactionMutationBlockReason,
 } from '@/lib/transactions/mutation-guard'
-import { shouldPreserveBudgetBehavior } from '@/lib/transactions/semantics'
-import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +45,7 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, category_id, tags, merchant_name, description, source, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
+          .select('id, user_id, amount, category_id, tags, merchant_name, description, source, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
@@ -80,11 +79,12 @@ export async function PATCH(
     const matchKey = normalizeMatchKey(transaction.merchant_name || transaction.description)
     let similarCount = 0
     let updatedCount = 0
+    let updatedTransaction: Record<string, unknown> | null = null
 
     if (mode === 'similar') {
       const { data: candidates, error: candidatesError } = await supabase
         .from('transactions')
-        .select('id, tags, merchant_name, description, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source')
+        .select('id, amount, tags, merchant_name, description, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
         .is('deleted_at', null)
@@ -116,19 +116,24 @@ export async function PATCH(
             tags,
           }
 
-          if (!shouldPreserveBudgetBehavior(candidate.semantic_override_source)) {
-            const semantics = normalizeTransactionSemantics({
-              treatment: candidate.treatment,
-              refundSource: candidate.refund_source,
-              transactionKind: candidate.transaction_kind,
-              budgetBehavior: candidate.budget_behavior,
-              category,
-            })
-            updatePayload.treatment = semantics.treatment
-            updatePayload.refund_source = semantics.refundSource
-            updatePayload.transaction_kind = semantics.transactionKind
-            updatePayload.budget_behavior = semantics.budgetBehavior
-            updatePayload.semantic_override_source = 'user'
+          const semantics = deriveCategoryChangeSemantics({
+            amount: candidate.amount,
+            treatment: candidate.treatment,
+            refundSource: candidate.refund_source,
+            transactionKind: candidate.transaction_kind,
+            category,
+          })
+          updatePayload.treatment = semantics.treatment
+          updatePayload.refund_source = semantics.refundSource
+          updatePayload.transaction_kind = semantics.transactionKind
+          updatePayload.budget_behavior = semantics.budgetBehavior
+          updatePayload.semantic_override_source = 'user'
+
+          if (semantics.treatment !== 'transfer') {
+            updatePayload.transfer_group_id = null
+            updatePayload.transfer_match_status = null
+            updatePayload.transfer_match_confidence = null
+            updatePayload.transfer_match_reason = null
           }
 
           const { error: updateError } = await supabase
@@ -152,26 +157,33 @@ export async function PATCH(
         tags,
       }
 
-      if (!shouldPreserveBudgetBehavior(transaction.semantic_override_source)) {
-        const semantics = normalizeTransactionSemantics({
-          treatment: transaction.treatment,
-          refundSource: transaction.refund_source,
-          transactionKind: transaction.transaction_kind,
-          budgetBehavior: transaction.budget_behavior,
-          category,
-        })
-        updatePayload.treatment = semantics.treatment
-        updatePayload.refund_source = semantics.refundSource
-        updatePayload.transaction_kind = semantics.transactionKind
-        updatePayload.budget_behavior = semantics.budgetBehavior
-        updatePayload.semantic_override_source = 'user'
+      const semantics = deriveCategoryChangeSemantics({
+        amount: transaction.amount,
+        treatment: transaction.treatment,
+        refundSource: transaction.refund_source,
+        transactionKind: transaction.transaction_kind,
+        category,
+      })
+      updatePayload.treatment = semantics.treatment
+      updatePayload.refund_source = semantics.refundSource
+      updatePayload.transaction_kind = semantics.transactionKind
+      updatePayload.budget_behavior = semantics.budgetBehavior
+      updatePayload.semantic_override_source = 'user'
+
+      if (semantics.treatment !== 'transfer') {
+        updatePayload.transfer_group_id = null
+        updatePayload.transfer_match_status = null
+        updatePayload.transfer_match_confidence = null
+        updatePayload.transfer_match_reason = null
       }
 
-      const { error: updateError } = await supabase
+      const { data: singleUpdatedTransaction, error: updateError } = await supabase
         .from('transactions')
         .update(updatePayload)
         .eq('id', id)
         .eq('user_id', user.id)
+        .select('id, category_id, tags, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, linked_transaction_id, budget_effective_date, refund_match_confidence, refund_match_reason, categories!transactions_category_id_fkey ( id, name, name_zh, icon, color, is_excluded_from_budget )')
+        .single()
 
       if (updateError) {
         console.error('Category update failed', {
@@ -188,6 +200,7 @@ export async function PATCH(
         )
       }
 
+      updatedTransaction = (singleUpdatedTransaction as Record<string, unknown> | null) ?? null
       updatedCount = 1
 
       const { data: candidates, error: candidatesError } = await supabase
@@ -217,11 +230,14 @@ export async function PATCH(
 
     return Response.json({
       success: true,
-      transaction: {
-        id,
-        category_id: categoryId,
-        categories: category,
-      },
+      transaction:
+        mode === 'single'
+          ? updatedTransaction
+          : {
+              id,
+              category_id: categoryId,
+              categories: category,
+            },
       similar_count: similarCount,
       updated_count: updatedCount,
     })

@@ -170,7 +170,7 @@ export function coerceTreatmentForAmount({
     }
   }
 
-  if (amount > 0) {
+  if (amount < 0) {
     if (treatment === 'income' || treatment === 'refund') {
       return {
         treatment,

@@ -1025,7 +1025,8 @@ export default function TransactionsPage() {
           throw new Error(data.error || 'Failed to update category')
         }
 
-        const updatedCategory = data.transaction?.categories as
+        const updatedTransaction = data.transaction as Partial<TransactionWithRelations> | undefined
+        const updatedCategory = updatedTransaction?.categories as
           | Pick<
               Category,
               'id' | 'name' | 'name_zh' | 'icon' | 'color' | 'is_excluded_from_budget'
@@ -1051,8 +1052,11 @@ export default function TransactionsPage() {
               tx.id === transactionId
                 ? {
                     ...tx,
+                    ...updatedTransaction,
                     category_id: categoryId,
-                    tags: stripAutomaticClassificationTags(tx.tags),
+                    tags:
+                      updatedTransaction?.tags ??
+                      stripAutomaticClassificationTags(tx.tags),
                     categories: updatedCategory || tx.categories,
                   }
                 : tx
