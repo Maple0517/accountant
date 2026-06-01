@@ -6,6 +6,7 @@ export const MANUAL_REVIEWED_REFUND_REASON = 'manual-reviewed'
 
 type RefundReviewFields = {
   treatment?: string | null
+  refund_source?: string | null
   transaction_kind?: string | null
   linked_transaction_id?: string | null
   refund_match_confidence?: number | string | null
@@ -51,6 +52,7 @@ export function needsRefundReview(tx: RefundReviewFields) {
 
 export function needsTransferReview(tx: {
   treatment?: string | null
+  refund_source?: string | null
   transaction_kind?: string | null
   budget_behavior?: string | null
   transfer_match_status?: string | null

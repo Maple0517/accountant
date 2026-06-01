@@ -18,6 +18,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     {
       amount: 25,
       date: '2026-05-01',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -27,6 +28,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     {
       amount: -100,
       date: '2026-05-02',
+      treatment: 'income',
       budget_behavior: 'count_as_income',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -36,6 +38,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     {
       amount: 10,
       date: '2026-05-02',
+      treatment: 'transfer',
       budget_behavior: 'exclude_as_transfer',
       budget_effective_date: null,
       transaction_kind: 'transfer',
@@ -45,6 +48,8 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     {
       amount: -8,
       date: '2026-06-02',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       budget_behavior: 'count_as_spending',
       budget_effective_date: '2026-05-02',
       transaction_kind: 'refund',
@@ -54,6 +59,7 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
     {
       amount: 5,
       date: '2026-05-03',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -113,6 +119,7 @@ test('getAnalyticsSummary ignores excluded budget categories even with stale spe
       amount: 25,
       iso_currency_code: 'USD',
       date: '2026-05-01',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       category_id: 'food',
       categories: {
@@ -126,6 +133,7 @@ test('getAnalyticsSummary ignores excluded budget categories even with stale spe
       amount: 3126,
       iso_currency_code: 'USD',
       date: '2026-05-02',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       category_id: 'excluded',
       categories: {
@@ -179,6 +187,7 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
       amount: 25,
       iso_currency_code: 'USD',
       date: '2026-05-01',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -189,6 +198,7 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
       amount: 30,
       iso_currency_code: 'CNY',
       date: '2026-05-01',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -199,6 +209,7 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
       amount: -40,
       iso_currency_code: null,
       date: '2026-05-02',
+      treatment: 'income',
       budget_behavior: 'count_as_income',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -250,6 +261,7 @@ test('getAnalyticsSummary reports positive category total for spending share den
       amount: 100,
       iso_currency_code: 'USD',
       date: '2026-05-01',
+      treatment: 'spending',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'normal',
@@ -260,6 +272,8 @@ test('getAnalyticsSummary reports positive category total for spending share den
       amount: -90,
       iso_currency_code: 'USD',
       date: '2026-05-02',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       budget_behavior: 'count_as_spending',
       budget_effective_date: null,
       transaction_kind: 'refund',

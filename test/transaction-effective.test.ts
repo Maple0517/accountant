@@ -92,14 +92,24 @@ test('semantic amounts follow Accountant signed amount conventions', () => {
   assert.deepEqual(
     getTransactionSemanticAmounts({
       amount: -8,
-      budget_behavior: 'count_as_spending',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
     }),
     { netSpending: -8, income: 0, categoryNetSpend: -8 }
   )
   assert.deepEqual(
     getTransactionSemanticAmounts({
+      amount: -40,
+      treatment: 'income',
+      budget_behavior: 'count_as_spending',
+    }),
+    { netSpending: 0, income: 40, categoryNetSpend: 0 }
+  )
+  assert.deepEqual(
+    getTransactionSemanticAmounts({
       amount: 25,
-      budget_behavior: 'exclude_as_transfer',
+      treatment: 'transfer',
+      budget_behavior: 'count_as_spending',
     }),
     { netSpending: 0, income: 0, categoryNetSpend: 0 }
   )

@@ -199,6 +199,7 @@ test('explicit count_as_spending cannot include category-level budget exclusions
           date: '2026-05-04',
           categoryId: 'cat_debt',
           type: 'transfer',
+          treatment: 'spending',
           budgetBehavior: 'count_as_spending',
         },
       ],
@@ -262,6 +263,7 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           date: '2026-05-01',
           categoryId: 'cat_groceries',
           type: 'expense',
+          treatment: 'transfer',
           budgetBehavior: 'exclude_as_transfer',
         },
         {
@@ -270,6 +272,7 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           date: '2026-05-02',
           categoryId: 'cat_groceries',
           type: 'expense',
+          treatment: 'income',
           budgetBehavior: 'count_as_income',
         },
         {
@@ -278,6 +281,7 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           date: '2026-05-03',
           categoryId: 'cat_groceries',
           type: 'expense',
+          treatment: 'excluded',
           budgetBehavior: 'exclude_manual',
         },
         {
@@ -286,6 +290,7 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           date: '2026-05-10',
           categoryId: 'cat_groceries',
           type: 'expense',
+          treatment: 'spending',
           budgetBehavior: 'count_as_spending',
         },
       ],
@@ -295,6 +300,38 @@ test('explicit budget behavior overrides expense-category fallback', () => {
 
   assert.equal(result.categories.length, 1)
   assert.equal(result.categories[0].actualSpend, 25)
+})
+
+test('canonical treatment drives budget inclusion ahead of stale budget behavior', () => {
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries],
+      transactions: [
+        {
+          id: 'income_stale',
+          amount: -3000,
+          date: '2026-05-01',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          treatment: 'income',
+          budgetBehavior: 'count_as_spending',
+        },
+        {
+          id: 'refund_stale',
+          amount: -25,
+          date: '2026-05-02',
+          categoryId: 'cat_groceries',
+          type: 'expense',
+          treatment: 'refund',
+          budgetBehavior: 'count_as_income',
+        },
+      ],
+      budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
+    })
+  )
+
+  assert.equal(result.categories.length, 1)
+  assert.equal(result.categories[0].actualSpend, -25)
 })
 
 test('category budget exclusion overrides stale count_as_spending behavior', () => {

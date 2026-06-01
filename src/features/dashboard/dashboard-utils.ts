@@ -8,11 +8,22 @@ import {
 import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
 
 export function getMonthlySemanticAmounts(
-  tx: Pick<DashboardMonthTransaction, 'amount' | 'budget_behavior' | 'categories'>
+  tx: Pick<
+    DashboardMonthTransaction,
+    | 'amount'
+    | 'treatment'
+    | 'refund_source'
+    | 'transaction_kind'
+    | 'budget_behavior'
+    | 'categories'
+  >
 ) {
   const category = Array.isArray(tx.categories) ? tx.categories[0] : tx.categories
   const semanticAmounts = getBudgetSemanticAmounts({
     amount: tx.amount,
+    treatment: tx.treatment,
+    refund_source: tx.refund_source,
+    transaction_kind: tx.transaction_kind,
     budget_behavior: tx.budget_behavior,
     category_is_excluded_from_budget: category?.is_excluded_from_budget === true,
   })

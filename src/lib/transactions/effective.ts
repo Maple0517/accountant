@@ -1,10 +1,20 @@
-import type { BudgetBehavior, TransactionSplitRole } from '@/types'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
+import type {
+  BudgetBehavior,
+  RefundSource,
+  TransactionKind,
+  TransactionSplitRole,
+  TransactionTreatment,
+} from '@/types'
 
 export type EffectiveTransactionFields = {
   amount: number | string
   date: string
   budget_effective_date?: string | null
   effective_date?: string | null
+  treatment?: TransactionTreatment | string | null
+  refund_source?: RefundSource | string | null
+  transaction_kind?: TransactionKind | string | null
   budget_behavior?: BudgetBehavior | string | null
   category_is_excluded_from_budget?: boolean | null
   deleted_at?: string | null
@@ -72,7 +82,10 @@ export function getEffectiveTransactions<T extends EffectiveTransactionFields>(
 }
 
 export function getTransactionSemanticAmounts(
-  tx: Pick<EffectiveTransactionFields, 'amount' | 'budget_behavior'>
+  tx: Pick<
+    EffectiveTransactionFields,
+    'amount' | 'treatment' | 'refund_source' | 'transaction_kind' | 'budget_behavior'
+  >
 ): TransactionSemanticAmounts {
   const amount = Number(tx.amount)
 
@@ -80,36 +93,34 @@ export function getTransactionSemanticAmounts(
     return { netSpending: 0, income: 0, categoryNetSpend: 0 }
   }
 
-  if (
-    tx.budget_behavior === 'exclude_as_transfer' ||
-    tx.budget_behavior === 'exclude_manual'
-  ) {
+  const semantics = normalizeTransactionSemantics({
+    amount,
+    treatment: tx.treatment,
+    refundSource: tx.refund_source,
+    transactionKind: tx.transaction_kind,
+    budgetBehavior: tx.budget_behavior,
+  })
+
+  if (semantics.treatment === 'transfer' || semantics.treatment === 'excluded') {
     return { netSpending: 0, income: 0, categoryNetSpend: 0 }
   }
 
-  if (tx.budget_behavior === 'count_as_income') {
+  if (semantics.treatment === 'income') {
     return { netSpending: 0, income: Math.abs(amount), categoryNetSpend: 0 }
   }
 
-  if (tx.budget_behavior === 'count_as_spending') {
-    return { netSpending: amount, income: 0, categoryNetSpend: amount }
-  }
-
-  if (amount > 0) {
-    return { netSpending: amount, income: 0, categoryNetSpend: amount }
-  }
-
-  if (amount < 0) {
-    return { netSpending: 0, income: Math.abs(amount), categoryNetSpend: 0 }
-  }
-
-  return { netSpending: 0, income: 0, categoryNetSpend: 0 }
+  return { netSpending: amount, income: 0, categoryNetSpend: amount }
 }
 
 export function getBudgetSemanticAmounts(
   tx: Pick<
     EffectiveTransactionFields,
-    'amount' | 'budget_behavior' | 'category_is_excluded_from_budget'
+    | 'amount'
+    | 'treatment'
+    | 'refund_source'
+    | 'transaction_kind'
+    | 'budget_behavior'
+    | 'category_is_excluded_from_budget'
   >
 ): TransactionSemanticAmounts {
   if (tx.category_is_excluded_from_budget === true) {

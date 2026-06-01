@@ -5,6 +5,7 @@
 // from raw budget inputs. No DB, no fetch, no React, no Node APIs.
 // ============================================================
 
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 import type {
   BudgetEngineInput,
   BudgetTransactionInput,
@@ -59,13 +60,7 @@ function isIncludedTransaction(
   // Pending check
   if (!includePending && tx.status === 'pending') return false
 
-  if (tx.budgetBehavior != null) {
-    return tx.budgetBehavior === 'count_as_spending'
-  }
-
-  // Legacy fallback while older rows are not backfilled yet.
-  if (tx.type !== 'expense') return false
-  return budgetableExpenseCategoryIds.has(tx.categoryId)
+  return isBudgetSpendingLike(tx)
 }
 
 function isEligibleForBudgetMonth(
@@ -82,6 +77,28 @@ function isEligibleForBudgetMonth(
   if (tx.isDeleted === true) return false
   if (!includePending && tx.status === 'pending') return false
   return true
+}
+
+function isBudgetSpendingLike(tx: BudgetTransactionInput) {
+  const hasSemanticFields =
+    tx.treatment != null ||
+    tx.refundSource != null ||
+    tx.transactionKind != null ||
+    tx.budgetBehavior != null
+
+  if (hasSemanticFields) {
+    const semantics = normalizeTransactionSemantics({
+      amount: tx.amount,
+      treatment: tx.treatment,
+      refundSource: tx.refundSource,
+      transactionKind: tx.transactionKind,
+      budgetBehavior: tx.budgetBehavior,
+    })
+
+    return semantics.treatment === 'spending' || semantics.treatment === 'refund'
+  }
+
+  return tx.type !== 'income' && tx.type !== 'transfer'
 }
 
 /**
@@ -116,15 +133,21 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
   const explicitSpendingCategoryIds = new Set(
     transactions
       .filter(
-        (tx) =>
-          tx.budgetBehavior === 'count_as_spending' &&
-          isEligibleForBudgetMonth(
-            tx,
-            monthStart,
-            nextMonthStart,
-            includePending,
-            budgetableExpenseCategoryIds
-          )
+        (tx) => {
+          if (
+            !isEligibleForBudgetMonth(
+              tx,
+              monthStart,
+              nextMonthStart,
+              includePending,
+              budgetableExpenseCategoryIds
+            )
+          ) {
+            return false
+          }
+
+          return isBudgetSpendingLike(tx)
+        }
       )
       .map((tx) => tx.categoryId!)
   )

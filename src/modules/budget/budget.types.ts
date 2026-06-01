@@ -5,7 +5,12 @@
 // No runtime dependencies — no DB, ORM, React, or Next.js imports.
 // ============================================================
 
-import type { BudgetBehavior } from '@/types';
+import type {
+  BudgetBehavior,
+  RefundSource,
+  TransactionKind,
+  TransactionTreatment,
+} from '@/types';
 
 // ------ Engine Input Types ------
 
@@ -34,6 +39,9 @@ export interface BudgetTransactionInput {
   date: string; // ISO date string (YYYY-MM-DD)
   categoryId: string | null;
   type: 'expense' | 'income' | 'transfer' | 'investment' | 'refund' | 'adjustment';
+  treatment?: TransactionTreatment | null;
+  refundSource?: RefundSource | null;
+  transactionKind?: TransactionKind | null;
   budgetBehavior?: BudgetBehavior | null;
   status?: 'posted' | 'pending';
   isHidden?: boolean;

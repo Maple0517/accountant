@@ -10,12 +10,13 @@ import {
 
 test('refund review only flags unconfirmed or low-confidence refund handling', () => {
   assert.equal(
-    needsRefundReview({ transaction_kind: 'refund', linked_transaction_id: null }),
+    needsRefundReview({ treatment: 'refund', refund_source: 'merchant_refund', linked_transaction_id: null }),
     true
   )
   assert.equal(
     needsRefundReview({
-      transaction_kind: 'refund',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
       refund_match_confidence: 0.79,
       semantic_override_source: 'system',
@@ -24,7 +25,8 @@ test('refund review only flags unconfirmed or low-confidence refund handling', (
   )
   assert.equal(
     needsRefundReview({
-      transaction_kind: 'refund',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
       refund_match_confidence: 0.8,
       semantic_override_source: 'system',
@@ -33,7 +35,8 @@ test('refund review only flags unconfirmed or low-confidence refund handling', (
   )
   assert.equal(
     needsRefundReview({
-      transaction_kind: 'reimbursement',
+      treatment: 'refund',
+      refund_source: 'reimbursement',
       linked_transaction_id: null,
       refund_match_reason: MANUAL_REVIEWED_REFUND_REASON,
     }),
@@ -41,7 +44,8 @@ test('refund review only flags unconfirmed or low-confidence refund handling', (
   )
   assert.equal(
     needsRefundReview({
-      transaction_kind: 'refund',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       linked_transaction_id: null,
       semantic_override_source: 'user',
     }),
@@ -55,7 +59,8 @@ test('transaction review helper keeps other review reasons independent', () => {
       category_id: 'cat_1',
       tags: [],
       pending: false,
-      transaction_kind: 'refund',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
       refund_match_confidence: 0.9,
       semantic_override_source: 'system',
@@ -67,7 +72,8 @@ test('transaction review helper keeps other review reasons independent', () => {
       category_id: 'cat_1',
       tags: [],
       pending: false,
-      transaction_kind: 'refund',
+      treatment: 'refund',
+      refund_source: 'merchant_refund',
       linked_transaction_id: 'purchase_1',
       refund_match_confidence: 0.9,
       semantic_override_source: 'system',
@@ -76,7 +82,7 @@ test('transaction review helper keeps other review reasons independent', () => {
     false
   )
   assert.equal(
-    needsTransferReview({ transaction_kind: 'transfer', transfer_match_status: 'suggested' }),
+    needsTransferReview({ treatment: 'transfer', transfer_match_status: 'suggested' }),
     true
   )
   assert.equal(
@@ -84,7 +90,7 @@ test('transaction review helper keeps other review reasons independent', () => {
       category_id: 'cat_1',
       tags: [],
       pending: false,
-      transaction_kind: 'transfer',
+      treatment: 'transfer',
       transfer_match_status: 'suggested',
     }),
     true

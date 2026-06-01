@@ -168,6 +168,8 @@ test('transaction adapter uses original category for linked refund budget math',
         id: 'refund',
         amount: -100,
         category_id: 'cat_refunded',
+        treatment: 'refund',
+        refund_source: 'merchant_refund',
         transaction_kind: 'refund',
         linked_transaction_id: 'purchase',
       }),
@@ -181,6 +183,8 @@ test('transaction adapter uses original category for linked refund budget math',
 
   assert.equal(refund.categoryId, 'cat_shopping')
   assert.equal(refund.amount, -100)
+  assert.equal(refund.treatment, 'refund')
+  assert.equal(refund.refundSource, 'merchant_refund')
 })
 
 test('transaction adapter preserves transaction-level budget behavior', () => {
@@ -196,6 +200,7 @@ test('transaction adapter preserves transaction-level budget behavior', () => {
         id: 'payment',
         amount: 250,
         category_id: 'cat_transfer',
+        treatment: 'transfer',
         transaction_kind: 'transfer',
         budget_behavior: 'exclude_as_transfer',
       }),
@@ -204,5 +209,7 @@ test('transaction adapter preserves transaction-level budget behavior', () => {
   )
 
   assert.equal(payment.type, 'transfer')
+  assert.equal(payment.treatment, 'transfer')
+  assert.equal(payment.transactionKind, 'transfer')
   assert.equal(payment.budgetBehavior, 'exclude_as_transfer')
 })

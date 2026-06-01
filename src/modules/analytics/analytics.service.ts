@@ -25,6 +25,8 @@ type AnalyticsTransactionRow = {
   deleted_at?: string | null
   is_hidden_from_reports?: boolean | null
   split_role?: string | null
+  treatment?: string | null
+  refund_source?: string | null
   budget_behavior?: string | null
   transaction_kind?: string | null
   categories?: AnalyticsCategoryRelation | AnalyticsCategoryRelation[] | null

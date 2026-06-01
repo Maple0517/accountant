@@ -201,7 +201,17 @@ export function validateCanonicalSplitSigns(
 }
 
 export function buildSplitPreview(
-  parent: Pick<Transaction, 'amount' | 'budget_behavior' | 'budget_effective_date' | 'effective_date' | 'date'>,
+  parent: Pick<
+    Transaction,
+    | 'amount'
+    | 'treatment'
+    | 'refund_source'
+    | 'transaction_kind'
+    | 'budget_behavior'
+    | 'budget_effective_date'
+    | 'effective_date'
+    | 'date'
+  >,
   children: SplitChildInput[],
   options: { excludedCategoryIds?: Set<string> } = {}
 ): SplitPreviewResponse {
@@ -239,6 +249,9 @@ export function buildSplitPreview(
     const amount = decimalToMinor(child.amount_decimal)
     const semanticAmounts = getBudgetSemanticAmounts({
       amount: amount / 10000,
+      treatment: child.treatment,
+      refund_source: child.refund_source,
+      transaction_kind: child.transaction_kind,
       budget_behavior: child.budget_behavior,
       category_is_excluded_from_budget:
         child.category_id != null &&
