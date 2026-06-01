@@ -56,10 +56,6 @@ export async function PATCH(
       typeof body.refund_source === 'string' && isRefundSource(body.refund_source)
         ? (body.refund_source as RefundSource)
         : undefined
-    const requestedKind =
-      !hasCanonicalSemanticInput && typeof body.transaction_kind === 'string'
-        ? body.transaction_kind
-        : undefined
     const requestedLinkedId =
       typeof body.linked_transaction_id === 'string'
         ? body.linked_transaction_id
@@ -126,30 +122,24 @@ export async function PATCH(
     const transactionCategory = Array.isArray(transaction.categories)
       ? transaction.categories[0]
       : transaction.categories
+    const currentSemantics = normalizeTransactionSemantics({
+      treatment: transaction.treatment,
+      refundSource: transaction.refund_source,
+      transactionKind: transaction.transaction_kind,
+      budgetBehavior: transaction.budget_behavior,
+      amount: transaction.amount,
+      category: transactionCategory,
+    })
     const currentTreatment =
       transaction.treatment ??
       deriveTransactionTreatment({
-        transactionKind: transaction.transaction_kind,
-        budgetBehavior: transaction.budget_behavior,
-        category: transactionCategory,
+        treatment: currentSemantics.treatment,
       })
 
-    if (requestedTreatment || requestedRefundSource || requestedKind) {
+    if (requestedTreatment || requestedRefundSource) {
       const normalized = normalizeTransactionSemantics({
-        treatment:
-          requestedTreatment ??
-          (!hasCanonicalSemanticInput && requestedKind
-            ? normalizeTransactionSemantics({
-                transactionKind: requestedKind,
-                category: transactionCategory,
-              }).treatment
-            : currentTreatment),
-        refundSource:
-          requestedRefundSource ??
-          transaction.refund_source ??
-          (!hasCanonicalSemanticInput && requestedKind === 'reimbursement'
-            ? 'reimbursement'
-            : undefined),
+        treatment: requestedTreatment ?? currentTreatment,
+        refundSource: requestedRefundSource ?? currentSemantics.refundSource ?? undefined,
         amount: transaction.amount,
         category: transactionCategory,
       })
@@ -194,11 +184,7 @@ export async function PATCH(
         const normalized = normalizeTransactionSemantics({
           treatment: 'refund',
           refundSource:
-            requestedRefundSource ??
-            transaction.refund_source ??
-            (transaction.transaction_kind === 'reimbursement'
-              ? 'reimbursement'
-              : 'merchant_refund'),
+            requestedRefundSource ?? currentSemantics.refundSource ?? 'merchant_refund',
           amount: transaction.amount,
         })
 
@@ -220,12 +206,7 @@ export async function PATCH(
       if (!update.treatment) {
         const normalized = normalizeTransactionSemantics({
           treatment: currentTreatment === 'refund' ? currentTreatment : 'refund',
-          refundSource:
-            requestedRefundSource ??
-            transaction.refund_source ??
-            (transaction.transaction_kind === 'reimbursement'
-              ? 'reimbursement'
-              : 'merchant_refund'),
+          refundSource: requestedRefundSource ?? currentSemantics.refundSource ?? 'merchant_refund',
           amount: transaction.amount,
           category: transactionCategory,
         })

@@ -9,6 +9,7 @@ import {
   syncTransactionToNotion,
   syncSingleTransactionIfEnabled,
 } from '@/lib/notion/sync'
+import { resetNotionClient } from '@/lib/notion/client'
 
 test('syncSingleTransactionIfEnabled reports disabled Notion sync without throwing', async () => {
   const supabase = {
@@ -83,6 +84,7 @@ test('createTransactionDatabase uses a plain number amount property', async () =
 test('split transaction Notion sync uses effective date and split metadata', async () => {
   const previousFetch = globalThis.fetch
   const requests: Array<{ url: string; init?: RequestInit }> = []
+  resetNotionClient()
 
   globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     requests.push({ url: String(url), init })
@@ -138,6 +140,79 @@ test('split transaction Notion sync uses effective date and split metadata', asy
     assert.equal(body.properties['Split Parent ID'].rich_text[0].text.content, 'parent_1')
     assert.equal(body.properties['Split Sequence'].number, 2)
     assert.equal(body.properties['Hidden From Reports'].checkbox, false)
+  } finally {
+    globalThis.fetch = previousFetch
+  }
+})
+
+test('Notion semantic properties derive from canonical treatment when legacy fields are stale', async () => {
+  const previousFetch = globalThis.fetch
+  const requests: Array<{ url: string; init?: RequestInit }> = []
+  resetNotionClient()
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(url), init })
+    if (String(url).includes('/query')) {
+      return new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (String(url).includes('/v1/databases/')) {
+      return new Response(
+        JSON.stringify({ id: 'database_1', data_sources: [{ id: 'data_source_1' }] }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    }
+    if (String(url).includes('/v1/data-sources/')) {
+      return new Response(JSON.stringify({ id: 'data_source_1' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({ id: 'page_income_1' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const pageId = await syncTransactionToNotion(
+      {
+        id: 'tx_income',
+        user_id: 'user_1',
+        account_id: 'account_1',
+        amount: -42,
+        date: '2026-05-20',
+        budget_effective_date: '2026-05-20',
+        effective_date: '2026-05-20',
+        description: 'Income tx',
+        pending: false,
+        source: 'manual',
+        treatment: 'income',
+        refund_source: null,
+        transaction_kind: 'normal',
+        budget_behavior: 'count_as_spending',
+        is_hidden_from_reports: false,
+        created_at: '2026-05-20T00:00:00Z',
+        updated_at: '2026-05-20T00:00:00Z',
+      },
+      'database_1',
+      'secret_token'
+    )
+
+    assert.equal(pageId, 'page_income_1')
+    const createRequest = requests.find((request) =>
+      request.url.endsWith('/v1/pages')
+    )
+    assert.ok(createRequest)
+    const body = JSON.parse(createRequest.init?.body as string)
+
+    assert.equal(body.properties.Kind.select.name, 'Income')
+    assert.equal(body.properties['Budget Treatment'].select.name, 'Counts as Income')
   } finally {
     globalThis.fetch = previousFetch
   }

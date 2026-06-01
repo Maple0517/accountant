@@ -41,6 +41,9 @@ export async function POST(
           date,
           budget_effective_date,
           effective_date,
+          treatment,
+          refund_source,
+          transaction_kind,
           budget_behavior,
           pending,
           deleted_at,
@@ -64,6 +67,9 @@ export async function POST(
       | 'date'
       | 'budget_effective_date'
       | 'effective_date'
+      | 'treatment'
+      | 'refund_source'
+      | 'transaction_kind'
       | 'budget_behavior'
       | 'pending'
       | 'deleted_at'

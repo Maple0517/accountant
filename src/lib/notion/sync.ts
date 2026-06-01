@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { UpdateDataSourceParameters } from '@notionhq/client'
 import { getBudgetDate } from '@/lib/transactions/effective'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 // Rate limiter: ~3 requests per second
 const rateLimiter = new Sema(1, { capacity: 3 })
@@ -998,7 +999,7 @@ function buildNotionProperties(
 
   if (includeSemantics) {
     const kind = formatTransactionKind(transaction)
-    const treatment = formatBudgetTreatment(transaction.budget_behavior)
+    const treatment = formatBudgetTreatment(transaction)
     const transferStatus = formatTransferStatus(transaction.transfer_match_status)
 
     if (kind) {
@@ -1047,22 +1048,40 @@ function buildNotionProperties(
 }
 
 function formatTransactionKind(transaction: Transaction) {
-  if (transaction.treatment === 'refund') {
-    return transaction.refund_source === 'reimbursement'
+  const semantics = normalizeTransactionSemantics({
+    treatment: transaction.treatment,
+    refundSource: transaction.refund_source,
+    transactionKind: transaction.transaction_kind,
+    budgetBehavior: transaction.budget_behavior,
+    amount: Number(transaction.amount),
+  })
+
+  if (semantics.treatment === 'refund') {
+    return semantics.refundSource === 'reimbursement'
       ? 'Reimbursement'
       : 'Refund'
   }
-  if (transaction.treatment === 'transfer') return 'Transfer'
-  if (transaction.treatment === 'income') return 'Income'
-  if (transaction.treatment === 'excluded') return 'Excluded'
+  if (semantics.treatment === 'transfer') return 'Transfer'
+  if (semantics.treatment === 'income') return 'Income'
+  if (semantics.treatment === 'excluded') return 'Excluded'
   return 'Normal'
 }
 
-function formatBudgetTreatment(behavior: Transaction['budget_behavior']) {
-  if (behavior === 'count_as_spending') return 'Counts as Spending'
-  if (behavior === 'count_as_income') return 'Counts as Income'
-  if (behavior === 'exclude_as_transfer') return 'Excluded as Transfer'
-  if (behavior === 'exclude_manual') return 'Excluded Manually'
+function formatBudgetTreatment(transaction: Transaction) {
+  const semantics = normalizeTransactionSemantics({
+    treatment: transaction.treatment,
+    refundSource: transaction.refund_source,
+    transactionKind: transaction.transaction_kind,
+    budgetBehavior: transaction.budget_behavior,
+    amount: Number(transaction.amount),
+  })
+
+  if (semantics.treatment === 'spending' || semantics.treatment === 'refund') {
+    return 'Counts as Spending'
+  }
+  if (semantics.treatment === 'income') return 'Counts as Income'
+  if (semantics.treatment === 'transfer') return 'Excluded as Transfer'
+  if (semantics.treatment === 'excluded') return 'Excluded Manually'
   return null
 }
 

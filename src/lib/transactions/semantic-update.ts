@@ -1,7 +1,6 @@
 import { getTransactionMutationBlockReason } from '@/lib/transactions/mutation-guard'
 import {
   deriveLegacyTransactionKind,
-  deriveTransactionTreatment,
   isRefundSource,
   isTransactionTreatment,
   normalizeTransactionSemantics,
@@ -86,26 +85,12 @@ export type TransactionSemanticsUpdateResult =
       error: string
     }
 
-const VALID_KINDS = new Set<TransactionKind>([
-  'normal',
-  'refund',
-  'reimbursement',
-  'transfer',
-])
-
 const VALID_TREATMENTS = new Set<TransactionTreatment>([
   'spending',
   'income',
   'refund',
   'transfer',
   'excluded',
-])
-
-const VALID_BUDGET_BEHAVIORS = new Set<BudgetBehavior>([
-  'count_as_spending',
-  'count_as_income',
-  'exclude_as_transfer',
-  'exclude_manual',
 ])
 
 const VALID_TRANSFER_STATUSES = new Set<TransferMatchStatus>([
@@ -158,15 +143,6 @@ export async function updateTransactionSemantics({
     typeof rawRefundSource === 'string' && isRefundSource(rawRefundSource)
       ? rawRefundSource
       : undefined
-  const requestedKind =
-    typeof rawKind === 'string' && VALID_KINDS.has(rawKind as TransactionKind)
-      ? (rawKind as TransactionKind)
-      : undefined
-  const requestedBudgetBehavior =
-    typeof rawBudgetBehavior === 'string' &&
-    VALID_BUDGET_BEHAVIORS.has(rawBudgetBehavior as BudgetBehavior)
-      ? (rawBudgetBehavior as BudgetBehavior)
-      : undefined
   const requestedTransferStatus =
     typeof rawTransferStatus === 'string' &&
     VALID_TRANSFER_STATUSES.has(rawTransferStatus as TransferMatchStatus)
@@ -183,16 +159,16 @@ export async function updateTransactionSemantics({
     return { ok: false, status: 400, error: 'Invalid refund_source' }
   }
 
-  if (rawKind !== undefined && requestedKind === undefined) {
-    return { ok: false, status: 400, error: 'Invalid transaction_kind' }
-  }
-
-  if (rawBudgetBehavior !== undefined && requestedBudgetBehavior === undefined) {
-    return { ok: false, status: 400, error: 'Invalid budget_behavior' }
-  }
-
   if (rawTransferStatus !== undefined && requestedTransferStatus === undefined) {
     return { ok: false, status: 400, error: 'Invalid transfer_match_status' }
+  }
+
+  if (!hasCanonicalSemanticInput && hasLegacySemanticInput) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Legacy transaction semantics inputs are no longer supported',
+    }
   }
 
   const { data: transactionData, error: transactionError } = await supabase
@@ -233,6 +209,14 @@ export async function updateTransactionSemantics({
   }
 
   const currentCategory = normalizeCategory(transaction.categories)
+  const currentSemantics = normalizeTransactionSemantics({
+    treatment: transaction.treatment,
+    refundSource: transaction.refund_source,
+    transactionKind: transaction.transaction_kind,
+    budgetBehavior: transaction.budget_behavior,
+    amount: transaction.amount,
+    category: currentCategory,
+  })
   const update: Record<string, unknown> = {
     semantic_override_source: 'user',
   }
@@ -271,35 +255,16 @@ export async function updateTransactionSemantics({
     update.transfer_match_status = 'manually_matched'
     applyToTransferGroup = true
   } else {
-    const requestedLegacyTreatment =
-      !hasCanonicalSemanticInput && (requestedKind || requestedBudgetBehavior)
-        ? normalizeTransactionSemantics({
-            transactionKind: requestedKind,
-            budgetBehavior: requestedBudgetBehavior,
-            category: requestedBudgetBehavior ? undefined : currentCategory,
-          })
-        : null
     const nextTreatment =
       requestedTransferStatus === 'ignored' &&
-      requestedTreatment === undefined &&
-      requestedLegacyTreatment == null
+      requestedTreatment === undefined
         ? 'spending'
         : requestedTreatment ??
-          requestedLegacyTreatment?.treatment ??
-          transaction.treatment ??
-          deriveTransactionTreatment({
-            transactionKind: transaction.transaction_kind,
-            budgetBehavior: transaction.budget_behavior,
-            category: currentCategory,
-          })
+          currentSemantics.treatment
     const nextRefundSource =
       nextTreatment === 'refund'
         ? requestedRefundSource ??
-          requestedLegacyTreatment?.refundSource ??
-          transaction.refund_source ??
-          (transaction.transaction_kind === 'reimbursement'
-            ? 'reimbursement'
-            : 'merchant_refund')
+          currentSemantics.refundSource
         : null
     const normalized = normalizeTransactionSemantics({
       treatment: nextTreatment,
@@ -315,14 +280,6 @@ export async function updateTransactionSemantics({
 
     if (requestedTransferStatus) {
       update.transfer_match_status = requestedTransferStatus
-    }
-
-    if (
-      !hasCanonicalSemanticInput &&
-      hasLegacySemanticInput &&
-      requestedLegacyTreatment == null
-    ) {
-      return { ok: false, status: 400, error: 'Invalid legacy transaction semantics' }
     }
   }
 

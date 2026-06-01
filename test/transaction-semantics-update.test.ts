@@ -304,7 +304,7 @@ test('existing debt payment only updates the selected transaction', async () => 
   )
 })
 
-test('invalid semantic values are rejected before database access', async () => {
+test('legacy semantic inputs are rejected before database access', async () => {
   const { supabase, operations } = createSupabaseMock({
     transaction: baseTransaction,
   })
@@ -313,14 +313,14 @@ test('invalid semantic values are rejected before database access', async () => 
     supabase,
     userId: 'user_1',
     transactionId: 'tx_current',
-    body: { budget_behavior: 'please_count_it_somehow' },
+    body: { budget_behavior: 'count_as_income' },
     ensureCategory: async () => null,
   })
 
   assert.deepEqual(result, {
     ok: false,
     status: 400,
-    error: 'Invalid budget_behavior',
+    error: 'Legacy transaction semantics inputs are no longer supported',
   })
   assert.equal(operations.length, 0)
 })
@@ -376,7 +376,7 @@ test('semantics update rejects split parent transactions', async () => {
     supabase,
     userId: 'user_1',
     transactionId: 'tx_current',
-    body: { transaction_kind: 'refund' },
+    body: { treatment: 'refund' },
     ensureCategory: async () => null,
   })
 

@@ -101,6 +101,8 @@ test('buildSplitPreview returns decimal-string balance and monthly impact', () =
       budget_effective_date: null,
       effective_date: '2026-05-10',
       treatment: 'spending',
+      refund_source: null,
+      transaction_kind: 'normal',
       budget_behavior: 'count_as_spending',
     },
     [
@@ -146,6 +148,8 @@ test('buildSplitPreview excludes category-level budget exclusions from budget im
       budget_effective_date: null,
       effective_date: '2026-05-10',
       treatment: 'spending',
+      refund_source: null,
+      transaction_kind: 'normal',
       budget_behavior: 'count_as_spending',
     },
     [
