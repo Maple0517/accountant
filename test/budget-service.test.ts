@@ -269,6 +269,90 @@ test('getMonthlySummary budgets linked refunded-category rows against original c
   assert.equal(refunded?.actualSpend, 0)
 })
 
+test('getMonthlySummary carries forward the latest previous monthly budget rule', async () => {
+  const categories = [
+    {
+      id: 'cat_food',
+      user_id: 'user_1',
+      name: 'Food',
+      type: 'expense',
+      sort_order: 0,
+      is_excluded_from_budget: false,
+    },
+  ]
+
+  const budgetRules = [
+    {
+      id: 'budget_food_april',
+      user_id: 'user_1',
+      category_id: 'cat_food',
+      amount: 220,
+      period: 'monthly',
+      month: 4,
+      year: 2026,
+    },
+  ]
+
+  const supabase = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq(column: string, value: unknown) {
+          void value
+          if (table === 'categories' && column === 'user_id') {
+            return {
+              order() {
+                return Promise.resolve({ data: categories, error: null })
+              },
+            }
+          }
+          if (table === 'budgets' && column === 'period') {
+            return Promise.resolve({ data: budgetRules, error: null })
+          }
+          if (table === 'profiles' && column === 'id') {
+            return {
+              single() {
+                return Promise.resolve({ data: { default_currency: 'USD' }, error: null })
+              },
+            }
+          }
+          return chain
+        },
+        in() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        is() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        lt() {
+          return Promise.resolve({ data: [], error: null })
+        },
+        order() {
+          return Promise.resolve({ data: categories, error: null })
+        },
+        single() {
+          return Promise.resolve({ data: { default_currency: 'USD' }, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const summary = await getMonthlySummary(supabase as never, 'user_1', '2026-05')
+  const food = summary.categories.find((category) => category.categoryId === 'cat_food')
+
+  assert.equal(food?.baseBudget, 220)
+  assert.equal(summary.totalBaseBudget, 220)
+})
+
 test('getMonthlySummary excludes category-level budget exclusions from spend and budgets', async () => {
   const categories = [
     {

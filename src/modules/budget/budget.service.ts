@@ -3,7 +3,7 @@ import { filterByCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 import type { MonthlyBudgetSummary, CategoryBudgetSummary } from './budget.types'
 import { calculateMonthlySummary } from './budget.engine'
-import { adaptCategories, adaptTransactions, adaptBudgetRules, adaptSettings } from './budget.adapter'
+import { adaptCategories, adaptTransactions, adaptSettings } from './budget.adapter'
 import {
   loadCategoriesForBudget,
   loadTransactionsForBudgetMonth,
@@ -12,6 +12,8 @@ import {
   loadBudgetSettings,
   upsertCategoryBudget,
 } from './budget.repository'
+import type { BudgetRuleInput } from './budget.types'
+import type { Budget } from '@/types'
 
 function isValidMonthString(month: string): boolean {
   if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -53,6 +55,41 @@ function parseMonth(month: string): { numericYear: number; numericMonth: number;
   const monthEnd = `${nextYear}-${paddedNextMonth}-01`
 
   return { numericYear, numericMonth, monthStart, monthEnd }
+}
+
+function resolveEffectiveBudgetRules(
+  rows: Budget[],
+  month: string,
+  numericMonth: number,
+  numericYear: number
+): BudgetRuleInput[] {
+  const sorted = [...rows].sort((left, right) => {
+    const yearDelta = Number(right.year ?? 0) - Number(left.year ?? 0)
+    if (yearDelta !== 0) return yearDelta
+    return Number(right.month ?? 0) - Number(left.month ?? 0)
+  })
+
+  const seen = new Set<string>()
+
+  return sorted.flatMap((row) => {
+    if (!row.category_id || seen.has(row.category_id)) {
+      return []
+    }
+
+    seen.add(row.category_id)
+
+    return [
+      {
+        categoryId: row.category_id,
+        month,
+        amount: Number(row.amount),
+        mode:
+          row.month === numericMonth && row.year === numericYear
+            ? 'monthly_override'
+            : 'same_every_month',
+      } satisfies BudgetRuleInput,
+    ]
+  })
 }
 
 export async function getMonthlySummary(
@@ -125,7 +162,12 @@ export async function getMonthlySummary(
     categoryMap,
     budgetCategoryByTransactionId
   )
-  const adaptedRules = adaptBudgetRules(budgetRules)
+  const adaptedRules = resolveEffectiveBudgetRules(
+    budgetRules,
+    month,
+    numericMonth,
+    numericYear
+  )
   const settings = adaptSettings(profile)
 
   return {

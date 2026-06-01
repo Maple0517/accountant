@@ -82,7 +82,10 @@ export async function loadLinkedOriginalTransactionsForBudget(
 }
 
 /**
- * Loads monthly budget rules for a specific month+year.
+ * Loads all monthly budget rules up to and including the requested month.
+ *
+ * The service layer resolves the latest applicable rule per category so a
+ * budget set in a previous month can carry forward until overridden.
  */
 export async function loadBudgetRulesForMonth(
   supabase: SupabaseClient,
@@ -94,15 +97,23 @@ export async function loadBudgetRulesForMonth(
     .from('budgets')
     .select('id, user_id, category_id, amount, period, month, year, alert_threshold, created_at, updated_at')
     .eq('user_id', userId)
-    .eq('month', month)
-    .eq('year', year)
     .eq('period', 'monthly');
 
   if (error) {
     throw new Error(`[budget.repository] loadBudgetRulesForMonth failed: ${error.message}`);
   }
 
-  return data ?? [];
+  return (data ?? []).filter((rule) => {
+    if (rule.year == null || rule.month == null) {
+      return false
+    }
+
+    if (rule.year < year) {
+      return true
+    }
+
+    return rule.year === year && rule.month <= month
+  });
 }
 
 /**

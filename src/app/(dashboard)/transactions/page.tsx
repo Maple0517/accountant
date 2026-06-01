@@ -13,6 +13,7 @@ import {
   stripAutomaticClassificationTags,
 } from '@/lib/plaid/classification'
 import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
+import { getTransactionBadgeParts, hasTransactionNeedsReviewBadge } from '@/lib/transactions/badges'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
 import {
   deriveTransactionTreatment,
@@ -1859,29 +1860,9 @@ const TransactionItem = memo(function TransactionItem({
     tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
   const hasRefundReview = needsRefundReview(tx)
   const hasTransferReview = needsTransferReview(tx)
-  const needsReviewBadge =
-    !tx.category_id || hasAutomaticClassificationTag || hasRefundReview || hasTransferReview
+  const needsReviewBadge = hasTransactionNeedsReviewBadge(tx)
 
-  const badgeParts: Array<{ label: string; tone: 'accent' | 'success' | 'warning' | 'info' | 'muted' }> = []
-  if (needsReviewBadge) {
-    badgeParts.push({ label: t('transactions.needsReview'), tone: 'warning' })
-  } else if (classificationStatus) {
-    badgeParts.push({ label: classificationStatus, tone: classificationStatus === 'AI Pending' ? 'accent' : 'success' })
-  }
-  if (tx.pending) badgeParts.push({ label: t('common.pending'), tone: 'warning' })
-  if (treatment === 'refund') {
-    badgeParts.push({
-      label:
-        refundSource === 'reimbursement'
-          ? t('common.reimbursement')
-          : t('common.refund'),
-      tone: 'success',
-    })
-  }
-  if (treatment === 'transfer' && !needsReviewBadge) badgeParts.push({ label: t('common.transfer'), tone: 'info' })
-  if (tx.split_role === 'child') badgeParts.push({ label: `Split ${tx.split_sequence || ''}`.trim(), tone: 'accent' })
-  if (tx.split_status === 'out_of_balance') badgeParts.push({ label: t('transactions.splitOutOfBalance'), tone: 'warning' })
-  if (treatment === 'excluded') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
+  const badgeParts = getTransactionBadgeParts(tx, t)
 
   const badgeLabels = new Set(badgeParts.map((badge) => badge.label))
   const metaParts: string[] = []

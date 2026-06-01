@@ -11,6 +11,7 @@ import {
   AI_PENDING_TAG,
   PLAID_FALLBACK_TAG,
 } from '@/lib/plaid/classification'
+import { getTransactionBadgeParts } from '@/lib/transactions/badges'
 import { needsRefundReview, needsTransferReview } from '@/lib/transactions/review'
 import type { Category, Transaction } from '@/types'
 import { useI18n } from '@/i18n/client'
@@ -208,23 +209,20 @@ export default function ReviewPage() {
               const primaryHref = `/transactions?tx=${encodeURIComponent(
                 tx.id
               )}&savedView=needs_review`
-              const issues = getIssueBuckets(tx, t)
-
               return (
                 <Link key={tx.id} href={primaryHref} className="tx-item tx-item-link review-inbox-item">
                   <div className="tx-icon">{tx.categories?.icon || '•'}</div>
                   <div className="tx-details">
                     <div className="tx-merchant-row">
                       <span className="tx-merchant">{merchant}</span>
-                      <Badge tone="accent">{t('review.title')}</Badge>
                     </div>
                     <span className="tx-category">
                       {account} · {tx.date} · {categoryLabel}
                     </span>
                     <span className="tx-badges">
-                      {issues.map((issue) => (
-                        <Badge key={issue.key} tone={issue.tone}>
-                          {issue.label}
+                      {getTransactionBadgeParts(tx, t).map((badge) => (
+                        <Badge key={`${tx.id}-${badge.label}`} tone={badge.tone}>
+                          {badge.label}
                         </Badge>
                       ))}
                     </span>
