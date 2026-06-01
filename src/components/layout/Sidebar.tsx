@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useI18n } from '@/i18n/client'
+import { useShellUser } from './useShellUser'
 import {
   AccountsIcon,
   BudgetsIcon,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
 export default function Sidebar({ userEmail }: { userEmail: string | null }) {
   const pathname = usePathname()
   const { t } = useI18n()
+  const resolvedUserEmail = useShellUser(userEmail)
 
   return (
     <aside className="sidebar" aria-label={t('nav.primary')}>
@@ -60,9 +62,9 @@ export default function Sidebar({ userEmail }: { userEmail: string | null }) {
 
       <div className="sidebar-footer">
         <div className="user-info">
-          <div className="avatar">{userEmail ? userEmail.charAt(0).toUpperCase() : 'U'}</div>
+          <div className="avatar">{resolvedUserEmail ? resolvedUserEmail.charAt(0).toUpperCase() : 'U'}</div>
           <div className="user-details">
-            <span className="user-email">{userEmail || t('app.user')}</span>
+            <span className="user-email">{resolvedUserEmail || t('app.user')}</span>
           </div>
         </div>
       </div>

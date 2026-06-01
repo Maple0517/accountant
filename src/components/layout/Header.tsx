@@ -4,11 +4,13 @@ import { useRouter } from 'next/navigation'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { useI18n } from '@/i18n/client'
 import { useTheme } from '@/lib/theme/client'
+import { useShellUser } from './useShellUser'
 
 export default function Header({ userEmail }: { userEmail: string | null }) {
   const router = useRouter()
   const { locale, toggleLocale, t } = useI18n()
   const { theme, toggleTheme } = useTheme()
+  const resolvedUserEmail = useShellUser(userEmail)
 
   const handleSignOut = async () => {
     const { createClient } = await import('@/lib/supabase/client')
@@ -26,7 +28,7 @@ export default function Header({ userEmail }: { userEmail: string | null }) {
         </div>
         <div className="topbar-actions">
           <StatusDot tone="success" label={t('app.signedIn')} />
-          <span className="topbar-status">{userEmail || t('app.user')}</span>
+          <span className="topbar-status">{resolvedUserEmail || t('app.user')}</span>
           <button
             className="btn btn-ghost btn-sm theme-toggle"
             onClick={toggleTheme}

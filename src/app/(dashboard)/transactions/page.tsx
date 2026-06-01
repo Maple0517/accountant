@@ -19,6 +19,7 @@ import {
   deriveTransactionTreatment,
   normalizeTransactionSemantics,
 } from '@/lib/transactions/treatment'
+import { buildTransactionsQueryParams } from '@/lib/transactions/query'
 import type {
   AiClassificationJob,
   Category,
@@ -588,7 +589,6 @@ export default function TransactionsPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [serverViewCounts, setServerViewCounts] = useState<Record<SavedView, number>>(emptyViewCounts)
   const [allAiPendingCount, setAllAiPendingCount] = useState(0)
-  const [viewCountsLoading, setViewCountsLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -672,21 +672,19 @@ export default function TransactionsPage() {
 
   const buildTransactionQueryParams = useCallback(
     (options: { offset?: number; savedViewOverride?: SavedView } = {}) => {
-      const params = new URLSearchParams({
-        limit: String(TRANSACTIONS_PAGE_SIZE),
-        offset: String(options.offset ?? 0),
+      return buildTransactionsQueryParams({
+        limit: TRANSACTIONS_PAGE_SIZE,
+        offset: options.offset ?? 0,
         sourceOrAccount: queryFilters.sourceOrAccount,
         category: queryFilters.category,
         currency: queryFilters.currency,
         savedView: options.savedViewOverride ?? savedView,
+        search: queryFilters.search,
+        dateFrom: queryFilters.dateFrom,
+        dateTo: queryFilters.dateTo,
+        tx: focusedTransactionId,
+        includeViewCounts: true,
       })
-
-      if (queryFilters.search) params.set('search', queryFilters.search)
-      if (queryFilters.dateFrom) params.set('dateFrom', queryFilters.dateFrom)
-      if (queryFilters.dateTo) params.set('dateTo', queryFilters.dateTo)
-      if (focusedTransactionId) params.set('tx', focusedTransactionId)
-
-      return params
     },
     [focusedTransactionId, queryFilters, savedView]
   )
@@ -770,46 +768,6 @@ export default function TransactionsPage() {
     [buildTransactionQueryParams, t]
   )
 
-  const viewCountsRequestIdRef = useRef(0)
-
-  const fetchViewCounts = useCallback(async () => {
-    const requestId = viewCountsRequestIdRef.current + 1
-    viewCountsRequestIdRef.current = requestId
-    setViewCountsLoading(true)
-
-    const params = buildTransactionQueryParams()
-
-    try {
-      const response = await fetch(`/api/transactions/view-counts?${params.toString()}`)
-      const payload = (await response.json()) as {
-        viewCounts?: Record<SavedView, number>
-        allAiPendingCount?: number
-        error?: string
-      }
-
-      if (viewCountsRequestIdRef.current !== requestId) return
-
-      if (!response.ok) {
-        console.error('Error fetching transaction view counts:', payload.error)
-        return
-      }
-
-      setServerViewCounts((current) => ({
-        ...current,
-        ...(payload.viewCounts || {}),
-      }))
-      setAllAiPendingCount(payload.allAiPendingCount || 0)
-    } catch (error) {
-      if (viewCountsRequestIdRef.current === requestId) {
-        console.error('Error fetching transaction view counts:', error)
-      }
-    } finally {
-      if (viewCountsRequestIdRef.current === requestId) {
-        setViewCountsLoading(false)
-      }
-    }
-  }, [buildTransactionQueryParams])
-
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       fetchTransactions()
@@ -817,14 +775,6 @@ export default function TransactionsPage() {
 
     return () => window.clearTimeout(timeoutId)
   }, [fetchTransactions])
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      fetchViewCounts()
-    }, 0)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [fetchViewCounts])
 
   const processAiQueue = useCallback(
     async (jobId: string) => {
@@ -878,7 +828,6 @@ export default function TransactionsPage() {
           }
 
           await fetchTransactions()
-          await fetchViewCounts()
         }
       } catch (error) {
         console.error('Failed to process AI queue:', error)
@@ -889,7 +838,7 @@ export default function TransactionsPage() {
         setAiQueueProcessing(false)
       }
     },
-    [fetchTransactions, fetchViewCounts, t]
+    [fetchTransactions, t]
   )
 
   const fetchLatestAiJob = useCallback(async () => {
@@ -947,7 +896,6 @@ export default function TransactionsPage() {
       if (isActiveAiJob(aiJob)) {
         await processAiQueue(aiJob.id)
         await fetchTransactions()
-        await fetchViewCounts()
         return
       }
 
@@ -965,7 +913,7 @@ export default function TransactionsPage() {
 
       if (!job || job.total_count === 0) {
         setAiRefreshStatus(t('transactions.noPendingAi'))
-        await fetchViewCounts()
+        await fetchTransactions()
         return
       }
 
@@ -977,7 +925,6 @@ export default function TransactionsPage() {
       )
       await processAiQueue(job.id)
       await fetchTransactions()
-      await fetchViewCounts()
     } catch (error) {
       console.error('Failed to create AI queue:', error)
       setAiRefreshStatus(
@@ -986,7 +933,7 @@ export default function TransactionsPage() {
     } finally {
       setAiQueueActionLoading(false)
     }
-  }, [aiJob, fetchTransactions, fetchViewCounts, processAiQueue, t])
+  }, [aiJob, fetchTransactions, processAiQueue, t])
 
   const closeDetailDrawerForTransaction = useCallback(
     (transactionId: string) => {
@@ -1310,6 +1257,7 @@ export default function TransactionsPage() {
   const aiPendingCount = allAiPendingCount
   const needsReviewCount = serverViewCounts.needs_review || 0
   const uncategorizedCount = serverViewCounts.uncategorized || 0
+  const viewCountsLoading = loading && transactions.length === 0
   const aiStatusMessage =
     aiRefreshStatus ||
     (aiPendingCount > 0
