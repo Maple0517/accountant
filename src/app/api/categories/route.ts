@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { translateCategoryNameWithGemini } from '@/lib/gemini/category-translator'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,18 +15,42 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    const rawName = typeof body.name === 'string' ? body.name.trim() : ''
 
-    if (!name) {
+    if (!rawName) {
       return Response.json({ error: 'name is required' }, { status: 400 })
     }
 
-    const { data: existing } = await supabase
+    let translatedName
+    try {
+      translatedName = await translateCategoryNameWithGemini(rawName)
+    } catch (translationError) {
+      console.error('Error translating category name:', translationError)
+      return Response.json(
+        { error: 'Failed to translate category name' },
+        { status: 502 }
+      )
+    }
+
+    const normalizeName = (value: string | null | undefined) =>
+      value?.trim().toLocaleLowerCase('en-US') || ''
+    const { data: existingCategories } = await supabase
       .from('categories')
-      .select('id')
+      .select('id, name, name_zh')
       .eq('user_id', user.id)
-      .ilike('name', name)
-      .maybeSingle()
+
+    const translatedEnglishKey = normalizeName(translatedName.name)
+    const translatedChineseKey = normalizeName(translatedName.name_zh)
+    const existing = (existingCategories || []).find((category) => {
+      const nameKey = normalizeName(category.name)
+      const nameZhKey = normalizeName(category.name_zh)
+      return (
+        nameKey === translatedEnglishKey ||
+        nameKey === translatedChineseKey ||
+        nameZhKey === translatedEnglishKey ||
+        nameZhKey === translatedChineseKey
+      )
+    })
 
     if (existing) {
       return Response.json({ error: 'Category already exists' }, { status: 409 })
@@ -52,7 +77,8 @@ export async function POST(request: Request) {
       .from('categories')
       .insert({
         user_id: user.id,
-        name,
+        name: translatedName.name,
+        name_zh: translatedName.name_zh,
         icon,
         color,
         type: 'expense',
