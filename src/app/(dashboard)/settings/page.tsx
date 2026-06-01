@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import type { Profile, ReceiptApiKey } from '@/types'
 import { useI18n } from '@/i18n/client'
+import { useTheme, type ThemeMode } from '@/lib/theme/client'
 
 type SafeProfile = Omit<Profile, 'notion_token'> & {
   notion_token?: never
@@ -42,6 +43,7 @@ function mergeProfile(base: SafeProfile | null, draft: Partial<SafeProfile>): Sa
 
 export default function SettingsPage() {
   const { formatDate, t } = useI18n()
+  const { theme, setTheme } = useTheme()
   const { data: profileData, error: profileError, mutate: mutateProfile } = useSWR<NotionPayload>('/api/settings/notion', fetcher)
   const { data: apiKeysData, mutate: mutateApiKeys } = useSWR<ApiKeysPayload>('/api/settings/api-keys', fetcher)
 
@@ -230,6 +232,30 @@ export default function SettingsPage() {
 
       <form onSubmit={handleSave} className="settings-grid settings-workspace">
         <div className="settings-form-rail">
+          <Card className="settings-card theme-toggle-card">
+            <div className="theme-toggle-current">
+              <div>
+                <h2>{t('settings.appearance')}</h2>
+                <p className="settings-card-intro">{t('settings.appearanceIntro')}</p>
+              </div>
+              <Badge tone="accent">{theme === 'light' ? t('settings.lightTheme') : t('settings.darkTheme')}</Badge>
+            </div>
+            <div className="theme-toggle-row" role="group" aria-label={t('settings.themeMode')}>
+              {(['light', 'dark'] as ThemeMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`theme-toggle-option ${theme === mode ? 'active' : ''}`}
+                  onClick={() => setTheme(mode)}
+                  aria-pressed={theme === mode}
+                >
+                  <strong>{mode === 'light' ? t('settings.lightTheme') : t('settings.darkTheme')}</strong>
+                  <span>{mode === 'light' ? t('settings.lightThemeHint') : t('settings.darkThemeHint')}</span>
+                </button>
+              ))}
+            </div>
+          </Card>
+
           <Card className="settings-card settings-profile-card">
             <h2>{t('settings.profile')}</h2>
             <p className="settings-card-intro">{t('settings.profileIntro')}</p>

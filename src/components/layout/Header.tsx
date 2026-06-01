@@ -1,58 +1,20 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { StatusDot } from '@/components/ui/StatusDot'
 import { useI18n } from '@/i18n/client'
-
-type ThemeMode = 'light' | 'dark'
-
-const THEME_STORAGE_KEY = 'accountant.theme'
-
-function detectPreferredTheme(): ThemeMode {
-  if (typeof window === 'undefined') return 'light'
-
-  try {
-    const stored = window.localStorage?.getItem(THEME_STORAGE_KEY)
-    if (stored === 'light' || stored === 'dark') return stored
-  } catch {
-    // ignore storage failures
-  }
-
-  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-}
-
-function applyTheme(theme: ThemeMode) {
-  if (typeof document === 'undefined') return
-
-  document.documentElement.dataset.theme = theme
-  document.documentElement.style.colorScheme = theme
-
-  try {
-    window.localStorage?.setItem(THEME_STORAGE_KEY, theme)
-  } catch {
-    // ignore storage failures
-  }
-}
+import { useTheme } from '@/lib/theme/client'
 
 export default function Header({ userEmail }: { userEmail: string | null }) {
   const router = useRouter()
   const { locale, toggleLocale, t } = useI18n()
-  const [theme, setTheme] = useState<ThemeMode>(() => detectPreferredTheme())
-
-  useEffect(() => {
-    applyTheme(theme)
-  }, [theme])
+  const { theme, toggleTheme } = useTheme()
 
   const handleSignOut = async () => {
     const { createClient } = await import('@/lib/supabase/client')
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/auth/login')
-  }
-
-  const toggleTheme = () => {
-    setTheme((currentTheme) => currentTheme === 'light' ? 'dark' : 'light')
   }
 
   return (

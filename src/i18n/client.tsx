@@ -500,6 +500,13 @@ const en: TranslationDictionary = {
   'settings.saveSettings': 'Save settings',
   'settings.apiKeyLabel': 'API key',
   'settings.endpointLabel': 'Endpoint',
+  'settings.appearance': 'Appearance',
+  'settings.appearanceIntro': 'Switch between daylight clarity and the original dark cockpit.',
+  'settings.themeMode': 'Theme mode',
+  'settings.lightTheme': 'Light',
+  'settings.lightThemeHint': 'Daytime workspace',
+  'settings.darkTheme': 'Dark',
+  'settings.darkThemeHint': 'Low-light cockpit',
 }
 
 const zh: TranslationDictionary = {
@@ -958,6 +965,13 @@ const zh: TranslationDictionary = {
   'settings.saveSettings': '保存设置',
   'settings.apiKeyLabel': 'API key',
   'settings.endpointLabel': '端点',
+  'settings.appearance': '外观',
+  'settings.appearanceIntro': '在白天清爽模式和原始深色驾驶舱之间切换。',
+  'settings.themeMode': '主题模式',
+  'settings.lightTheme': '浅色',
+  'settings.lightThemeHint': '白天工作区',
+  'settings.darkTheme': '深色',
+  'settings.darkThemeHint': '低光驾驶舱',
 }
 
 function readCookieLocale(): Locale | null {
