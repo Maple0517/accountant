@@ -25,6 +25,32 @@ export const DEFAULT_CATEGORIES: AppCategory[] = [
   { name: 'Excluded', name_zh: '不计入', icon: '🚫', color: '#9e9e9e', type: 'expense', isExcludedFromBudget: true },
 ]
 
+export type CategoryNameRecord = {
+  name?: string | null
+  name_zh?: string | null
+}
+
+function normalizeCategoryLabel(value?: string | null): string | null {
+  const normalized = value?.trim()
+  return normalized ? normalized : null
+}
+
+export function findDefaultCategoryByName(category?: CategoryNameRecord | null): AppCategory | null {
+  if (!category) return null
+
+  const names = new Set(
+    [normalizeCategoryLabel(category.name), normalizeCategoryLabel(category.name_zh)]
+      .filter((name): name is string => Boolean(name))
+  )
+
+  if (names.size === 0) return null
+
+  return DEFAULT_CATEGORIES.find((defaultCategory) =>
+    names.has(defaultCategory.name) || names.has(defaultCategory.name_zh)
+  ) ?? null
+}
+
+
 export function getCategoryFromPlaid(primary: string | null | undefined): AppCategory {
   if (!primary) return DEFAULT_CATEGORIES.find(c => c.name === 'Other')!
 

@@ -1,5 +1,6 @@
 'use client'
 
+import { findDefaultCategoryByName } from '@/lib/categories'
 import {
   createContext,
   useCallback,
@@ -1082,8 +1083,15 @@ export function I18nProvider({
       },
       categoryName: (category, fallback) => {
         if (!category) return fallback ?? t('common.uncategorized')
-        if (locale === 'zh' && category.name_zh) return category.name_zh
-        return category.name || fallback || t('common.uncategorized')
+        const canonicalCategory = findDefaultCategoryByName(category)
+        const englishName = canonicalCategory?.name || category.name?.trim()
+        const chineseName = category.name_zh?.trim() || canonicalCategory?.name_zh
+
+        if (locale === 'zh') {
+          return chineseName || englishName || fallback || t('common.uncategorized')
+        }
+
+        return englishName || fallback || t('common.uncategorized')
       },
     }
   }, [locale, setLocale])
