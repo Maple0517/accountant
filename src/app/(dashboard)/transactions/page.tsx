@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { formatCurrency } from '@/lib/currency'
 import { formatCurrencyTotals, hasMultipleCurrencies, sumByCurrency } from '@/lib/money/totals'
@@ -430,19 +430,20 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue
 }
 
-function getCategoryButtonStyle(category: Category, selected: boolean) {
-  const color = category.color || '#607d8b'
+function getCategoryButtonStyle(category?: Pick<Category, 'color'> | null) {
+  const color = category?.color || '#7f8b99'
   return {
-    borderColor: selected ? color : `${color}55`,
-    background: selected
-      ? `linear-gradient(135deg, ${color}4d, ${color}1f)`
-      : `${color}14`,
-    color: 'var(--text-primary)',
-    boxShadow: selected ? `0 0 0 1px ${color} inset` : 'none',
-  }
+    '--category-pill-accent': color,
+    '--category-pill-accent-soft': `${color}14`,
+    '--category-pill-accent-border': `${color}2e`,
+  } as CSSProperties
 }
 
-function formatAccountSourceLabel(account: TransactionAccountRelation, manualLabel = 'Manual', accountFallback = 'Account') {
+function formatAccountSourceLabel(
+  account: TransactionAccountRelation,
+  manualLabel: string,
+  accountFallback: string
+) {
   const institutionName = account.plaid_items?.institution_name
   const accountName =
     account.official_name ||
@@ -562,6 +563,18 @@ type TransactionsApiResponse = {
   offset: number
   error?: string
 }
+
+type AttentionNotice = {
+  key: string
+  tone: 'warning' | 'accent' | 'neutral'
+  label: string
+  message: string
+  actionLabel?: string
+  actionKey?: 'needs_review' | 'uncategorized' | 'pending' | 'queue_ai'
+  busy?: boolean
+}
+
+type DetailSectionKey = 'category' | 'semantics' | 'split'
 
 export default function TransactionsPage() {
   const { categoryName, locale, t } = useI18n()
@@ -725,7 +738,7 @@ export default function TransactionsPage() {
           (payload.accounts || [])
             .map((account) => ({
               id: account.id || '',
-              label: formatAccountSourceLabel(account, t('common.manual')),
+              label: formatAccountSourceLabel(account, t('common.manual'), t('common.account')),
               institutionName: account.plaid_items?.institution_name ?? null,
               accountName: account.name ?? account.official_name ?? null,
               mask: account.mask ?? null,
@@ -1296,6 +1309,7 @@ export default function TransactionsPage() {
   const pendingCount = serverViewCounts.pending || 0
   const aiPendingCount = allAiPendingCount
   const needsReviewCount = serverViewCounts.needs_review || 0
+  const uncategorizedCount = serverViewCounts.uncategorized || 0
   const aiStatusMessage =
     aiRefreshStatus ||
     (aiPendingCount > 0
@@ -1307,16 +1321,182 @@ export default function TransactionsPage() {
         })
       : null)
   const aiQueueBusy = aiQueueActionLoading || aiQueueProcessing
-  const visibleTotalsByCurrency = useMemo(
-    () => sumByCurrency(visibleTransactions, (tx) => Number(tx.amount), (tx) => tx.iso_currency_code),
-    [visibleTransactions]
-  )
-  const visibleNetLabel = formatCurrencyTotals(visibleTotalsByCurrency, (amount) => -amount)
+  const showAiQueueDetails =
+    aiQueueBusy ||
+    Boolean(aiJob?.error_message) ||
+    Boolean(aiJob && (aiJob.pending_count > 0 || aiJob.failed_count > 0))
   const hasTransactions = visibleTransactions.length > 0
   const hasMoreTransactions = transactions.length < totalCount
   const selectedTransaction = editingTransactionId
     ? transactions.find((tx) => tx.id === editingTransactionId) ?? null
     : null
+  const activeFilterCount =
+    (savedView !== 'all' ? 1 : 0) +
+    (filters.search ? 1 : 0) +
+    (filters.sourceOrAccount !== 'all' ? 1 : 0) +
+    (filters.category !== 'all' ? 1 : 0) +
+    (filters.currency !== 'all' ? 1 : 0) +
+    (filters.dateFrom ? 1 : 0) +
+    (filters.dateTo ? 1 : 0)
+
+  const clearAllFilters = useCallback(() => {
+    setSavedView('all')
+    setFilters({
+      search: '',
+      sourceOrAccount: 'all',
+      category: 'all',
+      currency: 'all',
+      dateFrom: '',
+      dateTo: '',
+    })
+    setAdvancedFiltersOpen(false)
+  }, [])
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{
+      key: string
+      label: string
+      onClear: () => void
+    }> = []
+
+    if (savedView !== 'all') {
+      const activeView = SAVED_VIEWS.find((view) => view.id === savedView)
+      if (activeView) {
+        chips.push({
+          key: `view:${savedView}`,
+          label: t(activeView.labelKey),
+          onClear: () => setSavedView('all'),
+        })
+      }
+    }
+
+    if (filters.search) {
+      chips.push({
+        key: 'search',
+        label: filters.search,
+        onClear: () => setFilters((current) => ({ ...current, search: '' })),
+      })
+    }
+
+    if (filters.sourceOrAccount !== 'all') {
+      const accountOption = accountOptions.find((account) => `account:${account.id}` === filters.sourceOrAccount)
+      const sourceLabel =
+        accountOption?.label ||
+        (filters.sourceOrAccount === 'manual'
+          ? t('common.manual')
+          : filters.sourceOrAccount === 'receipt'
+            ? t('common.receipt')
+            : filters.sourceOrAccount)
+
+      chips.push({
+        key: 'source',
+        label: sourceLabel,
+        onClear: () => setFilters((current) => ({ ...current, sourceOrAccount: 'all' })),
+      })
+    }
+
+    if (filters.category !== 'all') {
+      const categoryLabel =
+        filters.category === 'uncategorized'
+          ? t('common.uncategorized')
+          : categoryName(categories.find((category) => category.id === filters.category))
+
+      chips.push({
+        key: 'category',
+        label: categoryLabel,
+        onClear: () => setFilters((current) => ({ ...current, category: 'all' })),
+      })
+    }
+
+    if (filters.currency !== 'all') {
+      chips.push({
+        key: 'currency',
+        label: filters.currency,
+        onClear: () => setFilters((current) => ({ ...current, currency: 'all' })),
+      })
+    }
+
+    if (filters.dateFrom || filters.dateTo) {
+      chips.push({
+        key: 'date-range',
+        label: [filters.dateFrom, filters.dateTo].filter(Boolean).join(' → '),
+        onClear: () =>
+          setFilters((current) => ({
+            ...current,
+            dateFrom: '',
+            dateTo: '',
+          })),
+      })
+    }
+
+    return chips
+  }, [accountOptions, categories, categoryName, filters, savedView, t])
+
+  const attentionNotices = useMemo<AttentionNotice[]>(() => {
+    const notices: AttentionNotice[] = []
+
+    if (needsReviewCount > 0) {
+      notices.push({
+        key: 'needs-review',
+        tone: 'warning',
+        label: t('transactions.needsReview'),
+        message: t('transactions.needsReviewSummary', { count: needsReviewCount }),
+        actionLabel: t('transactions.openView'),
+        actionKey: 'needs_review',
+      })
+    }
+
+    if (uncategorizedCount > 0) {
+      notices.push({
+        key: 'uncategorized',
+        tone: 'neutral',
+        label: t('common.uncategorized'),
+        message: t('transactions.uncategorizedSummary', { count: uncategorizedCount }),
+        actionLabel: t('transactions.openView'),
+        actionKey: 'uncategorized',
+      })
+    }
+
+    if (aiPendingCount > 0 || showAiQueueDetails) {
+      notices.push({
+        key: 'ai-pending',
+        tone: 'accent',
+        label: t('transactions.aiPending'),
+        message:
+          aiStatusMessage ||
+          t('transactions.aiPendingSummary', {
+            count: aiPendingCount,
+            plural: aiPendingCount === 1 ? '' : 's',
+            reason: t('transactions.aiPendingNoJobReason'),
+          }),
+        actionLabel: aiPendingCount > 0 ? t('transactions.queueAiRefresh') : undefined,
+        actionKey: aiPendingCount > 0 ? 'queue_ai' : undefined,
+        busy: aiQueueBusy,
+      })
+    }
+
+    if (pendingCount > 0) {
+      notices.push({
+        key: 'pending',
+        tone: 'neutral',
+        label: t('common.pending'),
+        message: t('transactions.pendingSummary', { count: pendingCount }),
+        actionLabel: t('transactions.openView'),
+        actionKey: 'pending',
+      })
+    }
+
+    return notices
+  }, [
+    aiPendingCount,
+    aiQueueBusy,
+    aiStatusMessage,
+    needsReviewCount,
+    pendingCount,
+    showAiQueueDetails,
+    t,
+    uncategorizedCount,
+  ])
 
   const handleLoadMore = useCallback(() => {
     fetchTransactions({
@@ -1449,64 +1629,45 @@ export default function TransactionsPage() {
 
   return (
     <div className="transactions-page">
-      <PageHeader
-        title={t('transactions.title')}
-        subtitle={t('transactions.subtitle', { visible: visibleTransactions.length, loaded: transactions.length, totalPart: totalCount > transactions.length ? t('transactions.loadedTotalPart', { loaded: transactions.length, total: totalCount }) : '' })}
-      />
+      <PageHeader title={t('transactions.title')} />
 
-      <section className="transactions-command-center">
-        <div className="transactions-command-hero">
-          <div>
-            <span className="metric-label">{t('transactions.visibleNet')}</span>
-            <strong className="transactions-net-value">
-              {visibleNetLabel.split(' · ').map((part) => (
-                <span key={part}>{part}</span>
-              ))}
-            </strong>
-          </div>
-          <div className="transactions-command-stats">
-            <span><b>{transactions.length}</b> {t('transactions.loaded')}</span>
-            <span><b>{needsReviewCount}</b> {t('transactions.needsReview')}</span>
-            <span><b>{pendingCount}</b> {t('common.pending')}</span>
-            <span><b>{aiPendingCount}</b> {t('transactions.aiPending')}</span>
-          </div>
-        </div>
-
-        <div className="saved-view-row transactions-saved-view-row" aria-label={t('transactions.savedViewsAria')}>
-          {SAVED_VIEWS.map((view) => (
-            <button
-              key={view.id}
-              type="button"
-              className={`btn btn-sm ${savedView === view.id ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setSavedView(view.id)}
-            >
-              {t(view.labelKey)}
-              <span className="badge badge-muted">{viewCountsLoading ? '...' : serverViewCounts[view.id] ?? 0}</span>
-            </button>
+      {attentionNotices.length > 0 && (
+        <section className="transactions-attention-strip" aria-label={t('transactions.attentionAria')}>
+          {attentionNotices.map((notice) => (
+            <div key={notice.key} className={`attention-card attention-${notice.tone}`}>
+              <div className="attention-card-copy">
+                <span className="attention-card-label">{notice.label}</span>
+                <p>{notice.message}</p>
+                {notice.key === 'ai-pending' && showAiQueueDetails && aiJob && (
+                  <span className="attention-card-meta">
+                    {t('transactions.total')} {aiJob.total_count} · {t('common.pending')} {aiJob.pending_count} · {t('transactions.done')} {aiJob.completed_count} · {t('transactions.failed')} {aiJob.failed_count}
+                  </span>
+                )}
+              </div>
+              {notice.actionKey && notice.actionLabel && (
+                <button
+                  type="button"
+                  className={`btn btn-sm ${notice.tone === 'warning' || notice.tone === 'accent' ? 'btn-primary' : 'btn-ghost'}`}
+                  disabled={notice.busy}
+                  onClick={() => {
+                    if (notice.actionKey === 'needs_review') {
+                      setSavedView('needs_review')
+                    } else if (notice.actionKey === 'uncategorized') {
+                      setSavedView('uncategorized')
+                    } else if (notice.actionKey === 'pending') {
+                      setSavedView('pending')
+                    } else if (notice.actionKey === 'queue_ai') {
+                      handleQueueAiRefresh()
+                    }
+                  }}
+                  title={notice.key === 'ai-pending' ? t('transactions.queueAiTitle') : undefined}
+                >
+                  {notice.busy ? t('transactions.processingAi') : notice.actionLabel}
+                </button>
+              )}
+            </div>
           ))}
-        </div>
-      </section>
-
-      {(aiStatusMessage || aiJob || aiPendingCount > 0) && (
-        <div className="ai-refresh-status">
-          {aiStatusMessage && <span>{aiStatusMessage}</span>}
-          {aiJob && (
-            <span>
-              {t('transactions.total')} {aiJob.total_count} · {t('common.pending')} {aiJob.pending_count} · {t('transactions.done')} {aiJob.completed_count} · {t('transactions.failed')} {aiJob.failed_count}
-            </span>
-          )}
-          {aiPendingCount > 0 && (
-            <button
-              type="button"
-              className="btn btn-sm btn-primary"
-              onClick={handleQueueAiRefresh}
-              disabled={aiQueueBusy}
-              title={t('transactions.queueAiTitle')}
-            >
-              {aiQueueBusy ? t('transactions.processingAi') : t('transactions.queueAiRefresh')}
-            </button>
-          )}
-        </div>
+        </section>
       )}
 
       {loadError && (
@@ -1514,6 +1675,21 @@ export default function TransactionsPage() {
       )}
 
       <div className="card filters-bar transactions-filter-card">
+        <div className="transactions-filter-toolbar">
+          <div className="saved-view-row transaction-view-row" aria-label={t('transactions.savedViewsAria')}>
+            {SAVED_VIEWS.map((view) => (
+              <button
+                key={view.id}
+                type="button"
+                className={`filter-chip-button ${savedView === view.id ? 'active' : ''}`}
+                onClick={() => setSavedView(view.id)}
+              >
+                <span>{t(view.labelKey)}</span>
+                <span className="filter-chip-count">{viewCountsLoading ? '...' : serverViewCounts[view.id] ?? 0}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="filter-group">
           <input
             type="text"
@@ -1527,14 +1703,6 @@ export default function TransactionsPage() {
           />
         </div>
         <div className="transactions-filter-actions">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={() => setAdvancedFiltersOpen((open) => !open)}
-            aria-expanded={advancedFiltersOpen}
-          >
-            {advancedFiltersOpen ? t('transactions.hideFilters') : t('transactions.showFilters')}
-          </button>
           <div className="segmented-control" aria-label={t('transactions.groupByAria')}>
             <button
               type="button"
@@ -1551,7 +1719,41 @@ export default function TransactionsPage() {
               {t('transactions.category')}
             </button>
           </div>
+          <div className="transactions-filter-action-buttons">
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={clearAllFilters}
+              >
+                {t('transactions.clearAllFilters')}
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setAdvancedFiltersOpen((open) => !open)}
+              aria-expanded={advancedFiltersOpen}
+            >
+              {advancedFiltersOpen ? t('transactions.hideFilters') : t('transactions.showFilters')}
+            </button>
+          </div>
         </div>
+        {activeFilterChips.length > 0 && (
+          <div className="active-filter-row" aria-label={t('transactions.activeFiltersAria')}>
+            {activeFilterChips.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className="active-filter-chip"
+                onClick={chip.onClear}
+              >
+                <span>{chip.label}</span>
+                <span aria-hidden="true">×</span>
+              </button>
+            ))}
+          </div>
+        )}
         {advancedFiltersOpen && <div className="filter-row">
           <select
             className="input"
@@ -1713,6 +1915,7 @@ export default function TransactionsPage() {
       >
         {selectedTransaction && (
           <TransactionItem
+            key={selectedTransaction.id}
             transaction={selectedTransaction}
             linkCandidates={
               linkCandidatesByTransactionId.get(selectedTransaction.id) || EMPTY_LINK_CANDIDATES
@@ -1830,7 +2033,9 @@ const TransactionItem = memo(function TransactionItem({
   const categoryIcon = tx.categories?.icon || '📦'
   const displayCategoryName = categoryName(tx.categories)
   const merchantName = tx.merchant_name || tx.description
-  const accountLabel = tx.accounts ? formatAccountSourceLabel(tx.accounts, t('common.manual')) : null
+  const accountLabel = tx.accounts
+    ? formatAccountSourceLabel(tx.accounts, t('common.manual'), t('common.account'))
+    : null
   const tags = Array.isArray(tx.tags) ? tx.tags : []
   const [showNewCategoryForm, setShowNewCategoryForm] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -1852,11 +2057,6 @@ const TransactionItem = memo(function TransactionItem({
     setRefundFormDraft({ ...syncedRefundFormDraft, selectedLinkId })
   const setBudgetEffectiveDate = (budgetEffectiveDate: string) =>
     setRefundFormDraft({ ...syncedRefundFormDraft, budgetEffectiveDate })
-
-  let classificationStatus: string | null = null
-  if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
-    classificationStatus = t('transactions.aiPending')
-  }
 
   const hasAutomaticClassificationTag =
     tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)
@@ -1880,14 +2080,10 @@ const TransactionItem = memo(function TransactionItem({
     metaParts.push(accountLabel)
   }
 
-  if (classificationStatus) {
-    pushMetaPart(classificationStatus)
-  }
-
   if (tx.source === 'receipt') {
-    metaParts.push('Receipt')
+    metaParts.push(t('common.receipt'))
   } else if (tx.source === 'manual' && !accountLabel) {
-    metaParts.push('Manual')
+    metaParts.push(t('common.manual'))
   }
   if (!needsReviewBadge && tx.transfer_match_status === 'ignored') {
     pushMetaPart(t('common.notTransfer'))
@@ -2085,6 +2281,24 @@ const TransactionItem = memo(function TransactionItem({
     )
   )
 
+  const [openSections, setOpenSections] = useState<Record<DetailSectionKey, boolean>>(
+    () => ({
+      category: !tx.category_id || hasAutomaticClassificationTag,
+      semantics: hasRefundReview || hasTransferReview || isDisplayedCredit,
+      split: Boolean(tx.split_group_id || tx.split_status === 'out_of_balance'),
+    })
+  )
+
+  const toggleSection = (section: DetailSectionKey) => {
+    setOpenSections((current) => ({
+      ...current,
+      [section]: !current[section],
+    }))
+  }
+
+  const rowBadges = badgeParts.slice(0, needsReviewBadge ? 2 : 1)
+  const detailBadges = badgeParts.slice(0, 4)
+
   if (detailMode) {
     return (
       <div className="transaction-command-sheet">
@@ -2098,7 +2312,7 @@ const TransactionItem = memo(function TransactionItem({
                 <span>{categoryIcon}</span>
                 <span>{displayCategoryName}</span>
               </Badge>
-              {badgeParts.slice(0, 4).map((badge) => (
+              {detailBadges.map((badge) => (
                 <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
               ))}
             </span>
@@ -2110,134 +2324,160 @@ const TransactionItem = memo(function TransactionItem({
 
         {reviewActions.length > 0 && renderReviewActions('review-action-panel detail-card detail-review-card')}
 
-        <section className="detail-card category-command-card">
-          <div className="detail-card-header">
-            <div>
-              <h3>{t('transactions.pickCategory')}</h3>
-              <p>{t('transactions.categoryCommandHint')}</p>
+        <section className={`detail-card category-command-card ${openSections.category ? 'expanded' : 'collapsed'}`}>
+          <button
+            type="button"
+            className="detail-section-toggle"
+            aria-expanded={openSections.category}
+            onClick={() => toggleSection('category')}
+          >
+            <div className="detail-card-header">
+              <div>
+                <h3>{t('transactions.pickCategory')}</h3>
+                <p>{t('transactions.categoryCommandHint')}</p>
+              </div>
+              <div className="detail-section-meta">
+                {isSaving && <span>{t('common.saving')}</span>}
+                <span className="detail-section-chevron" aria-hidden="true">⌄</span>
+              </div>
             </div>
-            {isSaving && <span>{t('common.saving')}</span>}
-          </div>
-          {categoriesLoading ? (
-            <p className="text-secondary">{t('transactions.loadingCategories')}</p>
-          ) : (
-            <div className="tx-category-options detail-category-options">
-              {categories.map((category) => {
-                const isSelected = category.id === tx.category_id
-                return (
+          </button>
+          {openSections.category && (
+            <div className="detail-section-body">
+              {categoriesLoading ? (
+                <p className="text-secondary">{t('transactions.loadingCategories')}</p>
+              ) : (
+                <div className="tx-category-options detail-category-options">
+                  {categories.map((category) => {
+                    const isSelected = category.id === tx.category_id
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        className={`category-chip detail-category-option ${isSelected ? 'selected' : ''}`}
+                        disabled={isSaving}
+                        onClick={() => onSaveCategory(tx.id, category.id)}
+                      >
+                        <span className="category-chip-icon">{category.icon || '📦'}</span>
+                        <span className="category-chip-label">
+                          {categoryName(category)}
+                        </span>
+                        {category.is_excluded_from_budget && (
+                          <span className="category-chip-badge">{t('transactions.excludedShort')}</span>
+                        )}
+                        {isSelected && <span className="category-selected-mark">✓</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+              <div className="new-category-section detail-new-category-section">
+                {showNewCategoryForm ? (
+                  <div className="new-category-form">
+                    <input
+                      type="text"
+                      className="input new-category-input"
+                      placeholder={t('transactions.newCategoryPlaceholder')}
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newCategoryName.trim()) {
+                          onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                          setNewCategoryName('')
+                          setShowNewCategoryForm(false)
+                        }
+                      }}
+                      autoFocus
+                    />
+                    <div className="new-category-icons">
+                      {CATEGORY_ICONS.map((icon) => (
+                        <button
+                          key={icon}
+                          type="button"
+                          className={`icon-option ${selectedNewIcon === icon ? 'selected' : ''}`}
+                          aria-label={t('transactions.iconAria', { icon })}
+                          onClick={() => setSelectedNewIcon(icon)}
+                        >
+                          {icon}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="new-category-colors">
+                      {CATEGORY_COLORS.map((color) => (
+                        <button
+                          key={color}
+                          type="button"
+                          className={`color-option ${selectedNewColor === color ? 'selected' : ''}`}
+                          style={{ backgroundColor: color }}
+                          aria-label={t('transactions.colorAria', { color })}
+                          onClick={() => setSelectedNewColor(color)}
+                        />
+                      ))}
+                    </div>
+                    <div className="new-category-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={!newCategoryName.trim() || isSaving}
+                        onClick={() => {
+                          onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
+                          setNewCategoryName('')
+                          setShowNewCategoryForm(false)
+                        }}
+                      >
+                        {isSaving ? t('transactions.creating') : t('common.create')}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => {
+                          setShowNewCategoryForm(false)
+                          setNewCategoryName('')
+                        }}
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
                   <button
-                    key={category.id}
                     type="button"
-                    className={`category-chip detail-category-option ${isSelected ? 'selected' : ''}`}
-                    disabled={isSaving}
-                    onClick={() => onSaveCategory(tx.id, category.id)}
+                    className="new-category-toggle detail-new-category-toggle"
+                    onClick={() => {
+                      setShowNewCategoryForm(true)
+                      setSelectedNewIcon(CATEGORY_ICONS[0])
+                      setSelectedNewColor(CATEGORY_COLORS[5])
+                    }}
                   >
-                    <span className="category-chip-icon">{category.icon || '📦'}</span>
-                    <span className="category-chip-label">
-                      {categoryName(category)}
-                    </span>
-                    {category.is_excluded_from_budget && (
-                      <span className="category-chip-badge">{t('transactions.excludedShort')}</span>
-                    )}
-                    {isSelected && <span className="category-selected-mark">✓</span>}
+                    {t('transactions.newCategory')}
                   </button>
-                )
-              })}
+                )}
+              </div>
             </div>
           )}
-          <div className="new-category-section detail-new-category-section">
-            {showNewCategoryForm ? (
-              <div className="new-category-form">
-                <input
-                  type="text"
-                  className="input new-category-input"
-                  placeholder={t('transactions.newCategoryPlaceholder')}
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newCategoryName.trim()) {
-                      onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
-                      setNewCategoryName('')
-                      setShowNewCategoryForm(false)
-                    }
-                  }}
-                  autoFocus
-                />
-                <div className="new-category-icons">
-                  {CATEGORY_ICONS.map((icon) => (
-                    <button
-                      key={icon}
-                      type="button"
-                      className={`icon-option ${selectedNewIcon === icon ? 'selected' : ''}`}
-                      aria-label={t('transactions.iconAria', { icon })}
-                      onClick={() => setSelectedNewIcon(icon)}
-                    >
-                      {icon}
-                    </button>
-                  ))}
-                </div>
-                <div className="new-category-colors">
-                  {CATEGORY_COLORS.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className={`color-option ${selectedNewColor === color ? 'selected' : ''}`}
-                      style={{ backgroundColor: color }}
-                      aria-label={t('transactions.colorAria', { color })}
-                      onClick={() => setSelectedNewColor(color)}
-                    />
-                  ))}
-                </div>
-                <div className="new-category-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={!newCategoryName.trim() || isSaving}
-                    onClick={() => {
-                      onCreateCategory(tx.id, newCategoryName.trim(), selectedNewIcon, selectedNewColor)
-                      setNewCategoryName('')
-                      setShowNewCategoryForm(false)
-                    }}
-                  >
-                    {isSaving ? t('transactions.creating') : t('common.create')}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => {
-                      setShowNewCategoryForm(false)
-                      setNewCategoryName('')
-                    }}
-                  >
-                    {t('common.cancel')}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="new-category-toggle detail-new-category-toggle"
-                onClick={() => {
-                  setShowNewCategoryForm(true)
-                  setSelectedNewIcon(CATEGORY_ICONS[0])
-                  setSelectedNewColor(CATEGORY_COLORS[5])
-                }}
-              >
-                {t('transactions.newCategory')}
-              </button>
-            )}
-          </div>
         </section>
 
-        <section className="detail-card semantic-command-card">
-          <div className="detail-card-header">
-            <div>
-              <h3>{isDisplayedCredit ? t('transactions.creditMeaning') : t('transactions.budgetMeaning')}</h3>
-              <p>{isDisplayedCredit ? t('transactions.creditMeaningHint') : t('transactions.budgetMeaningHint')}</p>
+        <section className={`detail-card semantic-command-card ${openSections.semantics ? 'expanded' : 'collapsed'}`}>
+          <button
+            type="button"
+            className="detail-section-toggle"
+            aria-expanded={openSections.semantics}
+            onClick={() => toggleSection('semantics')}
+          >
+            <div className="detail-card-header">
+              <div>
+                <h3>{isDisplayedCredit ? t('transactions.creditMeaning') : t('transactions.budgetMeaning')}</h3>
+                <p>{isDisplayedCredit ? t('transactions.creditMeaningHint') : t('transactions.budgetMeaningHint')}</p>
+              </div>
+              <div className="detail-section-meta">
+                {isSaving && <span>{t('common.saving')}</span>}
+                <span className="detail-section-chevron" aria-hidden="true">⌄</span>
+              </div>
             </div>
-            {isSaving && <span>{t('common.saving')}</span>}
-          </div>
-          <div className="semantic-option-grid">
+          </button>
+          {openSections.semantics && (
+            <div className="detail-section-body">
+              <div className="semantic-option-grid">
             {isDisplayedCredit ? (
               <>
                 <button
@@ -2340,154 +2580,168 @@ const TransactionItem = memo(function TransactionItem({
                 </button>
               </>
             )}
-          </div>
-
-          {showRefundControls && (
-            <div className="refund-detail-controls">
-              {tx.linked_transaction_id && (
-                <p className="refund-hint">
-                  {t('transactions.appliedOriginalBudget')}
-                  {tx.refund_match_confidence != null &&
-                    tx.refund_match_confidence < 0.8 &&
-                    tx.refund_match_reason &&
-                    ` · ${t('transactions.possibleRefundMatch', { reason: tx.refund_match_reason })}`}
-                </p>
-              )}
-              <label className="field-row">
-                <span>{t('transactions.originalPurchase')}</span>
-                <div className="refund-link-row compact">
-                  <select
-                    className="input"
-                    aria-label={t('transactions.linkedPurchaseAria', { merchant: merchantName })}
-                    value={selectedLinkId}
-                    disabled={isSaving}
-                    onChange={(e) => setSelectedLinkId(e.target.value)}
-                  >
-                    <option value="">{t('transactions.noLinkedPurchase')}</option>
-                    {linkCandidates.map((candidate) => (
-                      <option key={candidate.id} value={candidate.id}>
-                        {candidate.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={!selectedLinkId || isSaving}
-                    onClick={() =>
-                      onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
-                    }
-                  >
-                    {t('transactions.link')}
-                  </button>
-                  {tx.linked_transaction_id && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      disabled={isSaving}
-                      onClick={() => {
-                        setRefundFormDraft({
-                          ...syncedRefundFormDraft,
-                          selectedLinkId: '',
-                          budgetEffectiveDate: tx.date,
-                        })
-                        onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
-                      }}
-                    >
-                      {t('transactions.clear')}
-                    </button>
-                  )}
-                </div>
-              </label>
-              <label className="field-row">
-                <span>{t('transactions.budgetDate')}</span>
-                <div className="refund-link-row compact">
-                  <input
-                    type="date"
-                    className="input"
-                    aria-label={t('transactions.budgetDateAria', { merchant: merchantName })}
-                    value={budgetEffectiveDate}
-                    disabled={isSaving}
-                    onChange={(e) => setBudgetEffectiveDate(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!budgetEffectiveDate || isSaving}
-                    onClick={() =>
-                      onSaveRefundMetadata(tx.id, {
-                        budget_effective_date: budgetEffectiveDate,
-                        reviewed: true,
-                      })
-                    }
-                  >
-                    {t('transactions.applyDate')}
-                  </button>
-                </div>
-              </label>
-            </div>
-          )}
-
-          {(tx.transfer_match_reason || (tx.transfer_match_status && tx.transfer_match_status !== 'ignored')) && (
-            <div className="transfer-detail-controls">
-              {tx.transfer_match_reason && (
-                <p className="refund-hint">{tx.transfer_match_reason}</p>
-              )}
-              <div className="refund-kind-actions">
-                {tx.transfer_match_status && tx.transfer_match_status !== 'ignored' && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost"
-                    disabled={isSaving}
-                    onClick={() =>
-                      onSaveSemantics(tx.id, {
-                        treatment: 'spending',
-                        transfer_match_status: 'ignored',
-                      })
-                    }
-                  >
-                    {t('transactions.notTransfer')}
-                  </button>
-                )}
-                {tx.transfer_match_status === 'suggested' && (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={isSaving}
-                    onClick={() =>
-                      onSaveSemantics(tx.id, {
-                        transfer_match_status: 'manually_matched',
-                      })
-                    }
-                  >
-                    {t('transactions.confirmMatch')}
-                  </button>
-                )}
               </div>
+
+              {showRefundControls && (
+                <div className="refund-detail-controls">
+                  {tx.linked_transaction_id && (
+                    <p className="refund-hint">
+                      {t('transactions.appliedOriginalBudget')}
+                      {tx.refund_match_confidence != null &&
+                        tx.refund_match_confidence < 0.8 &&
+                        tx.refund_match_reason &&
+                        ` · ${t('transactions.possibleRefundMatch', { reason: tx.refund_match_reason })}`}
+                    </p>
+                  )}
+                  <label className="field-row">
+                    <span>{t('transactions.originalPurchase')}</span>
+                    <div className="refund-link-row compact">
+                      <select
+                        className="input"
+                        aria-label={t('transactions.linkedPurchaseAria', { merchant: merchantName })}
+                        value={selectedLinkId}
+                        disabled={isSaving}
+                        onChange={(e) => setSelectedLinkId(e.target.value)}
+                      >
+                        <option value="">{t('transactions.noLinkedPurchase')}</option>
+                        {linkCandidates.map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            {candidate.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={!selectedLinkId || isSaving}
+                        onClick={() =>
+                          onSaveRefundMetadata(tx.id, { linked_transaction_id: selectedLinkId })
+                        }
+                      >
+                        {t('transactions.link')}
+                      </button>
+                      {tx.linked_transaction_id && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={isSaving}
+                          onClick={() => {
+                            setRefundFormDraft({
+                              ...syncedRefundFormDraft,
+                              selectedLinkId: '',
+                              budgetEffectiveDate: tx.date,
+                            })
+                            onSaveRefundMetadata(tx.id, { linked_transaction_id: null })
+                          }}
+                        >
+                          {t('transactions.clear')}
+                        </button>
+                      )}
+                    </div>
+                  </label>
+                  <label className="field-row">
+                    <span>{t('transactions.budgetDate')}</span>
+                    <div className="refund-link-row compact">
+                      <input
+                        type="date"
+                        className="input"
+                        aria-label={t('transactions.budgetDateAria', { merchant: merchantName })}
+                        value={budgetEffectiveDate}
+                        disabled={isSaving}
+                        onChange={(e) => setBudgetEffectiveDate(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!budgetEffectiveDate || isSaving}
+                        onClick={() =>
+                          onSaveRefundMetadata(tx.id, {
+                            budget_effective_date: budgetEffectiveDate,
+                            reviewed: true,
+                          })
+                        }
+                      >
+                        {t('transactions.applyDate')}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+              )}
+
+              {(tx.transfer_match_reason || (tx.transfer_match_status && tx.transfer_match_status !== 'ignored')) && (
+                <div className="transfer-detail-controls">
+                  {tx.transfer_match_reason && (
+                    <p className="refund-hint">{tx.transfer_match_reason}</p>
+                  )}
+                  <div className="refund-kind-actions">
+                    {tx.transfer_match_status && tx.transfer_match_status !== 'ignored' && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        disabled={isSaving}
+                        onClick={() =>
+                          onSaveSemantics(tx.id, {
+                            treatment: 'spending',
+                            transfer_match_status: 'ignored',
+                          })
+                        }
+                      >
+                        {t('transactions.notTransfer')}
+                      </button>
+                    )}
+                    {tx.transfer_match_status === 'suggested' && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={isSaving}
+                        onClick={() =>
+                          onSaveSemantics(tx.id, {
+                            transfer_match_status: 'manually_matched',
+                          })
+                        }
+                      >
+                        {t('transactions.confirmMatch')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
 
-        <section className={`detail-card split-action-card ${tx.pending ? 'disabled' : ''}`}>
-          <div>
+        <section className={`detail-card split-action-card ${tx.pending ? 'disabled' : ''} ${openSections.split ? 'expanded' : 'collapsed'}`}>
+          <button
+            type="button"
+            className="detail-section-toggle"
+            aria-expanded={openSections.split}
+            onClick={() => toggleSection('split')}
+          >
             <div className="detail-card-header split-action-header">
               <div>
                 <h3>{t('transactions.splitSectionTitle')}</h3>
                 <p>{tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitSectionHint')}</p>
               </div>
-              {tx.split_status && <Badge tone={tx.split_status === 'out_of_balance' ? 'warning' : 'muted'}>{tx.split_status}</Badge>}
+              <div className="detail-section-meta">
+                {tx.split_status && <Badge tone={tx.split_status === 'out_of_balance' ? 'warning' : 'muted'}>{tx.split_status}</Badge>}
+                <span className="detail-section-chevron" aria-hidden="true">⌄</span>
+              </div>
             </div>
-          </div>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-            aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
-            disabled={tx.pending}
-            onClick={() => onOpenSplitEditor(tx)}
-          >
-            {tx.split_group_id ? t('transactions.editSplit') : t('transactions.splitAction')}
           </button>
+          {openSections.split && (
+            <div className="detail-section-body">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                title={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+                aria-label={tx.pending ? t('transactions.splitPendingDisabled') : t('transactions.splitAction')}
+                disabled={tx.pending}
+                onClick={() => onOpenSplitEditor(tx)}
+              >
+                {tx.split_group_id ? t('transactions.editSplit') : t('transactions.splitAction')}
+              </button>
+            </div>
+          )}
         </section>
 
         {renderStatusFeedback(true)}
@@ -2513,9 +2767,9 @@ const TransactionItem = memo(function TransactionItem({
         <div className="tx-details">
           <span className="tx-merchant">{merchantName}</span>
           {metaText && <span className="tx-meta">{metaText}</span>}
-          {badgeParts.length > 0 && (
+          {rowBadges.length > 0 && (
             <span className="tx-badges">
-              {badgeParts.slice(0, 5).map((badge) => (
+              {rowBadges.map((badge) => (
                 <Badge key={badge.label} tone={badge.tone}>{badge.label}</Badge>
               ))}
             </span>
@@ -2532,8 +2786,7 @@ const TransactionItem = memo(function TransactionItem({
               type: 'expense',
               sort_order: 0,
               created_at: '',
-            }) as Category,
-            true
+            }) as Category
           )}
           aria-expanded={isEditing}
           aria-label={t('transactions.changeCategoryAria', { merchant: merchantName })}
@@ -2544,6 +2797,7 @@ const TransactionItem = memo(function TransactionItem({
         >
           <span className="tx-category-pill-icon">{categoryIcon}</span>
           <span className="tx-category-pill-label">{displayCategoryName}</span>
+          <span className="tx-category-pill-chevron" aria-hidden="true">›</span>
         </button>
         <div className={`tx-amount ${isIncome ? 'income' : 'expense'}`}>
           {formatCurrency(displayAmount, tx.iso_currency_code || 'USD')}

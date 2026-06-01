@@ -91,7 +91,7 @@ export function getTransactionBadgeParts(
 
   if (tx.split_role === 'child') {
     badges.push({
-      label: `Split ${tx.split_sequence || ''}`.trim(),
+      label: t('transactions.splitChildBadge', { index: tx.split_sequence || '' }).trim(),
       tone: 'accent',
     })
   }
