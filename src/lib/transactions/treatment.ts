@@ -1,9 +1,4 @@
-import type {
-  BudgetBehavior,
-  RefundSource,
-  TransactionKind,
-  TransactionTreatment,
-} from '@/types'
+import type { RefundSource, TransactionTreatment } from '@/types'
 
 type CategoryBudgetSemantics = {
   type?: 'income' | 'expense' | 'transfer' | null
@@ -13,8 +8,6 @@ type CategoryBudgetSemantics = {
 type TransactionSemanticInput = {
   treatment?: TransactionTreatment | string | null
   refundSource?: RefundSource | string | null
-  transactionKind?: TransactionKind | string | null
-  budgetBehavior?: BudgetBehavior | string | null
   amount?: number | null
   category?: CategoryBudgetSemantics
   transactionType?: 'expense' | 'income' | 'transfer' | 'unknown' | null
@@ -47,8 +40,6 @@ export function isRefundSource(
 
 export function deriveTransactionTreatment({
   treatment,
-  transactionKind,
-  budgetBehavior,
   category,
   transactionType,
 }: TransactionSemanticInput): TransactionTreatment {
@@ -56,31 +47,7 @@ export function deriveTransactionTreatment({
     return treatment
   }
 
-  if (transactionKind === 'refund' || transactionKind === 'reimbursement') {
-    return 'refund'
-  }
-
-  if (
-    transactionKind === 'transfer' ||
-    budgetBehavior === 'exclude_as_transfer' ||
-    transactionType === 'transfer'
-  ) {
-    return 'transfer'
-  }
-
-  if (budgetBehavior === 'exclude_manual') {
-    return 'excluded'
-  }
-
-  if (
-    budgetBehavior === 'count_as_income' ||
-    category?.type === 'income' ||
-    transactionType === 'income'
-  ) {
-    return 'income'
-  }
-
-  if (category?.type === 'transfer') {
+  if (transactionType === 'transfer' || category?.type === 'transfer') {
     return 'transfer'
   }
 
@@ -88,65 +55,11 @@ export function deriveTransactionTreatment({
     return 'excluded'
   }
 
+  if (transactionType === 'income' || category?.type === 'income') {
+    return 'income'
+  }
+
   return 'spending'
-}
-
-export function deriveRefundSourceValue({
-  treatment,
-  refundSource,
-  transactionKind,
-}: Pick<TransactionSemanticInput, 'treatment' | 'refundSource' | 'transactionKind'>): RefundSource | null {
-  const nextTreatment = isTransactionTreatment(treatment) ? treatment : undefined
-  if (nextTreatment && nextTreatment !== 'refund') {
-    return null
-  }
-
-  if (isRefundSource(refundSource)) {
-    return refundSource
-  }
-
-  if (transactionKind === 'reimbursement') {
-    return 'reimbursement'
-  }
-
-  return nextTreatment === 'refund' || transactionKind === 'refund'
-    ? 'merchant_refund'
-    : null
-}
-
-export function deriveBudgetBehaviorFromTreatment(
-  treatment: TransactionTreatment
-): BudgetBehavior {
-  switch (treatment) {
-    case 'income':
-      return 'count_as_income'
-    case 'transfer':
-      return 'exclude_as_transfer'
-    case 'excluded':
-      return 'exclude_manual'
-    case 'refund':
-    case 'spending':
-    default:
-      return 'count_as_spending'
-  }
-}
-
-export function deriveLegacyTransactionKind({
-  treatment,
-  refundSource,
-}: {
-  treatment: TransactionTreatment
-  refundSource?: RefundSource | null
-}): TransactionKind {
-  if (treatment === 'refund') {
-    return refundSource === 'reimbursement' ? 'reimbursement' : 'refund'
-  }
-
-  if (treatment === 'transfer') {
-    return 'transfer'
-  }
-
-  return 'normal'
 }
 
 export function coerceTreatmentForAmount({
@@ -182,29 +95,14 @@ export function coerceTreatmentForAmount({
       return { treatment, refundSource: null }
     }
 
-    return { treatment: 'income' as TransactionTreatment, refundSource: null }
+    return { treatment: 'income', refundSource: null }
   }
 
   if (treatment === 'spending' || treatment === 'transfer' || treatment === 'excluded') {
     return { treatment, refundSource: null }
   }
 
-  return { treatment: 'spending' as TransactionTreatment, refundSource: null }
-}
-
-export function isRefundTreatment(
-  input: Pick<TransactionSemanticInput, 'treatment' | 'transactionKind'>
-) {
-  return deriveTransactionTreatment(input) === 'refund'
-}
-
-export function isTransferTreatment(
-  input: Pick<
-    TransactionSemanticInput,
-    'treatment' | 'transactionKind' | 'budgetBehavior'
-  >
-) {
-  return deriveTransactionTreatment(input) === 'transfer'
+  return { treatment: 'spending', refundSource: null }
 }
 
 export function normalizeTransactionSemantics(
@@ -212,8 +110,6 @@ export function normalizeTransactionSemantics(
 ): {
   treatment: TransactionTreatment
   refundSource: RefundSource | null
-  budgetBehavior: BudgetBehavior
-  transactionKind: TransactionKind
 } {
   const derivedTreatment = deriveTransactionTreatment(input)
   const normalizedInputRefundSource = isRefundSource(input.refundSource)
@@ -224,20 +120,24 @@ export function normalizeTransactionSemantics(
     refundSource: normalizedInputRefundSource,
     amount: input.amount,
   })
-  const treatment = coerced.treatment
-  const refundSource =
-    treatment === 'refund'
-      ? deriveRefundSourceValue({
-          treatment,
-          refundSource: coerced.refundSource,
-          transactionKind: input.transactionKind,
-        })
-      : null
 
   return {
-    treatment,
-    refundSource,
-    budgetBehavior: deriveBudgetBehaviorFromTreatment(treatment),
-    transactionKind: deriveLegacyTransactionKind({ treatment, refundSource }),
+    treatment: coerced.treatment,
+    refundSource:
+      coerced.treatment === 'refund'
+        ? (coerced.refundSource ?? 'merchant_refund')
+        : null,
   }
+}
+
+export function isRefundTreatment(
+  input: Pick<TransactionSemanticInput, 'treatment'>
+) {
+  return deriveTransactionTreatment(input) === 'refund'
+}
+
+export function isTransferTreatment(
+  input: Pick<TransactionSemanticInput, 'treatment' | 'category' | 'transactionType'>
+) {
+  return deriveTransactionTreatment(input) === 'transfer'
 }

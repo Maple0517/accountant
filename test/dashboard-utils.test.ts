@@ -7,7 +7,7 @@ test('dashboard monthly totals ignore excluded budget categories', () => {
   assert.deepEqual(
     getMonthlySemanticAmounts({
       amount: 3126,
-      budget_behavior: 'count_as_spending',
+      treatment: 'spending',
       categories: { is_excluded_from_budget: true },
     }),
     { spending: 0, income: 0 }

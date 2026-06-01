@@ -80,19 +80,13 @@ function isEligibleForBudgetMonth(
 }
 
 function isBudgetSpendingLike(tx: BudgetTransactionInput) {
-  const hasSemanticFields =
-    tx.treatment != null ||
-    tx.refundSource != null ||
-    tx.transactionKind != null ||
-    tx.budgetBehavior != null
+  const hasSemanticFields = tx.treatment != null || tx.refundSource != null
 
   if (hasSemanticFields) {
     const semantics = normalizeTransactionSemantics({
       amount: tx.amount,
       treatment: tx.treatment,
       refundSource: tx.refundSource,
-      transactionKind: tx.transactionKind,
-      budgetBehavior: tx.budgetBehavior,
     })
 
     return semantics.treatment === 'spending' || semantics.treatment === 'refund'
@@ -122,7 +116,7 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
   const includePending = settings.includePendingTransactions
 
   // Identify non-excluded expense categories. Category-level exclusions win over
-  // stale row-level budget_behavior values from older data.
+  // transaction-level spending treatments.
   const budgetableExpenseCategories = categories.filter(
     (c) => c.type === 'expense' && !c.isExcludedFromBudget
   )

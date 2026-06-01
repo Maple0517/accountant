@@ -80,8 +80,6 @@ export function adaptTransactions(
       type,
       treatment: row.treatment ?? null,
       refundSource: row.refund_source ?? null,
-      transactionKind: row.transaction_kind ?? null,
-      budgetBehavior: row.budget_behavior ?? null,
       status: row.pending ? ('pending' as const) : ('posted' as const),
       isHidden: row.is_hidden_from_reports === true,
       isDeleted: row.deleted_at != null,

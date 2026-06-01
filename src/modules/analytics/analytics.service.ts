@@ -27,8 +27,6 @@ type AnalyticsTransactionRow = {
   split_role?: string | null
   treatment?: string | null
   refund_source?: string | null
-  budget_behavior?: string | null
-  transaction_kind?: string | null
   categories?: AnalyticsCategoryRelation | AnalyticsCategoryRelation[] | null
 }
 
@@ -97,7 +95,7 @@ export async function getAnalyticsSummary(
   const selectedCurrency = normalizeCurrencyCode(currencyCode)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, iso_currency_code, date, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, budget_behavior, treatment, refund_source, transaction_kind, categories!transactions_category_id_fkey ( name, name_zh, icon, color, is_excluded_from_budget )')
+    .select('amount, iso_currency_code, date, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, treatment, refund_source, categories!transactions_category_id_fkey ( name, name_zh, icon, color, is_excluded_from_budget )')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .eq('is_hidden_from_reports', false)

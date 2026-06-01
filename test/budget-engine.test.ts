@@ -200,7 +200,6 @@ test('explicit count_as_spending cannot include category-level budget exclusions
           categoryId: 'cat_debt',
           type: 'transfer',
           treatment: 'spending',
-          budgetBehavior: 'count_as_spending',
         },
       ],
       budgetRules: [{ categoryId: 'cat_debt', month: '2026-05', amount: 300 }],
@@ -252,7 +251,7 @@ test('transfer and income transactions not counted', () => {
   assert.equal(result.categories[0].actualSpend, 25)
 })
 
-test('explicit budget behavior overrides expense-category fallback', () => {
+test('canonical treatment overrides expense-category fallback', () => {
   const result = calculateMonthlySummary(
     makeInput({
       categories: [groceries],
@@ -264,7 +263,6 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'transfer',
-          budgetBehavior: 'exclude_as_transfer',
         },
         {
           id: 'income',
@@ -273,7 +271,6 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'income',
-          budgetBehavior: 'count_as_income',
         },
         {
           id: 'manual',
@@ -282,7 +279,6 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'excluded',
-          budgetBehavior: 'exclude_manual',
         },
         {
           id: 'purchase',
@@ -291,7 +287,6 @@ test('explicit budget behavior overrides expense-category fallback', () => {
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'spending',
-          budgetBehavior: 'count_as_spending',
         },
       ],
       budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
@@ -302,7 +297,7 @@ test('explicit budget behavior overrides expense-category fallback', () => {
   assert.equal(result.categories[0].actualSpend, 25)
 })
 
-test('canonical treatment drives budget inclusion ahead of stale budget behavior', () => {
+test('canonical treatment drives budget inclusion', () => {
   const result = calculateMonthlySummary(
     makeInput({
       categories: [groceries],
@@ -314,7 +309,6 @@ test('canonical treatment drives budget inclusion ahead of stale budget behavior
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'income',
-          budgetBehavior: 'count_as_spending',
         },
         {
           id: 'refund_stale',
@@ -323,7 +317,6 @@ test('canonical treatment drives budget inclusion ahead of stale budget behavior
           categoryId: 'cat_groceries',
           type: 'expense',
           treatment: 'refund',
-          budgetBehavior: 'count_as_income',
         },
       ],
       budgetRules: [{ categoryId: 'cat_groceries', month: '2026-05', amount: 100 }],
@@ -334,7 +327,7 @@ test('canonical treatment drives budget inclusion ahead of stale budget behavior
   assert.equal(result.categories[0].actualSpend, -25)
 })
 
-test('category budget exclusion overrides stale count_as_spending behavior', () => {
+test('category budget exclusion overrides canonical spending treatment', () => {
   const result = calculateMonthlySummary(
     makeInput({
       categories: [groceries, excluded],
@@ -345,7 +338,7 @@ test('category budget exclusion overrides stale count_as_spending behavior', () 
           date: '2026-05-04',
           categoryId: 'cat_excluded',
           type: 'expense',
-          budgetBehavior: 'count_as_spending',
+          treatment: 'spending',
         },
         {
           id: 'budgeted_spend',
@@ -353,7 +346,7 @@ test('category budget exclusion overrides stale count_as_spending behavior', () 
           date: '2026-05-10',
           categoryId: 'cat_groceries',
           type: 'expense',
-          budgetBehavior: 'count_as_spending',
+          treatment: 'spending',
         },
       ],
       budgetRules: [

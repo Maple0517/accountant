@@ -46,8 +46,6 @@ test('normalizeSplitRequest accepts decimal strings and normalizes optional blan
         allocation_date: '2026-05-01',
         treatment: 'spending',
         refund_source: null,
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
         linked_transaction_id: null,
         merchant_name: 'Groceries',
         description: null,
@@ -60,8 +58,6 @@ test('normalizeSplitRequest accepts decimal strings and normalizes optional blan
         allocation_date: null,
         treatment: 'spending',
         refund_source: null,
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
         linked_transaction_id: null,
         merchant_name: null,
         description: null,
@@ -102,8 +98,6 @@ test('buildSplitPreview returns decimal-string balance and monthly impact', () =
       effective_date: '2026-05-10',
       treatment: 'spending',
       refund_source: null,
-      transaction_kind: 'normal',
-      budget_behavior: 'count_as_spending',
     },
     [
       {
@@ -149,8 +143,6 @@ test('buildSplitPreview excludes category-level budget exclusions from budget im
       effective_date: '2026-05-10',
       treatment: 'spending',
       refund_source: null,
-      transaction_kind: 'normal',
-      budget_behavior: 'count_as_spending',
     },
     [
       {

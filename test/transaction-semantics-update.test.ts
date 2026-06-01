@@ -23,8 +23,10 @@ type MockTransaction = {
   id: string
   user_id: string
   date: string
+  amount: number
   category_id: string | null
-  transaction_kind: string | null
+  treatment?: string | null
+  refund_source?: string | null
   transfer_group_id: string | null
   deleted_at?: string | null
   is_hidden_from_reports?: boolean | null
@@ -155,8 +157,10 @@ const baseTransaction: MockTransaction = {
   id: 'tx_current',
   user_id: 'user_1',
   date: '2026-05-10',
+  amount: 50,
   category_id: 'cat_food',
-  transaction_kind: 'normal',
+  treatment: 'spending',
+  refund_source: null,
   transfer_group_id: 'group_1',
   categories: {
     type: 'expense',
@@ -188,16 +192,12 @@ test('confirming a suggested transfer updates the matching group leg', async () 
     semantic_override_source: 'user',
     treatment: 'transfer',
     refund_source: null,
-    transaction_kind: 'transfer',
-    budget_behavior: 'exclude_as_transfer',
     transfer_match_status: 'manually_matched',
   })
   assert.deepEqual(updatePayloads[1], {
     semantic_override_source: 'user',
     treatment: 'transfer',
     refund_source: null,
-    transaction_kind: 'transfer',
-    budget_behavior: 'exclude_as_transfer',
     category_id: 'cat_transfer',
     transfer_match_status: 'manually_matched',
   })
@@ -227,7 +227,7 @@ test('rejecting a transfer clears group metadata and marks both legs ignored', a
   const { supabase, updatePayloads } = createSupabaseMock({
     transaction: {
       ...baseTransaction,
-      transaction_kind: 'transfer',
+      treatment: 'transfer',
       categories: {
         type: 'transfer',
         is_excluded_from_budget: true,
@@ -254,8 +254,6 @@ test('rejecting a transfer clears group metadata and marks both legs ignored', a
     semantic_override_source: 'user',
     treatment: 'spending',
     refund_source: null,
-    transaction_kind: 'normal',
-    budget_behavior: 'count_as_spending',
     transfer_match_status: 'ignored',
     transfer_group_id: null,
     transfer_match_confidence: null,
@@ -288,8 +286,6 @@ test('existing debt payment only updates the selected transaction', async () => 
     semantic_override_source: 'user',
     treatment: 'spending',
     refund_source: null,
-    transaction_kind: 'normal',
-    budget_behavior: 'count_as_spending',
     category_id: 'cat_debt',
     transfer_group_id: null,
     transfer_match_status: null,
@@ -325,11 +321,11 @@ test('legacy semantic inputs are rejected before database access', async () => {
   assert.equal(operations.length, 0)
 })
 
-test('canonical semantics input wins over conflicting legacy fields', async () => {
-  const { supabase, updatePayloads } = createSupabaseMock({
+test('canonical semantics input no longer accepts conflicting legacy fields', async () => {
+  const { supabase, updatePayloads, operations } = createSupabaseMock({
     transaction: {
       ...baseTransaction,
-      transaction_kind: 'transfer',
+      treatment: 'transfer',
       categories: {
         type: 'transfer',
         is_excluded_from_budget: true,
@@ -349,19 +345,13 @@ test('canonical semantics input wins over conflicting legacy fields', async () =
     ensureCategory: async () => null,
   })
 
-  assert.equal(result.ok, true)
-  assert.equal(updatePayloads.length, 1)
-  assert.deepEqual(updatePayloads[0], {
-    semantic_override_source: 'user',
-    treatment: 'spending',
-    refund_source: null,
-    transaction_kind: 'normal',
-    budget_behavior: 'count_as_spending',
-    transfer_group_id: null,
-    transfer_match_status: null,
-    transfer_match_confidence: null,
-    transfer_match_reason: null,
+  assert.deepEqual(result, {
+    ok: false,
+    status: 400,
+    error: 'Legacy transaction semantics inputs are no longer supported',
   })
+  assert.equal(updatePayloads.length, 0)
+  assert.equal(operations.length, 0)
 })
 
 test('semantics update rejects split parent transactions', async () => {

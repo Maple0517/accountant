@@ -63,8 +63,6 @@ const TRANSACTION_SELECT = `
   notes,
   treatment,
   refund_source,
-  transaction_kind,
-  budget_behavior,
   linked_transaction_id,
   budget_effective_date,
   refund_match_confidence,

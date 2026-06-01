@@ -71,12 +71,11 @@ test('matches credit card payment legs as excluded transfer', () => {
   const checkingLeg = result.get('checking_payment')
   const creditLeg = result.get('credit_received')
 
-  assert.equal(checkingLeg?.transactionKind, 'transfer')
-  assert.equal(checkingLeg?.budgetBehavior, 'exclude_as_transfer')
+  assert.equal(checkingLeg?.treatment, 'transfer')
   assert.equal(checkingLeg?.transferMatchStatus, 'auto_matched')
   assert.equal(checkingLeg?.transferGroupId, 'group-1')
   assert.equal(creditLeg?.transferGroupId, 'group-1')
-  assert.equal(creditLeg?.budgetBehavior, 'exclude_as_transfer')
+  assert.equal(creditLeg?.treatment, 'transfer')
 })
 
 test('matches checking to savings transfer legs', () => {
@@ -131,8 +130,7 @@ test('suggests medium-confidence transfer without changing budget treatment', ()
 
   assert.equal(suggested?.transferMatchStatus, 'suggested')
   assert.equal(suggested?.transferGroupId, 'group-suggested')
-  assert.equal(suggested?.transactionKind, undefined)
-  assert.equal(suggested?.budgetBehavior, undefined)
+  assert.equal(suggested?.treatment, undefined)
   assert.equal(result.get('investment_in')?.transferMatchStatus, 'suggested')
 })
 
@@ -149,8 +147,7 @@ test('marks strong single-sided credit card payment as unmatched transfer', () =
 
   const payment = result.get('single_payment')
 
-  assert.equal(payment?.transactionKind, 'transfer')
-  assert.equal(payment?.budgetBehavior, 'exclude_as_transfer')
+  assert.equal(payment?.treatment, 'transfer')
   assert.equal(payment?.transferMatchStatus, 'unmatched')
   assert.equal(payment?.transferGroupId, null)
 })

@@ -6,9 +6,7 @@
 // ============================================================
 
 import type {
-  BudgetBehavior,
   RefundSource,
-  TransactionKind,
   TransactionTreatment,
 } from '@/types';
 
@@ -41,8 +39,6 @@ export interface BudgetTransactionInput {
   type: 'expense' | 'income' | 'transfer' | 'investment' | 'refund' | 'adjustment';
   treatment?: TransactionTreatment | null;
   refundSource?: RefundSource | null;
-  transactionKind?: TransactionKind | null;
-  budgetBehavior?: BudgetBehavior | null;
   status?: 'posted' | 'pending';
   isHidden?: boolean;
   isDeleted?: boolean;

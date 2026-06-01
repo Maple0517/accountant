@@ -120,8 +120,6 @@ export async function getMonthlySummary(
           (tx) =>
             deriveTransactionTreatment({
               treatment: tx.treatment,
-              transactionKind: tx.transaction_kind,
-              budgetBehavior: tx.budget_behavior,
             }) === 'refund' &&
             tx.linked_transaction_id
         )
@@ -144,8 +142,6 @@ export async function getMonthlySummary(
         (tx) =>
           deriveTransactionTreatment({
             treatment: tx.treatment,
-            transactionKind: tx.transaction_kind,
-            budgetBehavior: tx.budget_behavior,
           }) === 'refund' &&
           tx.linked_transaction_id &&
           originalCategoryById.has(tx.linked_transaction_id)

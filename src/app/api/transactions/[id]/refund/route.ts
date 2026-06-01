@@ -45,8 +45,6 @@ export async function PATCH(
 
     const { id } = await context.params
     const body = await request.json()
-    const hasCanonicalSemanticInput =
-      body.treatment !== undefined || body.refund_source !== undefined
     const requestedTreatment =
       typeof body.treatment === 'string' &&
       VALID_TREATMENTS.has(body.treatment as TransactionTreatment)
@@ -93,8 +91,6 @@ export async function PATCH(
         category_id,
         treatment,
         refund_source,
-        transaction_kind,
-        budget_behavior,
         deleted_at,
         is_hidden_from_reports,
         split_role,
@@ -125,8 +121,6 @@ export async function PATCH(
     const currentSemantics = normalizeTransactionSemantics({
       treatment: transaction.treatment,
       refundSource: transaction.refund_source,
-      transactionKind: transaction.transaction_kind,
-      budgetBehavior: transaction.budget_behavior,
       amount: transaction.amount,
       category: transactionCategory,
     })
@@ -145,8 +139,6 @@ export async function PATCH(
       })
       update.treatment = normalized.treatment
       update.refund_source = normalized.refundSource
-      update.transaction_kind = normalized.transactionKind
-      update.budget_behavior = normalized.budgetBehavior
       update.semantic_override_source = 'user'
     }
 
@@ -190,8 +182,6 @@ export async function PATCH(
 
         update.treatment = normalized.treatment
         update.refund_source = normalized.refundSource
-        update.transaction_kind = normalized.transactionKind
-        update.budget_behavior = normalized.budgetBehavior
         update.linked_transaction_id = original.id
         update.category_id = refundedCategory?.id ?? original.category_id
         update.budget_effective_date = original.date
@@ -212,8 +202,6 @@ export async function PATCH(
         })
         update.treatment = normalized.treatment
         update.refund_source = normalized.refundSource
-        update.transaction_kind = normalized.transactionKind
-        update.budget_behavior = normalized.budgetBehavior
       }
       update.budget_effective_date = update.budget_effective_date ?? transaction.date
       update.refund_match_confidence = null

@@ -23,8 +23,6 @@ type TransactionBadgeInput = Pick<
   | 'pending'
   | 'treatment'
   | 'refund_source'
-  | 'transaction_kind'
-  | 'budget_behavior'
   | 'transfer_match_status'
   | 'split_role'
   | 'split_sequence'
@@ -54,14 +52,10 @@ export function getTransactionBadgeParts(
   const needsReviewBadge = hasTransactionNeedsReviewBadge(tx)
   const treatment = deriveTransactionTreatment({
     treatment: tx.treatment,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
   })
   const refundSource = normalizeTransactionSemantics({
     treatment: tx.treatment,
     refundSource: tx.refund_source,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
     amount: Number(tx.amount),
   }).refundSource
 

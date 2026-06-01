@@ -45,7 +45,7 @@ export async function PATCH(
       await Promise.all([
         supabase
           .from('transactions')
-          .select('id, user_id, amount, category_id, tags, merchant_name, description, source, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
+          .select('id, user_id, amount, category_id, tags, merchant_name, description, source, treatment, refund_source, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, deleted_at, is_hidden_from_reports, split_role, split_group_id, split_parent_id')
           .eq('id', id)
           .eq('user_id', user.id)
           .single(),
@@ -84,7 +84,7 @@ export async function PATCH(
     if (mode === 'similar') {
       const { data: candidates, error: candidatesError } = await supabase
         .from('transactions')
-        .select('id, amount, tags, merchant_name, description, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason')
+        .select('id, amount, tags, merchant_name, description, treatment, refund_source, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason')
         .eq('user_id', user.id)
         .eq('source', transaction.source)
         .is('deleted_at', null)
@@ -120,13 +120,10 @@ export async function PATCH(
             amount: candidate.amount,
             treatment: candidate.treatment,
             refundSource: candidate.refund_source,
-            transactionKind: candidate.transaction_kind,
             category,
           })
           updatePayload.treatment = semantics.treatment
           updatePayload.refund_source = semantics.refundSource
-          updatePayload.transaction_kind = semantics.transactionKind
-          updatePayload.budget_behavior = semantics.budgetBehavior
           updatePayload.semantic_override_source = 'user'
 
           if (semantics.treatment !== 'transfer') {
@@ -161,13 +158,10 @@ export async function PATCH(
         amount: transaction.amount,
         treatment: transaction.treatment,
         refundSource: transaction.refund_source,
-        transactionKind: transaction.transaction_kind,
         category,
       })
       updatePayload.treatment = semantics.treatment
       updatePayload.refund_source = semantics.refundSource
-      updatePayload.transaction_kind = semantics.transactionKind
-      updatePayload.budget_behavior = semantics.budgetBehavior
       updatePayload.semantic_override_source = 'user'
 
       if (semantics.treatment !== 'transfer') {
@@ -182,7 +176,7 @@ export async function PATCH(
         .update(updatePayload)
         .eq('id', id)
         .eq('user_id', user.id)
-        .select('id, category_id, tags, treatment, refund_source, transaction_kind, budget_behavior, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, linked_transaction_id, budget_effective_date, refund_match_confidence, refund_match_reason, categories!transactions_category_id_fkey ( id, name, name_zh, icon, color, is_excluded_from_budget )')
+        .select('id, category_id, tags, treatment, refund_source, semantic_override_source, transfer_group_id, transfer_match_status, transfer_match_confidence, transfer_match_reason, linked_transaction_id, budget_effective_date, refund_match_confidence, refund_match_reason, categories!transactions_category_id_fkey ( id, name, name_zh, icon, color, is_excluded_from_budget )')
         .single()
 
       if (updateError) {

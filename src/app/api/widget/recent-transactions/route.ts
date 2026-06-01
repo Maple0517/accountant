@@ -7,8 +7,6 @@ import {
 } from '@/lib/api-key-auth'
 import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
-import type { TransactionKind } from '@/types'
-
 export const dynamic = 'force-dynamic'
 
 const DEFAULT_LIMIT = 7
@@ -57,17 +55,13 @@ type WidgetTransactionRow = {
   description?: string | null
   pending?: boolean | null
   source?: string | null
-  transaction_kind?: TransactionKind | null
   treatment?: string | null
   refund_source?: string | null
-  budget_behavior?: string | null
   created_at?: string | null
   updated_at?: string | null
   accounts?: WidgetAccountRelation | WidgetAccountRelation[] | null
   categories?: WidgetCategoryRelation | WidgetCategoryRelation[] | null
 }
-
-type WidgetTransactionKind = TransactionKind
 
 type WidgetTransaction = {
   id: string
@@ -79,7 +73,8 @@ type WidgetTransaction = {
   dateLabel: string
   pending: boolean
   isIncome: boolean
-  kind: WidgetTransactionKind
+  treatment: string
+  refundSource: string | null
   category: {
     id: string | null
     name: string
@@ -231,8 +226,7 @@ function toWidgetTransaction(row: WidgetTransactionRow): WidgetTransaction {
   const semantics = normalizeTransactionSemantics({
     treatment: row.treatment,
     refundSource: row.refund_source,
-    transactionKind: row.transaction_kind,
-    budgetBehavior: row.budget_behavior,
+    amount,
   })
 
   return {
@@ -245,7 +239,8 @@ function toWidgetTransaction(row: WidgetTransactionRow): WidgetTransaction {
     dateLabel,
     pending: row.pending === true,
     isIncome: amount < 0,
-    kind: semantics.transactionKind,
+    treatment: semantics.treatment,
+    refundSource: semantics.refundSource,
     category: {
       id: category?.id || null,
       name: categoryName,
@@ -310,8 +305,6 @@ const WIDGET_TRANSACTION_SELECT = `
   source,
   treatment,
   refund_source,
-  transaction_kind,
-  budget_behavior,
   created_at,
   updated_at,
   accounts!transactions_account_id_fkey (

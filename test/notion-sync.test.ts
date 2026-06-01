@@ -194,8 +194,6 @@ test('Notion semantic properties derive from canonical treatment when legacy fie
         source: 'manual',
         treatment: 'income',
         refund_source: null,
-        transaction_kind: 'normal',
-        budget_behavior: 'count_as_spending',
         is_hidden_from_reports: false,
         created_at: '2026-05-20T00:00:00Z',
         updated_at: '2026-05-20T00:00:00Z',

@@ -1,8 +1,4 @@
-import type {
-  RefundSource,
-  TransactionKind,
-  TransactionTreatment,
-} from '@/types'
+import type { RefundSource, TransactionTreatment } from '@/types'
 import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 type CategorySemantics = {
@@ -14,25 +10,19 @@ export function deriveCategoryChangeSemantics({
   amount,
   treatment,
   refundSource,
-  transactionKind,
   category,
 }: {
   amount?: number | null
   treatment?: TransactionTreatment | null
   refundSource?: RefundSource | null
-  transactionKind?: TransactionKind | null
   category: CategorySemantics
 }) {
-  const preservesRefund =
-    treatment === 'refund' ||
-    transactionKind === 'refund' ||
-    transactionKind === 'reimbursement'
+  const preservesRefund = treatment === 'refund'
 
   if (preservesRefund) {
     return normalizeTransactionSemantics({
       treatment: 'refund',
       refundSource,
-      transactionKind,
       amount,
       category,
     })

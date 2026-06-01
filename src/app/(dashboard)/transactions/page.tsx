@@ -21,11 +21,9 @@ import {
 } from '@/lib/transactions/treatment'
 import type {
   AiClassificationJob,
-  BudgetBehavior,
   Category,
   RefundSource,
   Transaction,
-  TransactionKind,
   TransactionSplitGroup,
   TransactionTreatment,
 } from '@/types'
@@ -232,20 +230,17 @@ function isIncomingSplitAmount(amount: number | string) {
   return Number(amount) > 0
 }
 
-function getTxTreatment(tx: Pick<Transaction, 'treatment' | 'transaction_kind' | 'budget_behavior'>) {
+function getTxTreatment(tx: Pick<Transaction, 'treatment'>) {
   return deriveTransactionTreatment({
     treatment: tx.treatment,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
   })
 }
 
-function getTxRefundSource(tx: Pick<Transaction, 'treatment' | 'refund_source' | 'transaction_kind' | 'budget_behavior'>) {
+function getTxRefundSource(tx: Pick<Transaction, 'treatment' | 'refund_source' | 'amount'>) {
   return normalizeTransactionSemantics({
     treatment: tx.treatment,
     refundSource: tx.refund_source,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
+    amount: Number(tx.amount),
   }).refundSource
 }
 
@@ -274,8 +269,7 @@ function getDefaultSplitSemantics(tx: TransactionWithRelations) {
     return normalizeTransactionSemantics({
       treatment: tx.treatment,
       refundSource: tx.refund_source,
-      transactionKind: tx.transaction_kind,
-      budgetBehavior: tx.budget_behavior,
+      amount: Number(tx.amount),
     })
   }
 

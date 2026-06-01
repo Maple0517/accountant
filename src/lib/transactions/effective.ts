@@ -1,11 +1,5 @@
 import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
-import type {
-  BudgetBehavior,
-  RefundSource,
-  TransactionKind,
-  TransactionSplitRole,
-  TransactionTreatment,
-} from '@/types'
+import type { RefundSource, TransactionSplitRole, TransactionTreatment } from '@/types'
 
 export type EffectiveTransactionFields = {
   amount: number | string
@@ -14,8 +8,6 @@ export type EffectiveTransactionFields = {
   effective_date?: string | null
   treatment?: TransactionTreatment | string | null
   refund_source?: RefundSource | string | null
-  transaction_kind?: TransactionKind | string | null
-  budget_behavior?: BudgetBehavior | string | null
   category_is_excluded_from_budget?: boolean | null
   deleted_at?: string | null
   is_hidden_from_reports?: boolean | null
@@ -84,7 +76,7 @@ export function getEffectiveTransactions<T extends EffectiveTransactionFields>(
 export function getTransactionSemanticAmounts(
   tx: Pick<
     EffectiveTransactionFields,
-    'amount' | 'treatment' | 'refund_source' | 'transaction_kind' | 'budget_behavior'
+    'amount' | 'treatment' | 'refund_source'
   >
 ): TransactionSemanticAmounts {
   const amount = Number(tx.amount)
@@ -97,8 +89,6 @@ export function getTransactionSemanticAmounts(
     amount,
     treatment: tx.treatment,
     refundSource: tx.refund_source,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
   })
 
   if (semantics.treatment === 'transfer' || semantics.treatment === 'excluded') {
@@ -118,8 +108,6 @@ export function getBudgetSemanticAmounts(
     | 'amount'
     | 'treatment'
     | 'refund_source'
-    | 'transaction_kind'
-    | 'budget_behavior'
     | 'category_is_excluded_from_budget'
   >
 ): TransactionSemanticAmounts {

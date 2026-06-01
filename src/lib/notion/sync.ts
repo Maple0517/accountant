@@ -1051,8 +1051,6 @@ function formatTransactionKind(transaction: Transaction) {
   const semantics = normalizeTransactionSemantics({
     treatment: transaction.treatment,
     refundSource: transaction.refund_source,
-    transactionKind: transaction.transaction_kind,
-    budgetBehavior: transaction.budget_behavior,
     amount: Number(transaction.amount),
   })
 
@@ -1071,8 +1069,6 @@ function formatBudgetTreatment(transaction: Transaction) {
   const semantics = normalizeTransactionSemantics({
     treatment: transaction.treatment,
     refundSource: transaction.refund_source,
-    transactionKind: transaction.transaction_kind,
-    budgetBehavior: transaction.budget_behavior,
     amount: Number(transaction.amount),
   })
 

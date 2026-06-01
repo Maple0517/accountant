@@ -17,8 +17,6 @@ function badgesFor(tx: DashboardRecentTransaction, t: (key: string) => string) {
   const badges: Array<{ label: string; tone: 'accent' | 'warning' | 'info' | 'muted' | 'danger' | 'success' }> = []
   const treatment = deriveTransactionTreatment({
     treatment: tx.treatment,
-    transactionKind: tx.transaction_kind,
-    budgetBehavior: tx.budget_behavior,
   })
   if (tags.some((tag) => tag.includes('ai-pending') || tag.includes('plaid-fallback'))) badges.push({ label: t('transactions.aiPending'), tone: 'accent' })
   if (tx.pending) badges.push({ label: t('common.pending'), tone: 'warning' })

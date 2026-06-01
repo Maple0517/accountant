@@ -9,6 +9,7 @@ import {
   findLikelyOriginalPurchase,
   isLikelyRefundCandidate,
 } from '@/lib/transactions/refund-matching'
+import { normalizeTransactionSemantics } from '@/lib/transactions/treatment'
 
 type TransactionRow = {
   id: string
@@ -20,7 +21,8 @@ type TransactionRow = {
   merchant_name: string | null
   description: string
   pending: boolean
-  transaction_kind: string | null
+  treatment: string | null
+  refund_source: string | null
   linked_transaction_id: string | null
   budget_effective_date: string | null
   refund_match_confidence: number | null
@@ -153,7 +155,6 @@ async function applyScan(supabase: SupabaseClient, scan: UserScan) {
       .from('transactions')
       .update({
         category_id: refundedCategory.id,
-        budget_behavior: 'count_as_spending',
         semantic_override_source:
           refund.semantic_override_source === 'user' || refund.semantic_override_source === 'rule'
             ? refund.semantic_override_source
@@ -174,13 +175,13 @@ async function applyScan(supabase: SupabaseClient, scan: UserScan) {
     const { error } = await supabase
       .from('transactions')
       .update({
-        transaction_kind: 'refund',
+        treatment: 'refund',
+        refund_source: 'merchant_refund',
         linked_transaction_id: original.id,
         category_id: refundedCategory.id,
         budget_effective_date: original.date,
         refund_match_confidence: confidence,
         refund_match_reason: reason,
-        budget_behavior: 'count_as_spending',
         semantic_override_source:
           refund.semantic_override_source === 'user' || refund.semantic_override_source === 'rule'
             ? refund.semantic_override_source
@@ -283,7 +284,12 @@ function isRefundedCategory(category: CategoryRow) {
 function isRefundLikeStoredTransaction(tx: TransactionRow) {
   if (tx.pending) return false
   if (tx.linked_transaction_id) return true
-  if (tx.transaction_kind === 'refund' || tx.transaction_kind === 'reimbursement') {
+  const semantics = normalizeTransactionSemantics({
+    treatment: tx.treatment,
+    refundSource: tx.refund_source,
+    amount: Number(tx.amount),
+  })
+  if (semantics.treatment === 'refund') {
     return Number(tx.amount) < 0
   }
 
@@ -348,7 +354,8 @@ async function scanUser(
         merchant_name: match.original.merchant_name,
         description: match.original.description,
         pending: false,
-        transaction_kind: 'normal',
+        treatment: 'spending',
+        refund_source: null,
         linked_transaction_id: null,
         budget_effective_date: null,
         refund_match_confidence: null,
@@ -377,6 +384,22 @@ function money(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })
+}
+
+function refundLikeLabel(tx: TransactionRow) {
+  const semantics = normalizeTransactionSemantics({
+    treatment: tx.treatment,
+    refundSource: tx.refund_source,
+    amount: Number(tx.amount),
+  })
+
+  if (semantics.treatment === 'refund') {
+    return semantics.refundSource === 'reimbursement'
+      ? 'reimbursement'
+      : 'refund'
+  }
+
+  return semantics.treatment
 }
 
 function tableRows(rows: string[][]) {
@@ -508,7 +531,7 @@ function renderReport(
             merchantLabel(tx),
             money(Number(tx.amount)),
             categoryLabel(categoriesById.get(tx.category_id || '')),
-            tx.transaction_kind || 'normal',
+            refundLikeLabel(tx),
           ]
         })
       ),
@@ -534,7 +557,8 @@ async function main() {
     merchant_name,
     description,
     pending,
-    transaction_kind,
+    treatment,
+    refund_source,
     linked_transaction_id,
     budget_effective_date,
     refund_match_confidence,

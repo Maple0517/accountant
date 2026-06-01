@@ -1,4 +1,3 @@
-export type TransactionKind = 'normal' | 'refund' | 'reimbursement' | 'transfer'
 export type TransactionTreatment =
   | 'spending'
   | 'income'
@@ -6,11 +5,6 @@ export type TransactionTreatment =
   | 'transfer'
   | 'excluded'
 export type RefundSource = 'merchant_refund' | 'reimbursement'
-export type BudgetBehavior =
-  | 'count_as_spending'
-  | 'count_as_income'
-  | 'exclude_as_transfer'
-  | 'exclude_manual'
 
 export type TransferMatchStatus =
   | 'unmatched'
@@ -51,8 +45,6 @@ export type Transaction = {
   notes?: string
   treatment?: TransactionTreatment | null
   refund_source?: RefundSource | null
-  transaction_kind?: TransactionKind
-  budget_behavior?: BudgetBehavior | null
   linked_transaction_id?: string | null
   budget_effective_date?: string | null
   refund_match_confidence?: number | null

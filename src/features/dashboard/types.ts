@@ -17,12 +17,10 @@ export type DashboardMonthTransaction = {
   tags?: string[] | null
   treatment?: string | null
   refund_source?: string | null
-  transaction_kind?: string | null
   linked_transaction_id?: string | null
   refund_match_confidence?: number | string | null
   refund_match_reason?: string | null
   semantic_override_source?: string | null
-  budget_behavior?: string | null
   budget_effective_date?: string | null
   date: string
   transfer_match_status?: string | null
@@ -44,8 +42,6 @@ export type DashboardRecentTransaction = {
   tags?: string[] | null
   treatment?: string | null
   refund_source?: string | null
-  transaction_kind?: string | null
-  budget_behavior?: string | null
   transfer_match_status?: string | null
   accounts?: { name?: string | null; mask?: string | null } | { name?: string | null; mask?: string | null }[] | null
   categories?: { name?: string | null; name_zh?: string | null; icon?: string | null; color?: string | null } | { name?: string | null; name_zh?: string | null; icon?: string | null; color?: string | null }[] | null

@@ -13,8 +13,6 @@ export function getMonthlySemanticAmounts(
     | 'amount'
     | 'treatment'
     | 'refund_source'
-    | 'transaction_kind'
-    | 'budget_behavior'
     | 'categories'
   >
 ) {
@@ -23,8 +21,6 @@ export function getMonthlySemanticAmounts(
     amount: tx.amount,
     treatment: tx.treatment,
     refund_source: tx.refund_source,
-    transaction_kind: tx.transaction_kind,
-    budget_behavior: tx.budget_behavior,
     category_is_excluded_from_budget: category?.is_excluded_from_budget === true,
   })
 

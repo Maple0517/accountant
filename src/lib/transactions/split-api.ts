@@ -34,8 +34,6 @@ export type SplitChildInput = {
   allocation_date?: string | null
   treatment?: TransactionTreatment
   refund_source?: RefundSource | null
-  transaction_kind?: string | null
-  budget_behavior?: string | null
   linked_transaction_id?: string | null
   merchant_name?: string | null
   description?: string | null
@@ -98,17 +96,6 @@ export const splitChildSchema = z.object({
     .enum(['merchant_refund', 'reimbursement'])
     .nullable()
     .optional(),
-  transaction_kind: z
-    .enum(['normal', 'refund', 'reimbursement', 'transfer'])
-    .optional(),
-  budget_behavior: z
-    .enum([
-      'count_as_spending',
-      'count_as_income',
-      'exclude_as_transfer',
-      'exclude_manual',
-    ])
-    .optional(),
   linked_transaction_id: optionalUuidSchema,
   merchant_name: z.union([z.string().trim().max(200), z.literal(''), z.null()]).optional(),
   description: z.union([z.string().trim().max(500), z.literal(''), z.null()]).optional(),
@@ -159,8 +146,7 @@ export function normalizeSplitRequest(body: unknown):
         const semantics = normalizeTransactionSemantics({
           treatment: child.treatment,
           refundSource: child.refund_source ?? undefined,
-          transactionKind: child.transaction_kind,
-          budgetBehavior: child.budget_behavior,
+          amount: Number(child.amount_decimal),
         })
         return {
           id: emptyToUndefined(child.id),
@@ -169,8 +155,6 @@ export function normalizeSplitRequest(body: unknown):
           allocation_date: emptyToNull(child.allocation_date),
           treatment: semantics.treatment,
           refund_source: semantics.refundSource,
-          transaction_kind: semantics.transactionKind,
-          budget_behavior: semantics.budgetBehavior,
           linked_transaction_id: emptyToNull(child.linked_transaction_id),
           merchant_name: emptyToNull(child.merchant_name),
           description: emptyToNull(child.description),
@@ -206,8 +190,6 @@ export function buildSplitPreview(
     | 'amount'
     | 'treatment'
     | 'refund_source'
-    | 'transaction_kind'
-    | 'budget_behavior'
     | 'budget_effective_date'
     | 'effective_date'
     | 'date'
@@ -251,8 +233,6 @@ export function buildSplitPreview(
       amount: amount / 10000,
       treatment: child.treatment,
       refund_source: child.refund_source,
-      transaction_kind: child.transaction_kind,
-      budget_behavior: child.budget_behavior,
       category_is_excluded_from_budget:
         child.category_id != null &&
         options.excludedCategoryIds?.has(child.category_id) === true,

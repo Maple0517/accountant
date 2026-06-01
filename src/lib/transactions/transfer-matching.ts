@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { BudgetBehavior, TransactionKind, TransferMatchStatus } from '@/types'
+import type { TransferMatchStatus } from '@/types'
 
 export type TransferAccountContext = {
   id: string
@@ -19,8 +19,7 @@ export type TransferMatchTransaction = {
 }
 
 export type TransferSemanticTreatment = {
-  transactionKind?: Extract<TransactionKind, 'transfer'>
-  budgetBehavior?: Extract<BudgetBehavior, 'exclude_as_transfer'>
+  treatment?: 'transfer'
   transferGroupId: string | null
   transferMatchStatus: Extract<
     TransferMatchStatus,
@@ -205,8 +204,7 @@ function treatment(
   return {
     ...(shouldExclude
       ? {
-          transactionKind: 'transfer' as const,
-          budgetBehavior: 'exclude_as_transfer' as const,
+          treatment: 'transfer' as const,
         }
       : {}),
     transferGroupId,
