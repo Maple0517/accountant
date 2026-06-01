@@ -9,20 +9,9 @@ import {
   isTransactionTreatment,
   normalizeTransactionSemantics,
 } from '@/lib/transactions/treatment'
-import type {
-  RefundSource,
-  TransactionKind,
-  TransactionTreatment,
-} from '@/types'
+import type { RefundSource, TransactionTreatment } from '@/types'
 
 export const dynamic = 'force-dynamic'
-
-const VALID_KINDS = new Set<TransactionKind>([
-  'normal',
-  'refund',
-  'reimbursement',
-  'transfer',
-])
 
 const VALID_TREATMENTS = new Set<TransactionTreatment>([
   'spending',
@@ -68,8 +57,8 @@ export async function PATCH(
         ? (body.refund_source as RefundSource)
         : undefined
     const requestedKind =
-      typeof body.transaction_kind === 'string' && VALID_KINDS.has(body.transaction_kind)
-        ? (body.transaction_kind as TransactionKind)
+      !hasCanonicalSemanticInput && typeof body.transaction_kind === 'string'
+        ? body.transaction_kind
         : undefined
     const requestedLinkedId =
       typeof body.linked_transaction_id === 'string'
