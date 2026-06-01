@@ -1878,7 +1878,7 @@ const TransactionItem = memo(function TransactionItem({
       tone: 'success',
     })
   }
-  if (treatment === 'transfer') badgeParts.push({ label: t('common.transfer'), tone: 'info' })
+  if (treatment === 'transfer' && !needsReviewBadge) badgeParts.push({ label: t('common.transfer'), tone: 'info' })
   if (tx.split_role === 'child') badgeParts.push({ label: `Split ${tx.split_sequence || ''}`.trim(), tone: 'accent' })
   if (tx.split_status === 'out_of_balance') badgeParts.push({ label: t('transactions.splitOutOfBalance'), tone: 'warning' })
   if (treatment === 'excluded') badgeParts.push({ label: t('common.excluded'), tone: 'muted' })
