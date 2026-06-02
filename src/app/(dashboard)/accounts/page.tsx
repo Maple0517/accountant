@@ -23,6 +23,11 @@ type AccountsApiResponse = {
   error?: string
 }
 type DisconnectMode = 'preserve_history' | 'delete_history'
+type AccountLedgerGroup = {
+  id: string
+  title: string
+  accounts: AccountRow[]
+}
 
 const REQUEST_TIMEOUT_MS = 30_000
 
@@ -100,6 +105,68 @@ function sortAccountsForLedger(accounts: AccountRow[]) {
 
     return a.name.localeCompare(b.name)
   })
+}
+
+function getAccountBankGroup(account: AccountRow, manualTitle: string, unknownTitle: string) {
+  if (account.institution_name) {
+    return {
+      id: `institution:${account.institution_name.toLocaleLowerCase()}`,
+      title: account.institution_name,
+    }
+  }
+
+  if (account.is_manual) {
+    return {
+      id: 'manual',
+      title: manualTitle,
+    }
+  }
+
+  return {
+    id: 'unknown',
+    title: unknownTitle,
+  }
+}
+
+function getGroupRiskScore(accounts: AccountRow[]) {
+  return accounts.reduce((score, account) => {
+    if (account.last_sync_error) return score + 100
+    return score + (getAccountUtilization(account) ?? 0)
+  }, 0)
+}
+
+function buildBankGroups(
+  accounts: AccountRow[],
+  manualTitle: string,
+  unknownTitle: string
+): AccountLedgerGroup[] {
+  const groups = new Map<string, AccountLedgerGroup>()
+
+  for (const account of accounts) {
+    const bankGroup = getAccountBankGroup(account, manualTitle, unknownTitle)
+    const existing = groups.get(bankGroup.id)
+
+    if (existing) {
+      existing.accounts.push(account)
+    } else {
+      groups.set(bankGroup.id, {
+        id: bankGroup.id,
+        title: bankGroup.title,
+        accounts: [account],
+      })
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      accounts: sortAccountsForLedger(group.accounts),
+    }))
+    .sort((a, b) => {
+      const riskDelta = getGroupRiskScore(b.accounts) - getGroupRiskScore(a.accounts)
+      if (riskDelta !== 0) return riskDelta
+      return a.title.localeCompare(b.title)
+    })
 }
 
 function formatAccountMask(account: AccountRow, fallback: string) {
@@ -207,21 +274,16 @@ export default function AccountsPage() {
     }
   }
 
-  const checkingAccounts = accounts.filter((a) => a.type === 'checking' || a.type === 'cash')
-  const savingsAccounts = accounts.filter((a) => a.type === 'savings' || a.type === 'investment')
-  const creditAccounts = accounts.filter((a) => a.type === 'credit')
-  const otherAccounts = accounts.filter((a) => a.type === 'other' || !a.type)
   const failedSyncCount = accounts.filter((account) => account.last_sync_error).length
   const totalCash = defaultCurrencyAccounts.filter((a) => a.type !== 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
   const creditDebt = defaultCurrencyAccounts.filter((a) => a.type === 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
   const hasMultipleCurrencies = new Set(accounts.map((account) => normalizeCurrencyCode(account.iso_currency_code))).size > 1
   const lastSync = latestSync(accounts)
-  const accountGroups = [
-    { id: 'cash-checking', title: t('accounts.cashChecking'), accounts: sortAccountsForLedger(checkingAccounts) },
-    { id: 'savings-investments', title: t('accounts.savingsInvestments'), accounts: sortAccountsForLedger(savingsAccounts) },
-    { id: 'credit-cards', title: t('accounts.creditCards'), accounts: sortAccountsForLedger(creditAccounts) },
-    { id: 'other-accounts', title: t('accounts.otherAccounts'), accounts: sortAccountsForLedger(otherAccounts) },
-  ]
+  const accountGroups = buildBankGroups(
+    accounts,
+    t('accounts.manualAccounts'),
+    t('accounts.unknownInstitution')
+  )
 
   return (
     <div className="accounts-page">
@@ -407,7 +469,6 @@ function AccountLedgerSection({
           <thead>
             <tr>
               <th>{t('accounts.ledgerAccount')}</th>
-              <th>{t('accounts.ledgerInstitution')}</th>
               <th>{t('accounts.ledgerType')}</th>
               <th className="numeric">{t('accounts.currentBalance')}</th>
               <th className="numeric">{t('accounts.ledgerAvailable')}</th>
@@ -449,7 +510,6 @@ function AccountLedgerRow({
   const currencyCode = account.iso_currency_code || defaultCurrency
   const utilization = getAccountUtilization(account)
   const syncTone = getSyncTone(account)
-  const institution = account.institution_name || (account.is_manual ? t('common.manual') : t('common.unknown'))
   const availableAmount =
     account.available_balance === null || account.available_balance === undefined
       ? null
@@ -485,9 +545,6 @@ function AccountLedgerRow({
       <td className="account-ledger-account-cell">
         <strong>{account.name}</strong>
         <span>{formatAccountMask(account, t('common.unknown'))}</span>
-      </td>
-      <td>
-        <span className="account-ledger-muted">{institution}</span>
       </td>
       <td>
         <Badge tone={getTypeTone(account)}>{account.type || t('common.unknown')}</Badge>
