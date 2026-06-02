@@ -169,6 +169,63 @@ test('getAnalyticsSummary ignores excluded budget categories even with stale spe
 })
 
 
+
+test('getAnalyticsSummary excludes pending transactions from report totals until posted', async () => {
+  const rows = [
+    {
+      amount: 4326,
+      iso_currency_code: 'USD',
+      date: '2026-06-02',
+      pending: true,
+      treatment: 'spending',
+      category_id: 'housing',
+      categories: { name: 'Housing', icon: '🏠', color: '#795548' },
+    },
+    {
+      amount: 13.71,
+      iso_currency_code: 'USD',
+      date: '2026-06-01',
+      pending: false,
+      treatment: 'spending',
+      category_id: 'shopping',
+      categories: { name: 'Shopping', icon: '🛍️', color: '#e91e63' },
+    },
+  ]
+  const supabase = {
+    from() {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        order() {
+          return Promise.resolve({ data: rows, error: null })
+        },
+      }
+      return chain
+    },
+  }
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD')
+
+  assert.equal(summary.totalSpending, 13.71)
+  assert.deepEqual(summary.byCategory, [
+    { name: 'Shopping', name_zh: '购物消费', icon: '🛍️', color: '#e91e63', total: 13.71 },
+  ])
+  assert.deepEqual(summary.byDay, [{ date: '2026-06-01', total: 13.71 }])
+})
+
 test('getAnalyticsSummary filters by selected currency and defaults null currencies to USD', async () => {
   const rows = [
     {

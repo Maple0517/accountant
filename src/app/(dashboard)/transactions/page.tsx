@@ -53,6 +53,25 @@ const SAVED_VIEWS: Array<{ id: SavedView; labelKey: string }> = [
   { id: 'large', labelKey: 'transactions.large' },
 ]
 
+const PRIMARY_SAVED_VIEW_IDS: SavedView[] = ['all', 'needs_review']
+
+const SAVED_VIEW_GROUPS: Array<{
+  id: string
+  labelKey: string
+  views: SavedView[]
+}> = [
+  {
+    id: 'attention',
+    labelKey: 'transactions.viewGroupAttention',
+    views: ['uncategorized', 'ai_pending', 'pending'],
+  },
+  {
+    id: 'explore',
+    labelKey: 'transactions.viewGroupExplore',
+    views: ['refunds', 'transfers', 'large'],
+  },
+]
+
 function getSavedViewFromParams(searchParams: URLSearchParams): SavedView {
   const savedView = searchParams.get('savedView')
   return savedView && SAVED_VIEWS.some((view) => view.id === savedView)
@@ -1287,6 +1306,43 @@ export default function TransactionsPage() {
     (filters.currency !== 'all' ? 1 : 0) +
     (filters.dateFrom ? 1 : 0) +
     (filters.dateTo ? 1 : 0)
+  const savedViewById = useMemo(
+    () => new Map(SAVED_VIEWS.map((view) => [view.id, view])),
+    []
+  )
+  const savedViewCountLabel = useCallback(
+    (viewId: SavedView) => (
+      viewCountsLoading ? '...' : String(serverViewCounts[viewId] ?? 0)
+    ),
+    [serverViewCounts, viewCountsLoading]
+  )
+  const getSavedViewGroupCount = useCallback(
+    (viewIds: SavedView[]) => (
+      viewCountsLoading
+        ? '...'
+        : String(viewIds.reduce((sum, viewId) => sum + (serverViewCounts[viewId] ?? 0), 0))
+    ),
+    [serverViewCounts, viewCountsLoading]
+  )
+  const renderSavedViewButton = useCallback(
+    (viewId: SavedView, className = 'filter-chip-button') => {
+      const view = savedViewById.get(viewId)
+      if (!view) return null
+
+      return (
+        <button
+          key={view.id}
+          type="button"
+          className={`${className} ${savedView === view.id ? 'active' : ''}`}
+          onClick={() => setSavedView(view.id)}
+        >
+          <span>{t(view.labelKey)}</span>
+          <span className="filter-chip-count">{savedViewCountLabel(view.id)}</span>
+        </button>
+      )
+    },
+    [savedView, savedViewById, savedViewCountLabel, t]
+  )
 
   const clearAllFilters = useCallback(() => {
     setSavedView('all')
@@ -1637,17 +1693,28 @@ export default function TransactionsPage() {
       <div className="card filters-bar transactions-filter-card">
         <div className="transactions-filter-toolbar">
           <div className="saved-view-row transaction-view-row" aria-label={t('transactions.savedViewsAria')}>
-            {SAVED_VIEWS.map((view) => (
-              <button
-                key={view.id}
-                type="button"
-                className={`filter-chip-button ${savedView === view.id ? 'active' : ''}`}
-                onClick={() => setSavedView(view.id)}
-              >
-                <span>{t(view.labelKey)}</span>
-                <span className="filter-chip-count">{viewCountsLoading ? '...' : serverViewCounts[view.id] ?? 0}</span>
-              </button>
-            ))}
+            {PRIMARY_SAVED_VIEW_IDS.map((viewId) => renderSavedViewButton(viewId))}
+            {SAVED_VIEW_GROUPS.map((group) => {
+              const isActiveGroup = group.views.includes(savedView)
+
+              return (
+                <details
+                  key={group.id}
+                  className={`saved-view-group ${isActiveGroup ? 'active' : ''}`}
+                  open={isActiveGroup || undefined}
+                >
+                  <summary className="filter-chip-button saved-view-group-summary">
+                    <span>{t(group.labelKey)}</span>
+                    <span className="filter-chip-count">{getSavedViewGroupCount(group.views)}</span>
+                  </summary>
+                  <div className="saved-view-group-menu">
+                    {group.views.map((viewId) =>
+                      renderSavedViewButton(viewId, 'filter-chip-button saved-view-subitem')
+                    )}
+                  </div>
+                </details>
+              )
+            })}
           </div>
         </div>
         <div className="filter-group">

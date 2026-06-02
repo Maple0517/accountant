@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { formatCurrency } from '@/lib/currency'
 import Link from 'next/link'
 import type { DashboardRecentTransaction } from './types'
-import { formatShortDate } from './dashboard-utils'
+import { formatShortDate, getPostedMoneyDrivers } from './dashboard-utils'
 import { useI18n } from '@/i18n/client'
 import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 
@@ -37,18 +37,19 @@ function badgesFor(tx: DashboardRecentTransaction, t: (key: string) => string) {
 
 export function RecentActivityCard({ transactions }: { transactions: DashboardRecentTransaction[] }) {
   const { categoryName, t } = useI18n()
+  const drivers = getPostedMoneyDrivers(transactions)
 
   return (
-    <Card padding="none" className="dashboard-panel">
+    <Card padding="none" className="dashboard-panel money-drivers-panel">
       <div className="card-header">
         <div>
-          <h3>{t('dashboard.recentActivity')}</h3>
-          <p className="card-subtitle">{t('dashboard.recentActivitySubtitle')}</p>
+          <h3>{t('dashboard.moneyDrivers')}</h3>
+          <p className="card-subtitle">{t('dashboard.moneyDriversSubtitle')}</p>
         </div>
         <ButtonLink href="/transactions" variant="ghost" size="sm">{t('dashboard.viewAll')}</ButtonLink>
       </div>
-      <div className="transaction-list">
-        {transactions.length > 0 ? transactions.map((tx) => {
+      <div className="transaction-list driver-list">
+        {drivers.length > 0 ? drivers.map((tx, index) => {
           const amount = Number(tx.amount)
           const isIncome = amount < 0
           const category = normalizeRelation(tx.categories)
@@ -56,7 +57,8 @@ export function RecentActivityCard({ transactions }: { transactions: DashboardRe
           const merchant = tx.merchant_name || tx.description || t('common.unknown')
           const label = account?.name ? `${account.name}${account.mask ? ` ••••${account.mask}` : ''}` : tx.source
           return (
-            <Link key={tx.id} className="tx-item tx-item-link" href={`/transactions?tx=${tx.id}`}>
+            <Link key={tx.id} className="tx-item tx-item-link driver-item" href={`/transactions?tx=${tx.id}`}>
+              <div className="driver-rank">#{index + 1}</div>
               <div className="tx-icon">{category?.icon || '•'}</div>
               <div className="tx-details">
                 <span className="tx-merchant">{merchant}</span>

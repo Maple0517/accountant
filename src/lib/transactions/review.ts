@@ -14,6 +14,7 @@ type RefundReviewFields = {
 
 type TransactionReviewFields = RefundReviewFields & {
   category_id?: string | null
+  pending?: boolean | null
   tags?: string[] | null
   transfer_match_status?: string | null
 }
@@ -54,6 +55,8 @@ export function needsTransferReview(tx: {
 }
 
 export function needsTransactionReview(tx: TransactionReviewFields) {
+  if (tx.pending === true) return false
+
   const tags = Array.isArray(tx.tags) ? tx.tags : []
   return (
     !tx.category_id ||

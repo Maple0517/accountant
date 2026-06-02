@@ -10,13 +10,11 @@ import {
   InsightsIcon,
   IntegrationsIcon,
   OverviewIcon,
-  ReviewIcon,
   TransactionsIcon,
 } from './icons'
 
 const NAV_ITEMS = [
   { labelKey: 'nav.overview', href: '/dashboard', icon: OverviewIcon },
-  { labelKey: 'nav.review', href: '/review', icon: ReviewIcon },
   { labelKey: 'nav.transactions', href: '/transactions', icon: TransactionsIcon },
   { labelKey: 'nav.budgets', href: '/budgets', icon: BudgetsIcon },
   { labelKey: 'nav.insights', href: '/analytics', icon: InsightsIcon },

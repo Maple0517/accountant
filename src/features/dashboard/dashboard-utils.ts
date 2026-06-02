@@ -1,4 +1,4 @@
-import type { DashboardAccount, DashboardMonthTransaction } from './types'
+import type { DashboardAccount, DashboardMonthTransaction, DashboardRecentTransaction } from './types'
 import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import {
@@ -14,6 +14,7 @@ export function getMonthlySemanticAmounts(
     | 'treatment'
     | 'refund_source'
     | 'categories'
+    | 'pending'
   >
 ) {
   const category = Array.isArray(tx.categories) ? tx.categories[0] : tx.categories
@@ -21,6 +22,7 @@ export function getMonthlySemanticAmounts(
     amount: tx.amount,
     treatment: tx.treatment,
     refund_source: tx.refund_source,
+    pending: tx.pending,
     category_is_excluded_from_budget: category?.is_excluded_from_budget === true,
   })
 
@@ -54,6 +56,8 @@ export function summarizeBalances(accounts: DashboardAccount[], currencyCode: st
 export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
   return transactions.reduce(
     (counts, tx) => {
+      if (tx.pending === true) return counts
+
       const tags = Array.isArray(tx.tags) ? tx.tags : []
       if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
         counts.aiPending += 1
@@ -67,6 +71,78 @@ export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
     },
     { aiPending: 0, uncategorized: 0, possibleRefunds: 0, unmatchedTransfers: 0 }
   )
+}
+
+export type DashboardSpendingDriver = {
+  id: string
+  label: string
+  amount: number
+  date: string
+  pending: boolean
+  currencyCode: string
+}
+
+export function getLargestSpendingDriver(
+  transactions: DashboardMonthTransaction[],
+  currencyCode: string
+): DashboardSpendingDriver | null {
+  const selectedCurrency = normalizeCurrencyCode(currencyCode)
+
+  return transactions.reduce<DashboardSpendingDriver | null>((largest, tx) => {
+    if (!tx.id) return largest
+    if (!isSameCurrency(tx.iso_currency_code, selectedCurrency)) return largest
+
+    const amount = getMonthlySemanticAmounts(tx).spending
+    if (amount <= 0) return largest
+    if (largest && amount <= largest.amount) return largest
+
+    return {
+      id: tx.id,
+      label: tx.merchant_name || tx.description || tx.source || 'Unknown',
+      amount,
+      date: tx.date,
+      pending: tx.pending === true,
+      currencyCode: selectedCurrency,
+    }
+  }, null)
+}
+
+export function getPostedMoneyDrivers(transactions: DashboardRecentTransaction[]) {
+  return [...transactions]
+    .filter((tx) => tx.pending !== true)
+    .sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0))
+    .slice(0, 5)
+}
+
+export function getDashboardStatusSummary({
+  budgetLeft,
+  budgetPercent,
+  reviewTotal,
+  monthlySpending,
+  largestDriverLabel,
+}: {
+  budgetLeft: number | null
+  budgetPercent: number | null
+  reviewTotal: number
+  monthlySpending: number
+  largestDriverLabel?: string | null
+}) {
+  if (reviewTotal > 0) {
+    return `${reviewTotal} review item${reviewTotal === 1 ? '' : 's'} need attention.`
+  }
+  if (budgetLeft !== null && budgetLeft < 0) {
+    return 'Budget is over plan. Review spending before more purchases.'
+  }
+  if (largestDriverLabel && monthlySpending > 0) {
+    if (budgetPercent !== null && budgetPercent < 0.8) {
+      return `Budget is safe, but ${largestDriverLabel} is driving this month's spend.`
+    }
+    return `${largestDriverLabel} is driving this month's spend.`
+  }
+  if (budgetLeft !== null) {
+    return 'Budget is on track and review inbox is clear.'
+  }
+  return 'Review inbox is clear. Set budgets to unlock monthly safety signals.'
 }
 
 export function formatShortDate(dateStr: string) {

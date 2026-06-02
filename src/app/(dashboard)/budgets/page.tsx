@@ -611,7 +611,7 @@ function BudgetCategoryDetail({
               : t('budgets.detailSafeCopy')}
         </p>
         <Link className="btn btn-primary btn-md" href={categoryHref}>
-          {t('review.openTransactions')}
+          {t('transactions.openTransactions')}
         </Link>
       </div>
     </div>

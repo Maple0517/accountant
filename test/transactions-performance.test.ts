@@ -159,6 +159,15 @@ test('saved view filters keep the expensive counts isolated and reusable', () =>
     ),
     false
   )
+  assert.equal(
+    operations[0].filters.some(
+      (filter) =>
+        filter.method === 'eq' &&
+        filter.column === 'pending' &&
+        filter.value === false
+    ),
+    true
+  )
 })
 
 test('countAllPendingAiClassifications ignores page filters but keeps safe visibility filters', async () => {

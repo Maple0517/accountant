@@ -458,7 +458,7 @@ a {
 .empty-copy { max-width: 36rem; }
 
 /* Dashboard */
-.dashboard, .accounts-page, .settings-page, .budgets-page, .analytics-page, .transactions-page, .review-page { display: flex; flex-direction: column; gap: 1.25rem; }
+.dashboard, .accounts-page, .settings-page, .budgets-page, .analytics-page, .transactions-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .home-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
@@ -527,9 +527,21 @@ a {
 .tx-merchant-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0; }
 .review-count-row strong, .budget-risk-row strong { color: var(--text-primary); }
 .review-count-row span:not(.badge), .budget-risk-row span:not(.badge) { color: var(--text-secondary); font-size: 0.84rem; }
-.trend-bars { display: flex; align-items: end; gap: 0.45rem; height: 14rem; padding: 1rem 1.25rem 1.25rem; }
-.trend-bar-wrap { flex: 1; min-width: 0; display: flex; height: 100%; align-items: end; }
-.trend-bar { width: 100%; min-height: 0.25rem; border-radius: 999px 999px 0 0; background: linear-gradient(180deg, #9c87ff, var(--accent)); }
+.trend-bars {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: clamp(0.16rem, 0.7vw, 0.45rem);
+  height: 14rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+.trend-bar-wrap {
+  flex: 0 0 clamp(0.5rem, 1.6vw, 1.65rem);
+  display: flex;
+  height: 100%;
+  align-items: end;
+}
+.trend-bar { width: 100%; min-height: 0.25rem; border-radius: 0.42rem 0.42rem 0 0; background: linear-gradient(180deg, #9c87ff, var(--accent)); }
 .trend-empty { height: 14rem; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .tx-item { border: 0; border-radius: 0; background: transparent; border-bottom: 1px solid var(--border-subtle); padding: 0.95rem 1.25rem; }
 .tx-item:last-child { border-bottom: 0; }
@@ -951,6 +963,36 @@ a {
   font-weight: 650;
 }
 .saved-view-row { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.saved-view-group {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.35rem;
+}
+.saved-view-group summary {
+  list-style: none;
+}
+.saved-view-group summary::-webkit-details-marker {
+  display: none;
+}
+.saved-view-group.active .saved-view-group-summary {
+  border-color: #c7b8ff;
+  background: rgba(124, 92, 255, 0.1);
+  color: var(--text-primary);
+}
+.saved-view-group-menu {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding-left: 0.35rem;
+  border-left: 1px solid var(--border-subtle);
+}
+.saved-view-subitem {
+  min-height: 1.85rem;
+  padding: 0.24rem 0.62rem;
+  background: rgba(255,255,255,0.045);
+}
 .filters-bar { padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
 .transactions-filter-card {
   position: sticky;
@@ -1923,3 +1965,175 @@ body {
   border-color: rgba(148, 163, 184, 0.16) !important;
 }
 :root[data-theme="dark"] .drawer-backdrop { background: rgba(0,0,0,0.45); }
+
+/* Action-first dashboard cockpit */
+.dashboard-cockpit { gap: 1.15rem; }
+.money-cockpit-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(300px, 0.68fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.money-cockpit-main,
+.cockpit-action-card {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: 0 18px 54px rgba(20, 32, 26, 0.055);
+}
+.money-cockpit-main {
+  min-width: 0;
+  border-radius: calc(var(--radius-lg) + 4px);
+  padding: clamp(1.15rem, 2.6vw, 1.8rem);
+  overflow: hidden;
+  position: relative;
+}
+.money-cockpit-main::after {
+  content: '';
+  position: absolute;
+  inset: auto -5rem -6rem auto;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.12), transparent 68%);
+  pointer-events: none;
+}
+.money-cockpit-header-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.money-cockpit-header-row h2 {
+  max-width: 50rem;
+  margin: 0.45rem 0 0.55rem;
+  font-size: clamp(1.85rem, 4vw, 3.35rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+.cockpit-metric-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.3rem;
+}
+.cockpit-metric-card {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-raised);
+  padding: 1rem;
+}
+.cockpit-metric-card.primary { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.1), var(--bg-surface-raised)); }
+.cockpit-metric-card.spending { background: linear-gradient(135deg, rgba(200, 63, 73, 0.1), var(--bg-surface-raised)); }
+.cockpit-metric-card strong {
+  display: block;
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-numeric);
+  font-size: clamp(1.45rem, 2.8vw, 2.15rem);
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: var(--numeric-spacing);
+  font-feature-settings: "tnum" 1;
+}
+.cockpit-metric-card strong.negative,
+.cockpit-metric-card.spending strong { color: var(--expense); }
+.cockpit-metric-card p {
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.money-cockpit-rail { display: grid; gap: 0.75rem; }
+.cockpit-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cockpit-action-card > div { min-width: 0; }
+.cockpit-action-card strong {
+  display: block;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-numeric);
+  font-size: clamp(1.1rem, 1.6vw, 1.45rem);
+  font-weight: 780;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: var(--numeric-spacing);
+  font-feature-settings: "tnum" 1;
+}
+.cockpit-action-card p {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.action-dashboard-grid { grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.75fr); }
+.dashboard-main-feed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 56rem;
+}
+.review-clear-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  margin: 0 1rem 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(18, 128, 92, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--income-soft);
+}
+.review-clear-icon {
+  display: inline-flex;
+  width: 2.15rem;
+  height: 2.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--income);
+  color: #fff;
+  font-weight: 900;
+}
+.review-clear-state strong { color: var(--text-primary); }
+.review-clear-state p {
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+.money-drivers-panel .card-header { align-items: flex-start; }
+.driver-list { gap: 0; }
+.driver-item { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+.driver-rank {
+  flex-shrink: 0;
+  min-width: 2rem;
+  color: var(--text-muted);
+  font-family: var(--font-numeric);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+@media (max-width: 1024px) {
+  .money-cockpit-hero,
+  .action-dashboard-grid { grid-template-columns: 1fr; }
+  .money-cockpit-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cockpit-action-card { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 760px) {
+  .money-cockpit-header-row,
+  .cockpit-action-card { flex-direction: column; align-items: flex-start; }
+  .cockpit-metric-grid,
+  .money-cockpit-rail { grid-template-columns: 1fr; }
+  .review-clear-state { grid-template-columns: auto minmax(0, 1fr); }
+  .review-clear-state .badge { grid-column: 1 / -1; justify-self: flex-start; }
+  .driver-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .driver-item .driver-rank { display: none; }
+}

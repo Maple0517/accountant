@@ -36,10 +36,11 @@ function isIncludedTransaction(
   tx: BudgetTransactionInput,
   monthStart: string,
   nextMonthStart: string,
-  includePending: boolean,
+  _includePending: boolean,
   budgetableExpenseCategoryIds: Set<string>,
   knownCategoryIds: Set<string>
 ): boolean {
+  void _includePending
   // Date must be within the month boundary
   if (tx.date < monthStart || tx.date >= nextMonthStart) return false
 
@@ -57,8 +58,8 @@ function isIncludedTransaction(
   if (tx.isHidden === true) return false
   if (tx.isDeleted === true) return false
 
-  // Pending check
-  if (!includePending && tx.status === 'pending') return false
+  // Pending rows are globally excluded from reports and budgets until posted.
+  if (tx.status === 'pending') return false
 
   return isBudgetSpendingLike(tx)
 }
@@ -67,15 +68,16 @@ function isEligibleForBudgetMonth(
   tx: BudgetTransactionInput,
   monthStart: string,
   nextMonthStart: string,
-  includePending: boolean,
+  _includePending: boolean,
   knownCategoryIds: Set<string>
 ): boolean {
+  void _includePending
   if (tx.date < monthStart || tx.date >= nextMonthStart) return false
   if (tx.categoryId === null) return false
   if (!knownCategoryIds.has(tx.categoryId)) return false
   if (tx.isHidden === true) return false
   if (tx.isDeleted === true) return false
-  if (!includePending && tx.status === 'pending') return false
+  if (tx.status === 'pending') return false
   return true
 }
 

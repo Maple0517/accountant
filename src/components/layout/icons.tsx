@@ -30,16 +30,6 @@ export function OverviewIcon(props: IconProps) {
   )
 }
 
-export function ReviewIcon(props: IconProps) {
-  return (
-    <IconBase {...props}>
-      <path d="M5 4h14v16H5z" />
-      <path d="m8 9 2 2 4-4" />
-      <path d="M8 15h8" />
-    </IconBase>
-  )
-}
-
 export function TransactionsIcon(props: IconProps) {
   return (
     <IconBase {...props}>

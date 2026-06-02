@@ -8,7 +8,6 @@ export const PROTECTED_PATH_PREFIXES = [
   '/accounts',
   '/budgets',
   '/settings',
-  '/review',
 ] as const
 
 export function isProtectedPath(pathname: string) {
@@ -96,7 +95,6 @@ export const config = {
     '/analytics/:path*',
     '/accounts/:path*',
     '/budgets/:path*',
-    '/review/:path*',
     '/settings/:path*',
   ],
 }
