@@ -103,7 +103,7 @@ export default function AccountCard({ account, onRefresh, onManageConnection }: 
             </button>
           )}
           {onManageConnection && (
-            <button className="btn btn-danger btn-sm" onClick={() => onManageConnection(account)} disabled={refreshing} type="button">
+            <button className="btn btn-secondary btn-sm account-card-manage" onClick={() => onManageConnection(account)} disabled={refreshing} type="button">
               {t('accounts.manageConnection')}
             </button>
           )}
