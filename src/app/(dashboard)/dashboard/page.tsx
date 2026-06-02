@@ -6,7 +6,6 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { FinancialSnapshot } from '@/features/dashboard/FinancialSnapshot'
 import { formatCurrency } from '@/lib/currency'
 import { NeedsReviewCard } from '@/features/dashboard/NeedsReviewCard'
 import { BudgetHealthCard } from '@/features/dashboard/BudgetHealthCard'
@@ -196,22 +195,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <section className="dashboard-snapshot-section">
-            <div className="snapshot-section-header">
-              <div>
-                <h3>{t('dashboard.financialSnapshot')}</h3>
-                <p className="card-subtitle">{t('dashboard.financialSnapshotSubtitle')}</p>
-              </div>
-            </div>
-            <FinancialSnapshot
-              cash={balances.cash}
-              cardDebt={balances.cardDebt}
-              monthlySpending={monthlyTotals.spending}
-              monthlyIncome={monthlyTotals.income}
-              budgetLeft={budgetLeft}
-              currencyCode={currencyCode}
-            />
-          </section>
         </>
       )}
     </div>

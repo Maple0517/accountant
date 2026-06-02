@@ -1945,8 +1945,7 @@ body {
   align-items: stretch;
 }
 .money-cockpit-main,
-.cockpit-action-card,
-.dashboard-snapshot-section {
+.cockpit-action-card {
   border: 1px solid var(--border-subtle);
   background: var(--bg-surface);
   box-shadow: 0 18px 54px rgba(20, 32, 26, 0.055);
@@ -2086,24 +2085,6 @@ body {
   font-size: 0.72rem;
   font-weight: 800;
 }
-.dashboard-snapshot-section {
-  border-radius: var(--radius-lg);
-  padding: 1rem;
-}
-.snapshot-section-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.85rem;
-}
-.snapshot-section-header h3 { margin: 0; }
-.dashboard-snapshot-section .dashboard-snapshot-grid { gap: 0.75rem; }
-.dashboard-snapshot-section .metric-card {
-  min-height: auto;
-  box-shadow: none;
-  background: var(--bg-surface-raised);
-}
-
 @media (max-width: 1024px) {
   .money-cockpit-hero,
   .action-dashboard-grid { grid-template-columns: 1fr; }
