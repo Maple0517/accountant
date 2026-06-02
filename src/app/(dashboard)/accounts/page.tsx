@@ -28,6 +28,7 @@ type AccountLedgerGroup = {
   title: string
   accounts: AccountRow[]
 }
+type AccountGroupMode = 'bank' | 'type'
 
 const REQUEST_TIMEOUT_MS = 30_000
 
@@ -169,6 +170,28 @@ function buildBankGroups(
     })
 }
 
+function buildTypeGroups(
+  accounts: AccountRow[],
+  titles: {
+    checking: string
+    savings: string
+    credit: string
+    other: string
+  }
+): AccountLedgerGroup[] {
+  const checkingAccounts = accounts.filter((a) => a.type === 'checking' || a.type === 'cash')
+  const savingsAccounts = accounts.filter((a) => a.type === 'savings' || a.type === 'investment')
+  const creditAccounts = accounts.filter((a) => a.type === 'credit')
+  const otherAccounts = accounts.filter((a) => a.type === 'other' || !a.type)
+
+  return [
+    { id: 'cash-checking', title: titles.checking, accounts: sortAccountsForLedger(checkingAccounts) },
+    { id: 'savings-investments', title: titles.savings, accounts: sortAccountsForLedger(savingsAccounts) },
+    { id: 'credit-cards', title: titles.credit, accounts: sortAccountsForLedger(creditAccounts) },
+    { id: 'other-accounts', title: titles.other, accounts: sortAccountsForLedger(otherAccounts) },
+  ].filter((group) => group.accounts.length > 0)
+}
+
 function formatAccountMask(account: AccountRow, fallback: string) {
   if (account.mask) return `•••• ${account.mask}`
   return account.subtype || account.type || fallback
@@ -188,6 +211,7 @@ export default function AccountsPage() {
   const [disconnectingMode, setDisconnectingMode] = useState<DisconnectMode | null>(null)
   const [disconnectConfirmed, setDisconnectConfirmed] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [groupMode, setGroupMode] = useState<AccountGroupMode>('bank')
 
   const handleRefresh = async (plaidItemId: string) => {
     const controller = new AbortController()
@@ -279,11 +303,19 @@ export default function AccountsPage() {
   const creditDebt = defaultCurrencyAccounts.filter((a) => a.type === 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
   const hasMultipleCurrencies = new Set(accounts.map((account) => normalizeCurrencyCode(account.iso_currency_code))).size > 1
   const lastSync = latestSync(accounts)
-  const accountGroups = buildBankGroups(
-    accounts,
-    t('accounts.manualAccounts'),
-    t('accounts.unknownInstitution')
-  )
+  const accountGroups =
+    groupMode === 'bank'
+      ? buildBankGroups(
+          accounts,
+          t('accounts.manualAccounts'),
+          t('accounts.unknownInstitution')
+        )
+      : buildTypeGroups(accounts, {
+          checking: t('accounts.cashChecking'),
+          savings: t('accounts.savingsInvestments'),
+          credit: t('accounts.creditCards'),
+          other: t('accounts.otherAccounts'),
+        })
 
   return (
     <div className="accounts-page">
@@ -325,6 +357,28 @@ export default function AccountsPage() {
         <p className="text-secondary">
           {t('accounts.defaultCurrencyOnly', { currency: defaultCurrency })}
         </p>
+      )}
+
+      {accounts.length > 0 && (
+        <div className="account-group-toolbar">
+          <span className="account-group-toolbar-label">{t('accounts.groupBy')}</span>
+          <div className="segmented-control" role="group" aria-label={t('accounts.groupBy')}>
+            <button
+              className={groupMode === 'bank' ? 'active' : ''}
+              type="button"
+              onClick={() => setGroupMode('bank')}
+            >
+              {t('accounts.groupByBank')}
+            </button>
+            <button
+              className={groupMode === 'type' ? 'active' : ''}
+              type="button"
+              onClick={() => setGroupMode('type')}
+            >
+              {t('accounts.groupByType')}
+            </button>
+          </div>
+        </div>
       )}
 
       {isLoading ? (
