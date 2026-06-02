@@ -10,7 +10,6 @@ import { FinancialSnapshot } from '@/features/dashboard/FinancialSnapshot'
 import { formatCurrency } from '@/lib/currency'
 import { NeedsReviewCard } from '@/features/dashboard/NeedsReviewCard'
 import { BudgetHealthCard } from '@/features/dashboard/BudgetHealthCard'
-import { SpendingTrendCard } from '@/features/dashboard/SpendingTrendCard'
 import { RecentActivityCard } from '@/features/dashboard/RecentActivityCard'
 import type { DashboardData } from '@/features/dashboard/types'
 import { useI18n } from '@/i18n/client'
@@ -50,7 +49,6 @@ export default function DashboardPage() {
   const { data, error, isLoading } = useSWR<DashboardData>('/api/dashboard?include=full', fetcher)
 
   const currencyCode = data?.currencyCode || 'USD'
-  const analytics = data?.analytics ?? null
   const budget = data?.budget ?? null
   const balances = summarizeBalances(data?.accounts ?? [], currencyCode)
   const monthlyTotals = (data?.monthTx ?? []).reduce(
@@ -190,7 +188,6 @@ export default function DashboardPage() {
 
           <div className="dashboard-grid action-dashboard-grid">
             <div className="dashboard-stack">
-              <SpendingTrendCard analytics={analytics} />
               <RecentActivityCard transactions={data.recentTx ?? []} />
             </div>
             <div className="dashboard-stack">
