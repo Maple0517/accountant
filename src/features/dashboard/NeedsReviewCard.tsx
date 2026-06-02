@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/Card'
 import { ButtonLink } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
 import { useI18n } from '@/i18n/client'
 import Link from 'next/link'
 
@@ -23,25 +24,36 @@ export function NeedsReviewCard({
   ]
 
   return (
-    <Card padding="none" className="dashboard-panel">
+    <Card padding="none" className="dashboard-panel review-panel">
       <div className="card-header">
         <div>
           <h3>{t('dashboard.needsReview')}</h3>
-          <p className="card-subtitle">{total === 0 ? t('dashboard.noReviewItems') : t('dashboard.itemsNeedAttention', { count: total, plural: total === 1 ? '' : 's' })}</p>
+          <p className="card-subtitle">{total === 0 ? t('dashboard.reviewClearedCopy') : t('dashboard.itemsNeedAttention', { count: total, plural: total === 1 ? '' : 's' })}</p>
         </div>
         <ButtonLink href="/review" variant="ghost" size="sm">{t('dashboard.openInbox')}</ButtonLink>
       </div>
-      <div className="review-list" style={{ padding: '1rem' }}>
-        {rows.map((row) => (
-          <Link key={row.label} className="review-count-row review-count-link" href={row.href}>
-            <div>
-              <strong>{row.label}</strong>
-              <span style={{ display: 'block' }}>{row.hint}</span>
-            </div>
-            <span className={`badge ${row.value > 0 ? 'badge-warning' : 'badge-muted'}`}>{row.value}</span>
-          </Link>
-        ))}
-      </div>
+      {total === 0 ? (
+        <div className="review-clear-state">
+          <div className="review-clear-icon">✓</div>
+          <div>
+            <strong>{t('dashboard.reviewCleared')}</strong>
+            <p>{t('dashboard.reviewClearedDetail')}</p>
+          </div>
+          <Badge tone="success">{t('common.allClear')}</Badge>
+        </div>
+      ) : (
+        <div className="review-list" style={{ padding: '1rem' }}>
+          {rows.map((row) => (
+            <Link key={row.label} className="review-count-row review-count-link" href={row.href}>
+              <div>
+                <strong>{row.label}</strong>
+                <span style={{ display: 'block' }}>{row.hint}</span>
+              </div>
+              <span className={`badge ${row.value > 0 ? 'badge-warning' : 'badge-muted'}`}>{row.value}</span>
+            </Link>
+          ))}
+        </div>
+      )}
     </Card>
   )
 }

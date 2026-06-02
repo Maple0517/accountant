@@ -10,6 +10,9 @@ export type DashboardAccount = {
 
 export type DashboardMonthTransaction = {
   id?: string
+  merchant_name?: string | null
+  description?: string | null
+  source?: string | null
   amount: number | string
   iso_currency_code?: string | null
   pending?: boolean | null

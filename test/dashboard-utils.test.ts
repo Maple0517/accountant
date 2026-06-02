@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getDashboardStatusSummary,
+  getLargestSpendingDriver,
   getMonthlySemanticAmounts,
   getReviewCounts,
 } from '@/features/dashboard/dashboard-utils'
@@ -47,5 +49,60 @@ test('dashboard review counts ignore pending-only and linked refunds', () => {
       possibleRefunds: 0,
       unmatchedTransfers: 0,
     }
+  )
+})
+
+test('dashboard largest spending driver uses budget-effective spending in selected currency', () => {
+  const driver = getLargestSpendingDriver([
+    {
+      id: 'rent',
+      amount: 4326,
+      date: '2026-06-02',
+      iso_currency_code: 'USD',
+      treatment: 'spending',
+      merchant_name: 'Bilt Housing',
+      pending: true,
+      categories: { is_excluded_from_budget: false },
+    },
+    {
+      id: 'ignored_currency',
+      amount: 9000,
+      date: '2026-06-02',
+      iso_currency_code: 'CNY',
+      treatment: 'spending',
+      merchant_name: 'Foreign charge',
+      categories: { is_excluded_from_budget: false },
+    },
+    {
+      id: 'excluded',
+      amount: 7000,
+      date: '2026-06-02',
+      iso_currency_code: 'USD',
+      treatment: 'spending',
+      merchant_name: 'Excluded transfer',
+      categories: { is_excluded_from_budget: true },
+    },
+  ], 'USD')
+
+  assert.deepEqual(driver, {
+    id: 'rent',
+    label: 'Bilt Housing',
+    amount: 4326,
+    date: '2026-06-02',
+    pending: true,
+    currencyCode: 'USD',
+  })
+})
+
+test('dashboard status summary highlights safe budget with dominant spending driver', () => {
+  assert.equal(
+    getDashboardStatusSummary({
+      budgetLeft: 4036.29,
+      budgetPercent: 0.003,
+      reviewTotal: 0,
+      monthlySpending: 5455.62,
+      largestDriverLabel: 'Bilt Housing',
+    }),
+    'Budget is safe, but Bilt Housing is driving this month\'s spend.'
   )
 })

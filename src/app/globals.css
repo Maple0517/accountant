@@ -1923,3 +1923,189 @@ body {
   border-color: rgba(148, 163, 184, 0.16) !important;
 }
 :root[data-theme="dark"] .drawer-backdrop { background: rgba(0,0,0,0.45); }
+
+/* Action-first dashboard cockpit */
+.dashboard-cockpit { gap: 1.15rem; }
+.money-cockpit-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(300px, 0.68fr);
+  gap: 1rem;
+  align-items: stretch;
+}
+.money-cockpit-main,
+.cockpit-action-card,
+.dashboard-snapshot-section {
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  box-shadow: 0 18px 54px rgba(20, 32, 26, 0.055);
+}
+.money-cockpit-main {
+  min-width: 0;
+  border-radius: calc(var(--radius-lg) + 4px);
+  padding: clamp(1.15rem, 2.6vw, 1.8rem);
+  overflow: hidden;
+  position: relative;
+}
+.money-cockpit-main::after {
+  content: '';
+  position: absolute;
+  inset: auto -5rem -6rem auto;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(var(--accent-rgb), 0.12), transparent 68%);
+  pointer-events: none;
+}
+.money-cockpit-header-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.money-cockpit-header-row h2 {
+  max-width: 50rem;
+  margin: 0.45rem 0 0.55rem;
+  font-size: clamp(1.85rem, 4vw, 3.35rem);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+}
+.cockpit-metric-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.3rem;
+}
+.cockpit-metric-card {
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-raised);
+  padding: 1rem;
+}
+.cockpit-metric-card.primary { background: linear-gradient(135deg, rgba(var(--accent-rgb), 0.1), var(--bg-surface-raised)); }
+.cockpit-metric-card.spending { background: linear-gradient(135deg, rgba(200, 63, 73, 0.1), var(--bg-surface-raised)); }
+.cockpit-metric-card strong {
+  display: block;
+  margin-top: 0.45rem;
+  overflow-wrap: anywhere;
+  font-family: var(--font-numeric);
+  font-size: clamp(1.45rem, 2.8vw, 2.15rem);
+  font-weight: 820;
+  line-height: 1;
+  letter-spacing: -0.045em;
+  font-variant-numeric: var(--numeric-spacing);
+  font-feature-settings: "tnum" 1;
+}
+.cockpit-metric-card strong.negative,
+.cockpit-metric-card.spending strong { color: var(--expense); }
+.cockpit-metric-card p {
+  margin-top: 0.45rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+.money-cockpit-rail { display: grid; gap: 0.75rem; }
+.cockpit-action-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.cockpit-action-card > div { min-width: 0; }
+.cockpit-action-card strong {
+  display: block;
+  margin-top: 0.35rem;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-family: var(--font-numeric);
+  font-size: clamp(1.1rem, 1.6vw, 1.45rem);
+  font-weight: 780;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: var(--numeric-spacing);
+  font-feature-settings: "tnum" 1;
+}
+.cockpit-action-card p {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.action-dashboard-grid { grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.75fr); }
+.review-clear-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  margin: 0 1rem 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(18, 128, 92, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--income-soft);
+}
+.review-clear-icon {
+  display: inline-flex;
+  width: 2.15rem;
+  height: 2.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--income);
+  color: #fff;
+  font-weight: 900;
+}
+.review-clear-state strong { color: var(--text-primary); }
+.review-clear-state p {
+  margin-top: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+.money-drivers-panel .card-header { align-items: flex-start; }
+.driver-list { gap: 0; }
+.driver-item { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+.driver-rank {
+  flex-shrink: 0;
+  min-width: 2rem;
+  color: var(--text-muted);
+  font-family: var(--font-numeric);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.dashboard-snapshot-section {
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.snapshot-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+.snapshot-section-header h3 { margin: 0; }
+.dashboard-snapshot-section .dashboard-snapshot-grid { gap: 0.75rem; }
+.dashboard-snapshot-section .metric-card {
+  min-height: auto;
+  box-shadow: none;
+  background: var(--bg-surface-raised);
+}
+
+@media (max-width: 1024px) {
+  .money-cockpit-hero,
+  .action-dashboard-grid { grid-template-columns: 1fr; }
+  .money-cockpit-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .cockpit-action-card { flex-direction: column; align-items: flex-start; }
+}
+
+@media (max-width: 760px) {
+  .money-cockpit-header-row,
+  .cockpit-action-card { flex-direction: column; align-items: flex-start; }
+  .cockpit-metric-grid,
+  .money-cockpit-rail { grid-template-columns: 1fr; }
+  .review-clear-state { grid-template-columns: auto minmax(0, 1fr); }
+  .review-clear-state .badge { grid-column: 1 / -1; justify-self: flex-start; }
+  .driver-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .driver-item .driver-rank { display: none; }
+}

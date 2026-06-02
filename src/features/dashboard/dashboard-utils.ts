@@ -69,6 +69,71 @@ export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
   )
 }
 
+export type DashboardSpendingDriver = {
+  id: string
+  label: string
+  amount: number
+  date: string
+  pending: boolean
+  currencyCode: string
+}
+
+export function getLargestSpendingDriver(
+  transactions: DashboardMonthTransaction[],
+  currencyCode: string
+): DashboardSpendingDriver | null {
+  const selectedCurrency = normalizeCurrencyCode(currencyCode)
+
+  return transactions.reduce<DashboardSpendingDriver | null>((largest, tx) => {
+    if (!tx.id) return largest
+    if (!isSameCurrency(tx.iso_currency_code, selectedCurrency)) return largest
+
+    const amount = getMonthlySemanticAmounts(tx).spending
+    if (amount <= 0) return largest
+    if (largest && amount <= largest.amount) return largest
+
+    return {
+      id: tx.id,
+      label: tx.merchant_name || tx.description || tx.source || 'Unknown',
+      amount,
+      date: tx.date,
+      pending: tx.pending === true,
+      currencyCode: selectedCurrency,
+    }
+  }, null)
+}
+
+export function getDashboardStatusSummary({
+  budgetLeft,
+  budgetPercent,
+  reviewTotal,
+  monthlySpending,
+  largestDriverLabel,
+}: {
+  budgetLeft: number | null
+  budgetPercent: number | null
+  reviewTotal: number
+  monthlySpending: number
+  largestDriverLabel?: string | null
+}) {
+  if (reviewTotal > 0) {
+    return `${reviewTotal} review item${reviewTotal === 1 ? '' : 's'} need attention.`
+  }
+  if (budgetLeft !== null && budgetLeft < 0) {
+    return 'Budget is over plan. Review spending before more purchases.'
+  }
+  if (largestDriverLabel && monthlySpending > 0) {
+    if (budgetPercent !== null && budgetPercent < 0.8) {
+      return `Budget is safe, but ${largestDriverLabel} is driving this month's spend.`
+    }
+    return `${largestDriverLabel} is driving this month's spend.`
+  }
+  if (budgetLeft !== null) {
+    return 'Budget is on track and review inbox is clear.'
+  }
+  return 'Review inbox is clear. Set budgets to unlock monthly safety signals.'
+}
+
 export function formatShortDate(dateStr: string) {
   const date = new Date(`${dateStr}T00:00:00`)
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
