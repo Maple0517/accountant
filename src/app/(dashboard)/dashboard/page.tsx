@@ -7,8 +7,6 @@ import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatCurrency } from '@/lib/currency'
-import { NeedsReviewCard } from '@/features/dashboard/NeedsReviewCard'
-import { BudgetHealthCard } from '@/features/dashboard/BudgetHealthCard'
 import { RecentActivityCard } from '@/features/dashboard/RecentActivityCard'
 import type { DashboardData } from '@/features/dashboard/types'
 import { useI18n } from '@/i18n/client'
@@ -184,14 +182,8 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <div className="dashboard-grid action-dashboard-grid">
-            <div className="dashboard-stack">
-              <RecentActivityCard transactions={data.recentTx ?? []} />
-            </div>
-            <div className="dashboard-stack">
-              <NeedsReviewCard counts={reviewCounts} />
-              <BudgetHealthCard summary={budget} />
-            </div>
+          <div className="dashboard-main-feed">
+            <RecentActivityCard transactions={data.recentTx ?? []} />
           </div>
 
         </>

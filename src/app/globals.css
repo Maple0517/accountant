@@ -2046,6 +2046,11 @@ body {
   font-size: 0.78rem;
 }
 .action-dashboard-grid { grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.75fr); }
+.dashboard-main-feed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 56rem;
+}
 .review-clear-state {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
