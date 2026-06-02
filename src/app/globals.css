@@ -527,9 +527,21 @@ a {
 .tx-merchant-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0; }
 .review-count-row strong, .budget-risk-row strong { color: var(--text-primary); }
 .review-count-row span:not(.badge), .budget-risk-row span:not(.badge) { color: var(--text-secondary); font-size: 0.84rem; }
-.trend-bars { display: flex; align-items: end; gap: 0.45rem; height: 14rem; padding: 1rem 1.25rem 1.25rem; }
-.trend-bar-wrap { flex: 1; min-width: 0; display: flex; height: 100%; align-items: end; }
-.trend-bar { width: 100%; min-height: 0.25rem; border-radius: 999px 999px 0 0; background: linear-gradient(180deg, #9c87ff, var(--accent)); }
+.trend-bars {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: clamp(0.16rem, 0.7vw, 0.45rem);
+  height: 14rem;
+  padding: 1rem 1.25rem 1.25rem;
+}
+.trend-bar-wrap {
+  flex: 0 0 clamp(0.5rem, 1.6vw, 1.65rem);
+  display: flex;
+  height: 100%;
+  align-items: end;
+}
+.trend-bar { width: 100%; min-height: 0.25rem; border-radius: 0.42rem 0.42rem 0 0; background: linear-gradient(180deg, #9c87ff, var(--accent)); }
 .trend-empty { height: 14rem; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
 .tx-item { border: 0; border-radius: 0; background: transparent; border-bottom: 1px solid var(--border-subtle); padding: 0.95rem 1.25rem; }
 .tx-item:last-child { border-bottom: 0; }
