@@ -80,7 +80,6 @@ export default function DashboardPage() {
     <div className="dashboard dashboard-cockpit">
       <PageHeader
         title={t('dashboard.title')}
-        subtitle={t('dashboard.subtitle')}
       />
 
       {isLoading && !data && (
