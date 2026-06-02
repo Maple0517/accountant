@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { formatCurrency } from '@/lib/currency'
 import Link from 'next/link'
 import type { DashboardRecentTransaction } from './types'
-import { formatShortDate } from './dashboard-utils'
+import { formatShortDate, getPostedMoneyDrivers } from './dashboard-utils'
 import { useI18n } from '@/i18n/client'
 import { deriveTransactionTreatment } from '@/lib/transactions/treatment'
 
@@ -37,9 +37,7 @@ function badgesFor(tx: DashboardRecentTransaction, t: (key: string) => string) {
 
 export function RecentActivityCard({ transactions }: { transactions: DashboardRecentTransaction[] }) {
   const { categoryName, t } = useI18n()
-  const drivers = [...transactions]
-    .sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0))
-    .slice(0, 5)
+  const drivers = getPostedMoneyDrivers(transactions)
 
   return (
     <Card padding="none" className="dashboard-panel money-drivers-panel">

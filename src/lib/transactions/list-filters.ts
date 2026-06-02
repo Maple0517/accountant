@@ -134,7 +134,7 @@ export function applySavedViewFilters(
 ) {
   switch (savedView) {
     case 'needs_review':
-      return query.or(
+      return query.eq('pending', false).or(
         `category_id.is.null,tags.cs.{"${AI_PENDING_TAG}"},tags.cs.{"${PLAID_FALLBACK_TAG}"},and(treatment.eq.refund,linked_transaction_id.is.null,or(refund_match_reason.is.null,refund_match_reason.neq.${MANUAL_REVIEWED_REFUND_REASON})),and(treatment.eq.transfer,or(transfer_match_status.is.null,transfer_match_status.in.(unmatched,suggested)))`
       )
     case 'uncategorized':

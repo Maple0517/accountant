@@ -123,3 +123,14 @@ test('budget semantic amounts honor category-level budget exclusion', () => {
     { netSpending: 0, income: 0, categoryNetSpend: 0 }
   )
 })
+
+test('pending transactions have no budget semantic amounts until posted', () => {
+  assert.deepEqual(
+    getBudgetSemanticAmounts({
+      amount: 4326,
+      treatment: 'spending',
+      pending: true,
+    }),
+    { netSpending: 0, income: 0, categoryNetSpend: 0 }
+  )
+})

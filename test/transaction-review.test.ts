@@ -56,6 +56,16 @@ test('refund review only flags unlinked refund handling', () => {
 test('transaction review helper keeps other review reasons independent', () => {
   assert.equal(
     needsTransactionReview({
+      pending: true,
+      category_id: null,
+      tags: ['classification:ai-pending'],
+      treatment: 'transfer',
+      transfer_match_status: 'suggested',
+    }),
+    false
+  )
+  assert.equal(
+    needsTransactionReview({
       category_id: 'cat_1',
       tags: [],
       treatment: 'spending',

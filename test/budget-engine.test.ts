@@ -380,7 +380,7 @@ test('pending transaction excluded by default', () => {
   assert.equal(result.categories[0].actualSpend, 10)
 })
 
-test('pending transaction included when setting enabled', () => {
+test('pending transaction remains excluded even when legacy setting is enabled', () => {
   const result = calculateMonthlySummary(
     makeInput({
       settings: makeSettings({ includePendingTransactions: true }),
@@ -393,8 +393,8 @@ test('pending transaction included when setting enabled', () => {
     })
   )
 
-  // Both transactions counted
-  assert.equal(result.categories[0].actualSpend, 50)
+  // Pending remains excluded globally until posted.
+  assert.equal(result.categories[0].actualSpend, 10)
 })
 
 test('no budget category — status is no_budget and percentUsed is null', () => {

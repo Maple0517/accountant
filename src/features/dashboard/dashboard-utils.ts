@@ -1,4 +1,4 @@
-import type { DashboardAccount, DashboardMonthTransaction } from './types'
+import type { DashboardAccount, DashboardMonthTransaction, DashboardRecentTransaction } from './types'
 import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import {
@@ -14,6 +14,7 @@ export function getMonthlySemanticAmounts(
     | 'treatment'
     | 'refund_source'
     | 'categories'
+    | 'pending'
   >
 ) {
   const category = Array.isArray(tx.categories) ? tx.categories[0] : tx.categories
@@ -21,6 +22,7 @@ export function getMonthlySemanticAmounts(
     amount: tx.amount,
     treatment: tx.treatment,
     refund_source: tx.refund_source,
+    pending: tx.pending,
     category_is_excluded_from_budget: category?.is_excluded_from_budget === true,
   })
 
@@ -54,6 +56,8 @@ export function summarizeBalances(accounts: DashboardAccount[], currencyCode: st
 export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
   return transactions.reduce(
     (counts, tx) => {
+      if (tx.pending === true) return counts
+
       const tags = Array.isArray(tx.tags) ? tx.tags : []
       if (tags.includes(AI_PENDING_TAG) || tags.includes(PLAID_FALLBACK_TAG)) {
         counts.aiPending += 1
@@ -101,6 +105,13 @@ export function getLargestSpendingDriver(
       currencyCode: selectedCurrency,
     }
   }, null)
+}
+
+export function getPostedMoneyDrivers(transactions: DashboardRecentTransaction[]) {
+  return [...transactions]
+    .filter((tx) => tx.pending !== true)
+    .sort((a, b) => Math.abs(Number(b.amount) || 0) - Math.abs(Number(a.amount) || 0))
+    .slice(0, 5)
 }
 
 export function getDashboardStatusSummary({

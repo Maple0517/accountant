@@ -4,6 +4,7 @@ import type { RefundSource, TransactionSplitRole, TransactionTreatment } from '@
 export type EffectiveTransactionFields = {
   amount: number | string
   date: string
+  pending?: boolean | null
   budget_effective_date?: string | null
   effective_date?: string | null
   treatment?: TransactionTreatment | string | null
@@ -109,9 +110,10 @@ export function getBudgetSemanticAmounts(
     | 'treatment'
     | 'refund_source'
     | 'category_is_excluded_from_budget'
+    | 'pending'
   >
 ): TransactionSemanticAmounts {
-  if (tx.category_is_excluded_from_budget === true) {
+  if (tx.pending === true || tx.category_is_excluded_from_budget === true) {
     return { netSpending: 0, income: 0, categoryNetSpend: 0 }
   }
 
