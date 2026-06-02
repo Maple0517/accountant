@@ -30,7 +30,7 @@ export function NeedsReviewCard({
           <h3>{t('dashboard.needsReview')}</h3>
           <p className="card-subtitle">{total === 0 ? t('dashboard.reviewClearedCopy') : t('dashboard.itemsNeedAttention', { count: total, plural: total === 1 ? '' : 's' })}</p>
         </div>
-        <ButtonLink href="/review" variant="ghost" size="sm">{t('dashboard.openInbox')}</ButtonLink>
+        <ButtonLink href="/transactions?savedView=needs_review" variant="ghost" size="sm">{t('dashboard.openInbox')}</ButtonLink>
       </div>
       {total === 0 ? (
         <div className="review-clear-state">

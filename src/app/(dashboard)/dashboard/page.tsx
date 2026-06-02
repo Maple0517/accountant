@@ -143,7 +143,7 @@ export default function DashboardPage() {
                   <strong>{reviewTotal === 0 ? t('common.allClear') : reviewTotal}</strong>
                   <p>{reviewTotal === 0 ? t('dashboard.reviewClearedCopy') : t('dashboard.itemsNeedAttention', { count: reviewTotal, plural: reviewTotal === 1 ? '' : 's' })}</p>
                 </div>
-                <Link className="btn btn-ghost btn-sm" href="/review">{t('dashboard.openInbox')}</Link>
+                <Link className="btn btn-ghost btn-sm" href="/transactions?savedView=needs_review">{t('dashboard.openInbox')}</Link>
               </Card>
 
               <Card padding="md" className="cockpit-action-card top-driver-card">

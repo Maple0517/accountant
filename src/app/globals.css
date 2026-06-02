@@ -458,7 +458,7 @@ a {
 .empty-copy { max-width: 36rem; }
 
 /* Dashboard */
-.dashboard, .accounts-page, .settings-page, .budgets-page, .analytics-page, .transactions-page, .review-page { display: flex; flex-direction: column; gap: 1.25rem; }
+.dashboard, .accounts-page, .settings-page, .budgets-page, .analytics-page, .transactions-page { display: flex; flex-direction: column; gap: 1.25rem; }
 .home-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
