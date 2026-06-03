@@ -4,7 +4,6 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'
 import { AnalyticsExploreSection } from '@/components/analytics/AnalyticsExploreSection'
-import { BudgetImpactPanel } from '@/components/analytics/BudgetImpactPanel'
 import { ChangeDriversPanel } from '@/components/analytics/ChangeDriversPanel'
 import { InsightsVerdictCard } from '@/components/analytics/InsightsVerdictCard'
 import { NeedsAttentionPanel } from '@/components/analytics/NeedsAttentionPanel'
@@ -90,7 +89,6 @@ export default function AnalyticsPage() {
             <NeedsAttentionPanel data={data} />
             <ChangeDriversPanel data={data} />
           </div>
-          <BudgetImpactPanel data={data} />
           <AnalyticsExploreSection data={data} />
         </>
       )}

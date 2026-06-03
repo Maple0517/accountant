@@ -2343,3 +2343,14 @@ body {
 .insights-budget-progress { background: rgba(23, 107, 77, 0.075); border-color: rgba(23, 107, 77, 0.14); }
 .insights-budget-progress div { background: linear-gradient(90deg, rgba(23, 107, 77, 0.82), rgba(245, 165, 36, 0.78)); }
 .insights-explore-metrics div { background: rgba(255,255,255,0.48); border-color: rgba(23, 107, 77, 0.1); }
+
+/* Insights collapsed Explore */
+.insights-explore-section.collapsed { margin-top: 0.15rem; }
+.insights-explore-hero.compact { grid-template-columns: minmax(0, 0.9fr) minmax(28rem, 1fr); align-items: center; }
+.insights-explore-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.75rem; align-items: center; }
+.insights-explore-metrics.compact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.insights-explore-toggle { min-height: 2.35rem; white-space: nowrap; }
+@media (max-width: 900px) {
+  .insights-explore-hero.compact, .insights-explore-actions, .insights-explore-metrics.compact { grid-template-columns: 1fr; }
+  .insights-explore-toggle { width: 100%; }
+}
