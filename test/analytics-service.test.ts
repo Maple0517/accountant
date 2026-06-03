@@ -467,3 +467,35 @@ test('getAnalyticsSummary includes period-over-period totals', async () => {
   })
   assert.equal(summary.changeDrivers.categories[0].delta, 30)
 })
+
+test('getAnalyticsSummary marks watch when spending rises materially', async () => {
+  const rows = [
+    {
+      amount: 160,
+      iso_currency_code: 'USD',
+      effective_date: '2026-06-03',
+      date: '2026-06-03',
+      treatment: 'spending',
+      category_id: 'food',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: 100,
+      iso_currency_code: 'USD',
+      effective_date: '2026-05-03',
+      date: '2026-05-03',
+      treatment: 'spending',
+      category_id: 'food',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+  ]
+  const supabase = makeAnalyticsSupabase(rows)
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD', {
+    now: new Date('2026-06-15T12:00:00'),
+  })
+
+  assert.equal(summary.verdict.status, 'watch')
+  assert.equal(summary.verdict.headlineKey, 'analytics.verdict.watchSpendingUp')
+  assert.equal(summary.attentionItems[0].kind, 'unusual_category')
+})

@@ -6,9 +6,12 @@ import {
   getBudgetSemanticAmounts,
 } from '@/lib/transactions/effective'
 import type {
+  AnalyticsAttentionItem,
   AnalyticsCategoryTotal,
   AnalyticsChangeDriver,
   AnalyticsData,
+  AnalyticsTotals,
+  AnalyticsVerdict,
   AnalyticsPeriod,
   AnalyticsPeriodWindow,
 } from './analytics.types'
@@ -209,6 +212,60 @@ function buildCategoryChangeDrivers(
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
 }
 
+
+function buildCategoryAttentionItems(drivers: AnalyticsChangeDriver[]): AnalyticsAttentionItem[] {
+  return drivers
+    .filter((driver) => driver.previous > 0 && driver.delta > Math.max(50, driver.previous * 0.25))
+    .slice(0, 3)
+    .map((driver) => ({
+      id: `unusual-category-${driver.id}`,
+      kind: 'unusual_category',
+      severity: 'watch',
+      titleKey: 'analytics.attention.unusualCategoryTitle',
+      bodyKey: 'analytics.attention.unusualCategoryBody',
+      amount: driver.delta,
+      categoryId: driver.id,
+      categoryName: driver.label,
+      categoryNameZh: driver.labelZh,
+      href: driver.href,
+      actionTarget: 'transactions',
+    }))
+}
+
+function buildVerdict(totals: AnalyticsTotals, attentionItems: AnalyticsAttentionItem[]): AnalyticsVerdict {
+  if (attentionItems.some((item) => item.severity === 'danger')) {
+    return {
+      status: 'danger',
+      headlineKey: 'analytics.verdict.dangerAttention',
+      reasonKeys: ['analytics.verdict.reasonNeedsAction'],
+    }
+  }
+
+  if (totals.previousSpending > 0 && totals.spending > totals.previousSpending * 1.25) {
+    return {
+      status: 'watch',
+      headlineKey: 'analytics.verdict.watchSpendingUp',
+      reasonKeys: ['analytics.verdict.reasonSpendingIncreased'],
+      primaryAmount: totals.spendingDelta,
+    }
+  }
+
+  if (totals.net < 0) {
+    return {
+      status: 'watch',
+      headlineKey: 'analytics.verdict.watchNegativeNet',
+      reasonKeys: ['analytics.verdict.reasonNegativeNet'],
+      primaryAmount: Math.abs(totals.net),
+    }
+  }
+
+  return {
+    status: 'healthy',
+    headlineKey: 'analytics.verdict.healthy',
+    reasonKeys: ['analytics.verdict.reasonOnTrack'],
+  }
+}
+
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
@@ -293,11 +350,24 @@ export async function getAnalyticsSummary(
 
   const net = totalIncome - totalSpending
   const previousNet = previousTotalIncome - previousTotalSpending
+  const totals = {
+    spending: totalSpending,
+    income: totalIncome,
+    net,
+    previousSpending: previousTotalSpending,
+    previousIncome: previousTotalIncome,
+    previousNet,
+    spendingDelta: totalSpending - previousTotalSpending,
+    incomeDelta: totalIncome - previousTotalIncome,
+    netDelta: net - previousNet,
+  }
   const changeDrivers = buildCategoryChangeDrivers(
     currentCategoryMap,
     comparisonCategoryMap,
     periodWindow
   )
+  const attentionItems = buildCategoryAttentionItems(changeDrivers)
+  const verdict = buildVerdict(totals, attentionItems)
 
   return {
     totalSpending,
@@ -320,24 +390,9 @@ export async function getAnalyticsSummary(
       total,
     })),
     periodWindow,
-    totals: {
-      spending: totalSpending,
-      income: totalIncome,
-      net,
-      previousSpending: previousTotalSpending,
-      previousIncome: previousTotalIncome,
-      previousNet,
-      spendingDelta: totalSpending - previousTotalSpending,
-      incomeDelta: totalIncome - previousTotalIncome,
-      netDelta: net - previousNet,
-    },
-    verdict: {
-      status: net < 0 ? 'watch' : 'healthy',
-      headlineKey: net < 0 ? 'analytics.verdict.watchNegativeNet' : 'analytics.verdict.healthy',
-      reasonKeys: [net < 0 ? 'analytics.verdict.reasonNegativeNet' : 'analytics.verdict.reasonOnTrack'],
-      primaryAmount: net < 0 ? Math.abs(net) : undefined,
-    },
-    attentionItems: [],
+    totals,
+    verdict,
+    attentionItems,
     changeDrivers: {
       categories: changeDrivers,
       merchants: [],
