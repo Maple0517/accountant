@@ -602,6 +602,8 @@ export default function TransactionsPage() {
   const searchParams = useSearchParams()
   const initialSavedView = getSavedViewFromParams(searchParams)
   const initialCategory = searchParams.get('category') || 'all'
+  const initialDateFrom = searchParams.get('dateFrom') || ''
+  const initialDateTo = searchParams.get('dateTo') || ''
   const initialTransactionId = searchParams.get('tx') || ''
   const localeCode = locale === 'zh' ? 'zh-CN' : 'en-US'
   const [transactions, setTransactions] = useState<TransactionWithRelations[]>([])
@@ -637,8 +639,8 @@ export default function TransactionsPage() {
     sourceOrAccount: 'all',
     category: initialCategory,
     currency: 'all',
-    dateFrom: '',
-    dateTo: '',
+    dateFrom: initialDateFrom,
+    dateTo: initialDateTo,
   })
 
   const debouncedSearch = useDebouncedValue(filters.search, 300)
@@ -670,12 +672,23 @@ export default function TransactionsPage() {
   useEffect(() => {
     const querySavedView = getSavedViewFromParams(searchParams)
     const queryCategory = searchParams.get('category') || 'all'
+    const queryDateFrom = searchParams.get('dateFrom') || ''
+    const queryDateTo = searchParams.get('dateTo') || ''
     const queryTx = searchParams.get('tx')
 
     const timeoutId = window.setTimeout(() => {
       setSavedView((current) => (current === querySavedView ? current : querySavedView))
       setFilters((current) => (
-        current.category === queryCategory ? current : { ...current, category: queryCategory }
+        current.category === queryCategory &&
+        current.dateFrom === queryDateFrom &&
+        current.dateTo === queryDateTo
+          ? current
+          : {
+              ...current,
+              category: queryCategory,
+              dateFrom: queryDateFrom,
+              dateTo: queryDateTo,
+            }
       ))
       if (queryTx) {
         setFocusedTransactionId(queryTx)

@@ -249,7 +249,7 @@ function buildBudgetImpact(
       percentUsed: category.percentUsed,
       projectedSpend: null,
       transactionsHref: transactionsHref(params),
-      budgetHref: `/budgets?month=${encodeURIComponent(budgetSummary.month)}&category=${encodeURIComponent(category.categoryId)}`,
+      budgetHref: '/budgets',
     }
   }
 
