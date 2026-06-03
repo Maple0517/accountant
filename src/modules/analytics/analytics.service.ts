@@ -5,7 +5,17 @@ import {
   getBudgetDate,
   getBudgetSemanticAmounts,
 } from '@/lib/transactions/effective'
-import type { AnalyticsData, AnalyticsPeriod } from './analytics.types'
+import type {
+  AnalyticsCategoryTotal,
+  AnalyticsChangeDriver,
+  AnalyticsData,
+  AnalyticsPeriod,
+  AnalyticsPeriodWindow,
+} from './analytics.types'
+
+type AnalyticsSummaryOptions = {
+  now?: Date
+}
 
 type AnalyticsCategoryRelation = {
   name?: string | null
@@ -19,6 +29,7 @@ type AnalyticsTransactionRow = {
   amount: number | string
   iso_currency_code?: string | null
   date: string
+  merchant_name?: string | null
   pending?: boolean | null
   category_id?: string | null
   budget_effective_date?: string | null
@@ -31,21 +42,9 @@ type AnalyticsTransactionRow = {
   categories?: AnalyticsCategoryRelation | AnalyticsCategoryRelation[] | null
 }
 
-function getDateFrom(period: AnalyticsPeriod): string {
-  const now = new Date()
+type AnalyticsBucket = 'current' | 'comparison' | 'outside'
 
-  switch (period) {
-    case 'week':
-      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split('T')[0]
-    case 'year':
-      return `${now.getFullYear()}-01-01`
-    case 'month':
-    default:
-      return getLocalMonthStart(now)
-  }
-}
+type MutableCategoryTotal = AnalyticsCategoryTotal & { id: string }
 
 export function parseAnalyticsPeriod(value: string | null): AnalyticsPeriod {
   if (value === 'week' || value === 'year') {
@@ -55,9 +54,68 @@ export function parseAnalyticsPeriod(value: string | null): AnalyticsPeriod {
   return 'month'
 }
 
+function toDateString(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
 
-function getLocalMonthStart(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`
+function addDays(date: Date, days: number): Date {
+  const copy = new Date(date)
+  copy.setDate(copy.getDate() + days)
+  return copy
+}
+
+function addMonths(date: Date, months: number): Date {
+  const copy = new Date(date)
+  copy.setMonth(copy.getMonth() + months)
+  return copy
+}
+
+function addYears(date: Date, years: number): Date {
+  const copy = new Date(date)
+  copy.setFullYear(copy.getFullYear() + years)
+  return copy
+}
+
+export function getAnalyticsPeriodWindow(period: AnalyticsPeriod, now = new Date()): AnalyticsPeriodWindow {
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const endExclusive = addDays(todayStart, 1)
+
+  if (period === 'week') {
+    const start = addDays(endExclusive, -7)
+    const comparisonEnd = start
+    const comparisonStart = addDays(comparisonEnd, -7)
+    return {
+      period,
+      startDate: toDateString(start),
+      endDate: toDateString(endExclusive),
+      comparisonStartDate: toDateString(comparisonStart),
+      comparisonEndDate: toDateString(comparisonEnd),
+    }
+  }
+
+  if (period === 'year') {
+    const start = new Date(todayStart.getFullYear(), 0, 1)
+    const comparisonStart = addYears(start, -1)
+    const comparisonEnd = addYears(endExclusive, -1)
+    return {
+      period,
+      startDate: toDateString(start),
+      endDate: toDateString(endExclusive),
+      comparisonStartDate: toDateString(comparisonStart),
+      comparisonEndDate: toDateString(comparisonEnd),
+    }
+  }
+
+  const start = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1)
+  const comparisonStart = addMonths(start, -1)
+  const comparisonEnd = addMonths(endExclusive, -1)
+  return {
+    period,
+    startDate: toDateString(start),
+    endDate: toDateString(endExclusive),
+    comparisonStartDate: toDateString(comparisonStart),
+    comparisonEndDate: toDateString(comparisonEnd),
+  }
 }
 
 function normalizeCategoryDisplay(
@@ -86,22 +144,89 @@ function isExcludedBudgetCategory(
   return cat?.is_excluded_from_budget === true
 }
 
+function transactionsHref(params: Record<string, string>) {
+  const query = new URLSearchParams(params)
+  return `/transactions?${query.toString()}`
+}
+
+function getBucket(date: string, periodWindow: AnalyticsPeriodWindow, shouldBucketByWindow: boolean): AnalyticsBucket {
+  if (!shouldBucketByWindow) return 'current'
+  if (date >= periodWindow.startDate && date < periodWindow.endDate) return 'current'
+  if (date >= periodWindow.comparisonStartDate && date < periodWindow.comparisonEndDate) return 'comparison'
+  return 'outside'
+}
+
+function incrementCategory(
+  categoryMap: Map<string, MutableCategoryTotal>,
+  tx: AnalyticsTransactionRow,
+  amount: number
+) {
+  if (amount === 0) return
+
+  const cat = normalizeCategoryDisplay(tx.categories)
+  const catKey = tx.category_id || cat.name
+  const existing = categoryMap.get(catKey) || {
+    id: catKey,
+    name: cat.name,
+    name_zh: cat.name_zh,
+    icon: cat.icon,
+    color: cat.color,
+    total: 0,
+  }
+  existing.total += amount
+  categoryMap.set(catKey, existing)
+}
+
+function buildCategoryChangeDrivers(
+  currentCategoryMap: Map<string, MutableCategoryTotal>,
+  comparisonCategoryMap: Map<string, MutableCategoryTotal>,
+  periodWindow: AnalyticsPeriodWindow
+): AnalyticsChangeDriver[] {
+  const ids = new Set([...currentCategoryMap.keys(), ...comparisonCategoryMap.keys()])
+
+  return Array.from(ids)
+    .map((id) => {
+      const current = currentCategoryMap.get(id)
+      const previous = comparisonCategoryMap.get(id)
+      const source = current || previous
+      return {
+        id,
+        label: source?.name || 'Other',
+        labelZh: source?.name_zh ?? null,
+        icon: source?.icon ?? null,
+        color: source?.color ?? null,
+        current: current?.total || 0,
+        previous: previous?.total || 0,
+        delta: (current?.total || 0) - (previous?.total || 0),
+        href: transactionsHref({
+          category: id,
+          dateFrom: periodWindow.startDate,
+          dateTo: periodWindow.endDate,
+        }),
+      }
+    })
+    .filter((driver) => driver.delta !== 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+}
+
 export async function getAnalyticsSummary(
   supabase: SupabaseClient,
   userId: string,
   period: AnalyticsPeriod,
-  currencyCode = 'USD'
+  currencyCode = 'USD',
+  options: AnalyticsSummaryOptions = {}
 ): Promise<AnalyticsData> {
-  const dateFrom = getDateFrom(period)
+  const periodWindow = getAnalyticsPeriodWindow(period, options.now)
   const selectedCurrency = normalizeCurrencyCode(currencyCode)
   const { data, error } = await supabase
     .from('transactions')
-    .select('amount, iso_currency_code, date, pending, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, treatment, refund_source, categories!transactions_category_id_fkey ( name, name_zh, icon, color, is_excluded_from_budget )')
+    .select('amount, iso_currency_code, date, merchant_name, pending, category_id, budget_effective_date, effective_date, deleted_at, is_hidden_from_reports, split_role, treatment, refund_source, categories!transactions_category_id_fkey ( name, name_zh, icon, color, is_excluded_from_budget )')
     .eq('user_id', userId)
     .is('deleted_at', null)
     .eq('is_hidden_from_reports', false)
     .neq('split_role', 'parent')
-    .gte('effective_date', dateFrom)
+    .gte('effective_date', periodWindow.comparisonStartDate)
+    .lt('effective_date', periodWindow.endDate)
     .order('effective_date', { ascending: true })
 
   if (error) {
@@ -110,11 +235,11 @@ export async function getAnalyticsSummary(
 
   let totalSpending = 0
   let totalIncome = 0
+  let previousTotalSpending = 0
+  let previousTotalIncome = 0
   const availableCurrencies = new Set<string>()
-  const categoryMap = new Map<
-    string,
-    { name: string; name_zh?: string | null; icon: string; color: string; total: number }
-  >()
+  const currentCategoryMap = new Map<string, MutableCategoryTotal>()
+  const comparisonCategoryMap = new Map<string, MutableCategoryTotal>()
   const monthMap = new Map<string, { spending: number; income: number }>()
   const dayMap = new Map<string, number>()
 
@@ -130,24 +255,23 @@ export async function getAnalyticsSummary(
       ...tx,
       category_is_excluded_from_budget: isExcludedBudgetCategory(tx.categories),
     })
+    const bucketDate = tx.effective_date || tx.date
+    const bucket = getBucket(bucketDate, periodWindow, Boolean(options.now))
+
+    if (bucket === 'outside') {
+      continue
+    }
+
+    if (bucket === 'comparison') {
+      previousTotalSpending += semanticAmounts.netSpending
+      previousTotalIncome += semanticAmounts.income
+      incrementCategory(comparisonCategoryMap, tx, semanticAmounts.categoryNetSpend)
+      continue
+    }
 
     totalSpending += semanticAmounts.netSpending
     totalIncome += semanticAmounts.income
-
-    if (semanticAmounts.categoryNetSpend !== 0) {
-      const rawCat = tx.categories
-      const cat = normalizeCategoryDisplay(rawCat)
-      const catKey = tx.category_id || cat.name
-      const existing = categoryMap.get(catKey) || {
-        name: cat.name,
-        name_zh: cat.name_zh,
-        icon: cat.icon,
-        color: cat.color,
-        total: 0,
-      }
-      existing.total += semanticAmounts.categoryNetSpend
-      categoryMap.set(catKey, existing)
-    }
+    incrementCategory(currentCategoryMap, tx, semanticAmounts.categoryNetSpend)
 
     const budgetDate = getBudgetDate(tx)
     const monthKey = budgetDate.substring(0, 7)
@@ -167,23 +291,26 @@ export async function getAnalyticsSummary(
     }
   }
 
-  const today = new Date()
-  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
-  const endDate = tomorrow.toISOString().split('T')[0]
   const net = totalIncome - totalSpending
+  const previousNet = previousTotalIncome - previousTotalSpending
+  const changeDrivers = buildCategoryChangeDrivers(
+    currentCategoryMap,
+    comparisonCategoryMap,
+    periodWindow
+  )
 
   return {
     totalSpending,
     totalIncome,
     currencyCode: selectedCurrency,
     availableCurrencies: Array.from(availableCurrencies),
-    categorySpendingTotal: Array.from(categoryMap.values()).reduce(
+    categorySpendingTotal: Array.from(currentCategoryMap.values()).reduce(
       (sum, category) => sum + Math.max(0, category.total),
       0
     ),
-    byCategory: Array.from(categoryMap.values()).sort(
-      (a, b) => b.total - a.total
-    ),
+    byCategory: Array.from(currentCategoryMap.values())
+      .sort((a, b) => b.total - a.total)
+      .map(({ id: _id, ...category }) => category),
     byMonth: Array.from(monthMap.entries()).map(([month, d]) => ({
       month,
       ...d,
@@ -192,23 +319,17 @@ export async function getAnalyticsSummary(
       date,
       total,
     })),
-    periodWindow: {
-      period,
-      startDate: dateFrom,
-      endDate,
-      comparisonStartDate: dateFrom,
-      comparisonEndDate: dateFrom,
-    },
+    periodWindow,
     totals: {
       spending: totalSpending,
       income: totalIncome,
       net,
-      previousSpending: 0,
-      previousIncome: 0,
-      previousNet: 0,
-      spendingDelta: totalSpending,
-      incomeDelta: totalIncome,
-      netDelta: net,
+      previousSpending: previousTotalSpending,
+      previousIncome: previousTotalIncome,
+      previousNet,
+      spendingDelta: totalSpending - previousTotalSpending,
+      incomeDelta: totalIncome - previousTotalIncome,
+      netDelta: net - previousNet,
     },
     verdict: {
       status: net < 0 ? 'watch' : 'healthy',
@@ -218,7 +339,7 @@ export async function getAnalyticsSummary(
     },
     attentionItems: [],
     changeDrivers: {
-      categories: [],
+      categories: changeDrivers,
       merchants: [],
     },
     budgetImpact: null,
