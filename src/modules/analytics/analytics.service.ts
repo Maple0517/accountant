@@ -167,6 +167,11 @@ export async function getAnalyticsSummary(
     }
   }
 
+  const today = new Date()
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)
+  const endDate = tomorrow.toISOString().split('T')[0]
+  const net = totalIncome - totalSpending
+
   return {
     totalSpending,
     totalIncome,
@@ -187,5 +192,35 @@ export async function getAnalyticsSummary(
       date,
       total,
     })),
+    periodWindow: {
+      period,
+      startDate: dateFrom,
+      endDate,
+      comparisonStartDate: dateFrom,
+      comparisonEndDate: dateFrom,
+    },
+    totals: {
+      spending: totalSpending,
+      income: totalIncome,
+      net,
+      previousSpending: 0,
+      previousIncome: 0,
+      previousNet: 0,
+      spendingDelta: totalSpending,
+      incomeDelta: totalIncome,
+      netDelta: net,
+    },
+    verdict: {
+      status: net < 0 ? 'watch' : 'healthy',
+      headlineKey: net < 0 ? 'analytics.verdict.watchNegativeNet' : 'analytics.verdict.healthy',
+      reasonKeys: [net < 0 ? 'analytics.verdict.reasonNegativeNet' : 'analytics.verdict.reasonOnTrack'],
+      primaryAmount: net < 0 ? Math.abs(net) : undefined,
+    },
+    attentionItems: [],
+    changeDrivers: {
+      categories: [],
+      merchants: [],
+    },
+    budgetImpact: null,
   }
 }
