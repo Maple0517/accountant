@@ -4,8 +4,7 @@ import {
   applySavedViewFilters,
   parsePositiveInt,
   SAVED_VIEWS,
-  loadSavedViewCounts,
-  countAllPendingAiClassifications,
+  loadTransactionListCounts,
   type SavedView,
   type TransactionFilterQuery,
 } from '@/lib/transactions/list-filters'
@@ -75,6 +74,7 @@ export async function GET(request: Request) {
     const savedViewParam = searchParams.get('savedView') || 'all'
     const savedView: SavedView = isSavedView(savedViewParam) ? savedViewParam : 'all'
     const includeViewCounts = searchParams.get('includeViewCounts') === 'true'
+    const includeTotalCount = searchParams.get('includeTotalCount') === 'true'
 
     const filterContext = {
       userId: user.id,
@@ -91,11 +91,14 @@ export async function GET(request: Request) {
       tx,
     }
 
+    const transactionSelectQuery =
+      includeTotalCount && !includeViewCounts
+        ? supabase.from('transactions').select(TRANSACTION_SELECT, { count: 'exact' })
+        : supabase.from('transactions').select(TRANSACTION_SELECT)
+
     const transactionsQuery = applySavedViewFilters(
       applyBaseFilters(
-        supabase
-          .from('transactions')
-          .select(TRANSACTION_SELECT, { count: 'exact' }) as unknown as TransactionFilterQuery,
+        transactionSelectQuery as unknown as TransactionFilterQuery,
         filterContext
       ),
       savedView
@@ -173,16 +176,20 @@ export async function GET(request: Request) {
       }
     })
 
-    const [viewCounts, allAiPendingCount] = await Promise.all([
-      includeViewCounts
-        ? loadSavedViewCounts(supabase as never, filterContext)
-        : Promise.resolve(undefined),
-      countAllPendingAiClassifications(supabase as never, user.id),
-    ])
+    const listCounts = includeViewCounts
+      ? await loadTransactionListCounts(supabase as never, filterContext)
+      : undefined
+    const viewCounts = listCounts?.viewCounts
+    const allAiPendingCount = listCounts?.allAiPendingCount
+    const totalCount = viewCounts
+      ? viewCounts[savedView]
+      : includeTotalCount
+        ? transactionsResult.count ?? undefined
+        : undefined
 
     return Response.json({
       transactions,
-      totalCount: transactionsResult.count || 0,
+      totalCount,
       viewCounts,
       allAiPendingCount,
       categories: (categoriesResult.data || []) as Category[],

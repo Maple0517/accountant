@@ -574,7 +574,7 @@ function emptyViewCounts(): Record<SavedView, number> {
 
 type TransactionsApiResponse = {
   transactions: TransactionWithRelations[]
-  totalCount: number
+  totalCount?: number
   viewCounts?: Record<SavedView, number>
   allAiPendingCount?: number
   categories: Category[]
@@ -715,7 +715,7 @@ export default function TransactionsPage() {
         dateFrom: queryFilters.dateFrom,
         dateTo: queryFilters.dateTo,
         tx: focusedTransactionId,
-        includeViewCounts: true,
+        includeViewCounts: (options.offset ?? 0) === 0,
       })
     },
     [focusedTransactionId, queryFilters, savedView]
@@ -754,14 +754,18 @@ export default function TransactionsPage() {
         setTransactions((current) =>
           append ? [...current, ...nextTransactions] : nextTransactions
         )
-        setTotalCount(payload.totalCount || 0)
+        if (typeof payload.totalCount === 'number') {
+          setTotalCount(payload.totalCount)
+        }
         if (payload.viewCounts) {
           setServerViewCounts((current) => ({
             ...current,
             ...payload.viewCounts,
           }))
         }
-        setAllAiPendingCount(payload.allAiPendingCount || 0)
+        if (typeof payload.allAiPendingCount === 'number') {
+          setAllAiPendingCount(payload.allAiPendingCount)
+        }
         setCategories(payload.categories || [])
         setCategoriesLoading(false)
         setAccountOptions(

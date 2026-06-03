@@ -5,6 +5,7 @@ import {
   applyBaseFilters,
   applySavedViewFilters,
   countAllPendingAiClassifications,
+  loadTransactionListCounts,
   loadSavedViewCounts,
   parsePositiveInt,
   SAVED_VIEWS,
@@ -80,6 +81,19 @@ function createCountSupabaseMock() {
   return { supabase, operations }
 }
 
+function createRpcCountSupabaseMock(data: unknown, error: { message?: string; code?: string } | null = null) {
+  const rpcCalls: Array<{ fn: string; params: Record<string, unknown> }> = []
+
+  const supabase = {
+    rpc(fn: string, params: Record<string, unknown>) {
+      rpcCalls.push({ fn, params })
+      return Promise.resolve({ data, error })
+    },
+  }
+
+  return { supabase, rpcCalls }
+}
+
 test('parsePositiveInt clamps invalid and excessive pagination input', () => {
   assert.equal(parsePositiveInt(null, 50, 100), 50)
   assert.equal(parsePositiveInt('-1', 50, 100), 50)
@@ -87,10 +101,22 @@ test('parsePositiveInt clamps invalid and excessive pagination input', () => {
   assert.equal(parsePositiveInt('25', 50, 100), 25)
 })
 
-test('loadSavedViewCounts runs one head count query per saved view with shared filters', async () => {
-  const { supabase, operations } = createCountSupabaseMock()
+test('loadTransactionListCounts uses one RPC for saved view counts and global AI pending count', async () => {
+  const { supabase, rpcCalls } = createRpcCountSupabaseMock({
+    view_counts: {
+      all: 12,
+      needs_review: 3,
+      uncategorized: 2,
+      ai_pending: 4,
+      refunds: 1,
+      transfers: 0,
+      pending: 5,
+      large: 6,
+    },
+    all_ai_pending_count: 9,
+  })
 
-  const counts = await loadSavedViewCounts(supabase as never, {
+  const result = await loadTransactionListCounts(supabase as never, {
     userId: 'user_1',
     search: 'coffee',
     sourceOrAccount: 'manual',
@@ -104,18 +130,38 @@ test('loadSavedViewCounts runs one head count query per saved view with shared f
     splitGroupId: '',
   })
 
+  assert.equal(rpcCalls.length, 1)
+  assert.equal(rpcCalls[0].fn, 'get_transaction_list_counts')
+  assert.equal(rpcCalls[0].params.p_user_id, 'user_1')
+  assert.equal(rpcCalls[0].params.p_search, 'coffee')
+  assert.deepEqual(Object.keys(result.viewCounts).sort(), [...SAVED_VIEWS].sort())
+  assert.equal(result.viewCounts.needs_review, 3)
+  assert.equal(result.allAiPendingCount, 9)
+})
+
+test('loadSavedViewCounts reuses the aggregate list count RPC', async () => {
+  const { supabase, rpcCalls } = createRpcCountSupabaseMock({
+    view_counts: Object.fromEntries(SAVED_VIEWS.map((view) => [view, 7])),
+    all_ai_pending_count: 11,
+  })
+
+  const counts = await loadSavedViewCounts(supabase as never, {
+    userId: 'user_1',
+    search: '',
+    sourceOrAccount: 'all',
+    category: 'all',
+    currency: 'all',
+    dateFrom: '',
+    dateTo: '',
+    showHidden: false,
+    showDeleted: false,
+    showSplitParents: false,
+    splitGroupId: '',
+  })
+
+  assert.equal(rpcCalls.length, 1)
   assert.deepEqual(Object.keys(counts).sort(), [...SAVED_VIEWS].sort())
-  assert.equal(counts.all satisfies number, 7)
-  assert.equal(operations.length, SAVED_VIEWS.length)
-  assert.ok(
-    operations.every(
-      (operation) =>
-        operation.table === 'transactions' &&
-        operation.selectArgs[0] === 'id' &&
-        JSON.stringify(operation.selectArgs[1]) === JSON.stringify({ count: 'exact', head: true }) &&
-        operation.filters.some((filter) => filter.method === 'eq' && filter.column === 'user_id' && filter.value === 'user_1')
-    )
-  )
+  assert.equal(counts.all, 7)
 })
 
 test('saved view filters keep the expensive counts isolated and reusable', () => {
