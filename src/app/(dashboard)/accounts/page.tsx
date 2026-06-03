@@ -7,6 +7,7 @@ import AccountCard from '@/components/accounts/AccountCard'
 import PlaidLinkButton from '@/components/accounts/PlaidLinkButton'
 import PlaidManageAccountsButton from '@/components/accounts/PlaidManageAccountsButton'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
 import { Drawer } from '@/components/ui/Drawer'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -22,6 +23,12 @@ type AccountsApiResponse = {
   error?: string
 }
 type DisconnectMode = 'preserve_history' | 'delete_history'
+type AccountLedgerGroup = {
+  id: string
+  title: string
+  accounts: AccountRow[]
+}
+type AccountGroupMode = 'bank' | 'type'
 
 const REQUEST_TIMEOUT_MS = 30_000
 
@@ -44,6 +51,155 @@ function latestSync(accounts: AccountRow[]) {
   return dates.at(-1) || null
 }
 
+function getAccountUtilization(account: AccountRow) {
+  if (account.type !== 'credit' || account.available_balance == null || account.current_balance == null) {
+    return null
+  }
+
+  const current = Number(account.current_balance)
+  const available = Number(account.available_balance)
+  const limit = current + available
+
+  if (!Number.isFinite(current) || !Number.isFinite(available) || limit <= 0) {
+    return null
+  }
+
+  return Math.max(0, Math.min(current / limit, 1))
+}
+
+function getSyncTone(account: AccountRow) {
+  if (account.last_sync_error) return 'warning' as const
+  if (account.last_synced_at) return 'success' as const
+  return 'neutral' as const
+}
+
+function getTypeTone(account: AccountRow) {
+  if (account.type === 'credit') return 'warning' as const
+  if (account.is_manual) return 'muted' as const
+  return 'info' as const
+}
+
+function getTypeRank(account: AccountRow) {
+  if (account.type === 'checking' || account.type === 'cash') return 1
+  if (account.type === 'savings' || account.type === 'investment') return 2
+  if (account.type === 'credit') return 3
+  return 4
+}
+
+function sortAccountsForLedger(accounts: AccountRow[]) {
+  return [...accounts].sort((a, b) => {
+    const aSyncRisk = a.last_sync_error ? 1 : 0
+    const bSyncRisk = b.last_sync_error ? 1 : 0
+    if (aSyncRisk !== bSyncRisk) return bSyncRisk - aSyncRisk
+
+    const aUtilization = getAccountUtilization(a) ?? -1
+    const bUtilization = getAccountUtilization(b) ?? -1
+    if (aUtilization !== bUtilization) return bUtilization - aUtilization
+
+    const aBalance = Math.abs(Number(a.current_balance || 0))
+    const bBalance = Math.abs(Number(b.current_balance || 0))
+    if (aBalance !== bBalance) return bBalance - aBalance
+
+    const aTypeRank = getTypeRank(a)
+    const bTypeRank = getTypeRank(b)
+    if (aTypeRank !== bTypeRank) return aTypeRank - bTypeRank
+
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function getAccountBankGroup(account: AccountRow, manualTitle: string, unknownTitle: string) {
+  if (account.institution_name) {
+    return {
+      id: `institution:${account.institution_name.toLocaleLowerCase()}`,
+      title: account.institution_name,
+    }
+  }
+
+  if (account.is_manual) {
+    return {
+      id: 'manual',
+      title: manualTitle,
+    }
+  }
+
+  return {
+    id: 'unknown',
+    title: unknownTitle,
+  }
+}
+
+function getGroupRiskScore(accounts: AccountRow[]) {
+  return accounts.reduce((score, account) => {
+    if (account.last_sync_error) return score + 100
+    return score + (getAccountUtilization(account) ?? 0)
+  }, 0)
+}
+
+function buildBankGroups(
+  accounts: AccountRow[],
+  manualTitle: string,
+  unknownTitle: string
+): AccountLedgerGroup[] {
+  const groups = new Map<string, AccountLedgerGroup>()
+
+  for (const account of accounts) {
+    const bankGroup = getAccountBankGroup(account, manualTitle, unknownTitle)
+    const existing = groups.get(bankGroup.id)
+
+    if (existing) {
+      existing.accounts.push(account)
+    } else {
+      groups.set(bankGroup.id, {
+        id: bankGroup.id,
+        title: bankGroup.title,
+        accounts: [account],
+      })
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      accounts: sortAccountsForLedger(group.accounts),
+    }))
+    .sort((a, b) => {
+      const riskDelta = getGroupRiskScore(b.accounts) - getGroupRiskScore(a.accounts)
+      if (riskDelta !== 0) return riskDelta
+      return a.title.localeCompare(b.title)
+    })
+}
+
+function buildTypeGroups(
+  accounts: AccountRow[],
+  titles: {
+    checking: string
+    savings: string
+    credit: string
+    other: string
+  }
+): AccountLedgerGroup[] {
+  const checkingAccounts = accounts.filter((a) => a.type === 'checking' || a.type === 'cash')
+  const savingsAccounts = accounts.filter((a) => a.type === 'savings' || a.type === 'investment')
+  const creditAccounts = accounts.filter((a) => a.type === 'credit')
+  const otherAccounts = accounts.filter((a) => a.type === 'other' || !a.type)
+
+  return [
+    { id: 'cash-checking', title: titles.checking, accounts: sortAccountsForLedger(checkingAccounts) },
+    { id: 'savings-investments', title: titles.savings, accounts: sortAccountsForLedger(savingsAccounts) },
+    { id: 'credit-cards', title: titles.credit, accounts: sortAccountsForLedger(creditAccounts) },
+    { id: 'other-accounts', title: titles.other, accounts: sortAccountsForLedger(otherAccounts) },
+  ].filter((group) => group.accounts.length > 0)
+}
+
+function formatAccountMask(account: AccountRow, fallback: string) {
+  if (account.mask) return `•••• ${account.mask}`
+  return account.subtype || account.type || fallback
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`
+}
 
 export default function AccountsPage() {
   const { formatDate, t } = useI18n()
@@ -55,6 +211,7 @@ export default function AccountsPage() {
   const [disconnectingMode, setDisconnectingMode] = useState<DisconnectMode | null>(null)
   const [disconnectConfirmed, setDisconnectConfirmed] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [groupMode, setGroupMode] = useState<AccountGroupMode>('bank')
 
   const handleRefresh = async (plaidItemId: string) => {
     const controller = new AbortController()
@@ -141,15 +298,24 @@ export default function AccountsPage() {
     }
   }
 
-  const checkingAccounts = accounts.filter((a) => a.type === 'checking' || a.type === 'cash')
-  const savingsAccounts = accounts.filter((a) => a.type === 'savings' || a.type === 'investment')
-  const creditAccounts = accounts.filter((a) => a.type === 'credit')
-  const otherAccounts = accounts.filter((a) => a.type === 'other' || !a.type)
   const failedSyncCount = accounts.filter((account) => account.last_sync_error).length
   const totalCash = defaultCurrencyAccounts.filter((a) => a.type !== 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
   const creditDebt = defaultCurrencyAccounts.filter((a) => a.type === 'credit').reduce((sum, account) => sum + Number(account.current_balance || 0), 0)
   const hasMultipleCurrencies = new Set(accounts.map((account) => normalizeCurrencyCode(account.iso_currency_code))).size > 1
   const lastSync = latestSync(accounts)
+  const accountGroups =
+    groupMode === 'bank'
+      ? buildBankGroups(
+          accounts,
+          t('accounts.manualAccounts'),
+          t('accounts.unknownInstitution')
+        )
+      : buildTypeGroups(accounts, {
+          checking: t('accounts.cashChecking'),
+          savings: t('accounts.savingsInvestments'),
+          credit: t('accounts.creditCards'),
+          other: t('accounts.otherAccounts'),
+        })
 
   return (
     <div className="accounts-page">
@@ -193,17 +359,59 @@ export default function AccountsPage() {
         </p>
       )}
 
+      {accounts.length > 0 && (
+        <div className="account-group-toolbar">
+          <span className="account-group-toolbar-label">{t('accounts.groupBy')}</span>
+          <div className="segmented-control" role="group" aria-label={t('accounts.groupBy')}>
+            <button
+              className={groupMode === 'bank' ? 'active' : ''}
+              type="button"
+              onClick={() => setGroupMode('bank')}
+            >
+              {t('accounts.groupByBank')}
+            </button>
+            <button
+              className={groupMode === 'type' ? 'active' : ''}
+              type="button"
+              onClick={() => setGroupMode('type')}
+            >
+              {t('accounts.groupByType')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {isLoading ? (
         <div className="loading-state"><div className="skeleton-card" /><div className="skeleton-card" /></div>
       ) : accounts.length === 0 ? (
         <EmptyState title={t('accounts.noAccountsTitle')}>{t('accounts.noAccountsCopy')}</EmptyState>
       ) : (
-        <div className="account-groups">
-          <AccountGroup title={t('accounts.cashChecking')} accounts={checkingAccounts} onRefresh={handleRefresh} onManageConnection={openConnectionDrawer} />
-          <AccountGroup title={t('accounts.savingsInvestments')} accounts={savingsAccounts} onRefresh={handleRefresh} onManageConnection={openConnectionDrawer} />
-          <AccountGroup title={t('accounts.creditCards')} accounts={creditAccounts} onRefresh={handleRefresh} onManageConnection={openConnectionDrawer} />
-          <AccountGroup title={t('accounts.otherAccounts')} accounts={otherAccounts} onRefresh={handleRefresh} onManageConnection={openConnectionDrawer} />
-        </div>
+        <>
+          <div className="account-ledger-stack">
+            {accountGroups.map((group) => (
+              <AccountLedgerSection
+                key={group.id}
+                title={group.title}
+                accounts={group.accounts}
+                defaultCurrency={defaultCurrency}
+                onRefresh={handleRefresh}
+                onManageConnection={openConnectionDrawer}
+              />
+            ))}
+          </div>
+
+          <div className="account-groups account-card-groups-mobile">
+            {accountGroups.map((group) => (
+              <AccountGroup
+                key={group.id}
+                title={group.title}
+                accounts={group.accounts}
+                onRefresh={handleRefresh}
+                onManageConnection={openConnectionDrawer}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <Drawer open={Boolean(selectedConnection)} title={t('accounts.manageConnection')} onClose={closeConnectionDrawer}>
@@ -277,6 +485,179 @@ export default function AccountsPage() {
         )}
       </Drawer>
     </div>
+  )
+}
+
+function AccountLedgerSection({
+  title,
+  accounts,
+  defaultCurrency,
+  onRefresh,
+  onManageConnection,
+}: {
+  title: string
+  accounts: AccountRow[]
+  defaultCurrency: string
+  onRefresh: (plaidItemId: string) => void | Promise<void>
+  onManageConnection: (account: AccountRow) => void
+}) {
+  const { t } = useI18n()
+
+  if (accounts.length === 0) return null
+
+  return (
+    <Card padding="none" className="account-ledger-card">
+      <div className="account-ledger-header">
+        <div>
+          <h2>{title}</h2>
+          <p className="card-subtitle">
+            {t('accounts.ledgerGroupCount', {
+              count: accounts.length,
+              plural: accounts.length === 1 ? '' : 's',
+            })}
+          </p>
+        </div>
+      </div>
+      <div className="account-ledger-table-wrap">
+        <table className="account-ledger-table">
+          <thead>
+            <tr>
+              <th>{t('accounts.ledgerAccount')}</th>
+              <th>{t('accounts.ledgerType')}</th>
+              <th className="numeric">{t('accounts.currentBalance')}</th>
+              <th className="numeric">{t('accounts.ledgerAvailable')}</th>
+              <th>{t('accounts.utilization')}</th>
+              <th>{t('accounts.ledgerSync')}</th>
+              <th className="actions">{t('accounts.ledgerActions')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((account) => (
+              <AccountLedgerRow
+                key={account.id}
+                account={account}
+                defaultCurrency={defaultCurrency}
+                onRefresh={onRefresh}
+                onManageConnection={onManageConnection}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  )
+}
+
+function AccountLedgerRow({
+  account,
+  defaultCurrency,
+  onRefresh,
+  onManageConnection,
+}: {
+  account: AccountRow
+  defaultCurrency: string
+  onRefresh: (plaidItemId: string) => void | Promise<void>
+  onManageConnection: (account: AccountRow) => void
+}) {
+  const { formatDate, t } = useI18n()
+  const [refreshing, setRefreshing] = useState(false)
+  const currencyCode = account.iso_currency_code || defaultCurrency
+  const utilization = getAccountUtilization(account)
+  const syncTone = getSyncTone(account)
+  const availableAmount =
+    account.available_balance === null || account.available_balance === undefined
+      ? null
+      : Number(account.available_balance)
+
+  const handleRefresh = async () => {
+    if (!account.plaid_item_id) return
+    setRefreshing(true)
+    try {
+      await onRefresh(account.plaid_item_id)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const syncLabel = (() => {
+    if (account.last_sync_error) return t('accounts.lastSyncFailed')
+    if (account.last_synced_at) {
+      return t('accounts.lastChecked', {
+        time: formatDate(new Date(account.last_synced_at), {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        }),
+      })
+    }
+    return account.is_manual ? t('accounts.manualAccount') : t('accounts.notChecked')
+  })()
+
+  return (
+    <tr className={account.last_sync_error ? 'account-ledger-row-warning' : undefined}>
+      <td className="account-ledger-account-cell">
+        <strong>{account.name}</strong>
+        <span>{formatAccountMask(account, t('common.unknown'))}</span>
+      </td>
+      <td>
+        <Badge tone={getTypeTone(account)}>{account.type || t('common.unknown')}</Badge>
+      </td>
+      <td className="numeric account-ledger-balance">
+        {formatCurrency(Number(account.current_balance || 0), currencyCode)}
+      </td>
+      <td className="numeric">
+        {availableAmount === null ? (
+          <span className="account-ledger-muted">—</span>
+        ) : (
+          formatCurrency(availableAmount, currencyCode)
+        )}
+      </td>
+      <td className="account-ledger-utilization-cell">
+        {utilization === null ? (
+          <span className="account-ledger-muted">—</span>
+        ) : (
+          <div className="account-ledger-utilization">
+            <div className="account-ledger-utilization-meta">
+              <span>{formatPercent(utilization)}</span>
+            </div>
+            <div className="progress account-ledger-progress">
+              <div
+                className={`progress-fill ${utilization >= 0.75 ? 'progress-danger' : utilization >= 0.5 ? 'progress-warning' : 'progress-success'}`}
+                style={{ width: formatPercent(utilization) }}
+              />
+            </div>
+          </div>
+        )}
+      </td>
+      <td>
+        <StatusDot tone={syncTone} label={syncLabel} />
+      </td>
+      <td className="account-ledger-actions">
+        {account.plaid_item_id ? (
+          <>
+            <button
+              className={`btn btn-ghost btn-sm ${refreshing ? 'syncing' : ''}`}
+              onClick={handleRefresh}
+              disabled={refreshing}
+              type="button"
+            >
+              {refreshing ? t('accounts.checkingUpdates') : t('accounts.checkUpdates')}
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => onManageConnection(account)}
+              disabled={refreshing}
+              type="button"
+            >
+              {t('accounts.manageConnection')}
+            </button>
+          </>
+        ) : (
+          <span className="account-ledger-muted">{t('accounts.manualAccount')}</span>
+        )}
+      </td>
+    </tr>
   )
 }
 

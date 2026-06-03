@@ -613,11 +613,122 @@ a {
 .utilization-header { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; margin-bottom: 0.45rem; }
 .account-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
 .account-card-actions .btn { width: 100%; }
+.account-card-manage { color: var(--text-secondary); }
 .btn-sync { width: 2rem; height: 2rem; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle); background: var(--bg-muted); color: var(--text-secondary); cursor: pointer; }
 .btn-sync:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-strong); }
 .btn-sync.syncing { animation: spin 1s linear infinite; }
 .sync-status { color: var(--text-secondary); font-size: 0.82rem; line-height: 1.45; border-top: 1px solid var(--border-subtle); padding-top: 0.85rem; }
 .sync-status.error { color: var(--warning); }
+
+.account-group-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+.account-group-toolbar-label {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.account-ledger-stack { display: flex; flex-direction: column; gap: 1rem; }
+.account-card-groups-mobile { display: none; }
+.account-ledger-card { overflow: hidden; }
+.account-ledger-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.account-ledger-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.account-ledger-table-wrap { width: 100%; overflow-x: auto; }
+.account-ledger-table {
+  width: 100%;
+  min-width: 1040px;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+.account-ledger-table th {
+  padding: 0.72rem 0.9rem;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: rgba(86, 102, 93, 0.035);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.account-ledger-table td {
+  padding: 0.82rem 0.9rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.account-ledger-table tbody tr:last-child td { border-bottom: 0; }
+.account-ledger-table tbody tr:hover { background: var(--bg-row-hover); }
+.account-ledger-row-warning { background: var(--warning-soft); }
+.account-ledger-table .numeric { text-align: right; font-variant-numeric: var(--numeric-spacing); font-feature-settings: "tnum" 1; }
+.account-ledger-table .actions { text-align: right; }
+.account-ledger-account-cell {
+  display: flex;
+  min-width: 13rem;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+.account-ledger-account-cell strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 780;
+  letter-spacing: -0.015em;
+}
+.account-ledger-account-cell span,
+.account-ledger-muted {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+}
+.account-ledger-balance {
+  color: var(--text-primary);
+  font-weight: 820;
+}
+.account-ledger-utilization-cell { min-width: 9rem; }
+.account-ledger-utilization {
+  display: flex;
+  min-width: 8.5rem;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.account-ledger-utilization-meta {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--text-secondary);
+  font-family: var(--font-numeric);
+  font-size: 0.74rem;
+  font-weight: 760;
+  font-variant-numeric: var(--numeric-spacing);
+  font-feature-settings: "tnum" 1;
+}
+.account-ledger-progress {
+  height: 0.42rem;
+  min-width: 7rem;
+}
+.account-ledger-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  white-space: nowrap;
+}
+.account-ledger-actions .btn { min-width: 7.2rem; }
 .plaid-link-container { display: flex; flex-direction: column; gap: 0.55rem; width: 100%; }
 .page-header-actions .plaid-link-container { width: auto; align-items: flex-end; }
 .btn-link-bank { min-width: 7.5rem; box-shadow: 0 10px 28px rgba(124,92,255,0.24); }
@@ -1649,6 +1760,8 @@ a {
   .balance-panel { padding: 0.9rem; }
   .balance-amount { font-size: 1.65rem; }
   .account-card-actions { grid-template-columns: 1fr; }
+  .account-ledger-stack { display: none; }
+  .account-card-groups-mobile { display: flex; }
   .drawer-panel { width: 100vw; }
   .split-action-card { grid-template-columns: 1fr; }
   .split-allocation-overview, .split-line-main, .split-treatment-group, .split-line-footer { grid-template-columns: 1fr; }
