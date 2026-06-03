@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { MonthlyBudgetSummary } from '@/modules/budget/budget.types'
 import { DEFAULT_CATEGORIES } from '@/lib/categories'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
 import {
@@ -7,6 +8,8 @@ import {
 } from '@/lib/transactions/effective'
 import type {
   AnalyticsAttentionItem,
+  AnalyticsBudgetImpact,
+  AnalyticsBudgetImpactItem,
   AnalyticsCategoryTotal,
   AnalyticsChangeDriver,
   AnalyticsData,
@@ -18,6 +21,7 @@ import type {
 
 type AnalyticsSummaryOptions = {
   now?: Date
+  budgetSummary?: MonthlyBudgetSummary | null
 }
 
 type AnalyticsCategoryRelation = {
@@ -213,6 +217,89 @@ function buildCategoryChangeDrivers(
 }
 
 
+
+function buildBudgetImpact(
+  budgetSummary: MonthlyBudgetSummary | null | undefined,
+  periodWindow: AnalyticsPeriodWindow,
+  selectedCurrency: string
+): AnalyticsBudgetImpact | null {
+  if (!budgetSummary || normalizeCurrencyCode(budgetSummary.currencyCode) !== selectedCurrency) return null
+
+  const toItem = (category: MonthlyBudgetSummary['categories'][number]): AnalyticsBudgetImpactItem => {
+    const params = {
+      category: category.categoryId,
+      dateFrom: periodWindow.startDate,
+      dateTo: periodWindow.endDate,
+    }
+    return {
+      categoryId: category.categoryId,
+      categoryName: category.categoryName,
+      categoryNameZh: category.categoryNameZh,
+      status:
+        category.status === 'over'
+          ? 'over'
+          : category.status === 'near'
+            ? 'at_risk'
+            : category.status === 'no_budget'
+              ? 'no_budget'
+              : 'on_track',
+      actualSpend: category.actualSpend,
+      baseBudget: category.baseBudget,
+      remaining: category.remaining,
+      percentUsed: category.percentUsed,
+      projectedSpend: null,
+      transactionsHref: transactionsHref(params),
+      budgetHref: `/budgets?month=${encodeURIComponent(budgetSummary.month)}&category=${encodeURIComponent(category.categoryId)}`,
+    }
+  }
+
+  const items = budgetSummary.categories.map(toItem)
+  return {
+    month: budgetSummary.month,
+    currencyCode: budgetSummary.currencyCode,
+    groups: {
+      over: items.filter((item) => item.status === 'over'),
+      atRisk: items.filter((item) => item.status === 'at_risk'),
+      onTrack: items.filter((item) => item.status === 'on_track'),
+      noBudget: items.filter((item) => item.status === 'no_budget' && item.actualSpend > 0),
+    },
+  }
+}
+
+function buildBudgetAttentionItems(budgetImpact: AnalyticsBudgetImpact | null): AnalyticsAttentionItem[] {
+  if (!budgetImpact) return []
+
+  const overItems = budgetImpact.groups.over.slice(0, 3).map((item) => ({
+    id: `over-budget-${item.categoryId}`,
+    kind: 'over_budget' as const,
+    severity: 'danger' as const,
+    titleKey: 'analytics.attention.overBudgetTitle',
+    bodyKey: 'analytics.attention.overBudgetBody',
+    amount: Math.abs(item.remaining),
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    categoryNameZh: item.categoryNameZh,
+    href: item.budgetHref,
+    actionTarget: 'budgets' as const,
+  }))
+
+  const atRiskItems = budgetImpact.groups.atRisk.slice(0, 3).map((item) => ({
+    id: `at-risk-budget-${item.categoryId}`,
+    kind: 'at_risk_budget' as const,
+    severity: 'watch' as const,
+    titleKey: 'analytics.attention.atRiskBudgetTitle',
+    bodyKey: 'analytics.attention.atRiskBudgetBody',
+    amount: item.remaining,
+    categoryId: item.categoryId,
+    categoryName: item.categoryName,
+    categoryNameZh: item.categoryNameZh,
+    href: item.budgetHref,
+    actionTarget: 'budgets' as const,
+  }))
+
+  return [...overItems, ...atRiskItems]
+}
+
 function buildCategoryAttentionItems(drivers: AnalyticsChangeDriver[]): AnalyticsAttentionItem[] {
   return drivers
     .filter((driver) => driver.previous > 0 && driver.delta > Math.max(50, driver.previous * 0.25))
@@ -366,7 +453,11 @@ export async function getAnalyticsSummary(
     comparisonCategoryMap,
     periodWindow
   )
-  const attentionItems = buildCategoryAttentionItems(changeDrivers)
+  const budgetImpact = buildBudgetImpact(options.budgetSummary, periodWindow, selectedCurrency)
+  const attentionItems = [
+    ...buildBudgetAttentionItems(budgetImpact),
+    ...buildCategoryAttentionItems(changeDrivers),
+  ]
   const verdict = buildVerdict(totals, attentionItems)
 
   return {
@@ -397,6 +488,6 @@ export async function getAnalyticsSummary(
       categories: changeDrivers,
       merchants: [],
     },
-    budgetImpact: null,
+    budgetImpact,
   }
 }

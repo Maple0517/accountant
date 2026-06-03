@@ -1,5 +1,6 @@
 import { getCurrentUser } from '@/lib/auth/server'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
+import { getMonthlySummary } from '@/modules/budget/budget.service'
 import { getAnalyticsSummary, parseAnalyticsPeriod } from '@/modules/analytics/analytics.service'
 
 export const dynamic = 'force-dynamic'
@@ -26,8 +27,21 @@ export async function GET(request: Request) {
         : 'USD'
     const currencyCode = normalizeCurrencyCode(requestedCurrency || defaultCurrency)
 
-    const data = await getAnalyticsSummary(supabase, user.id, period, currencyCode)
-    
+    const now = new Date()
+    const budgetMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const budgetSummary =
+      period === 'month'
+        ? await getMonthlySummary(supabase, user.id, budgetMonth).catch((error) => {
+            console.warn('Analytics budget impact unavailable:', error)
+            return null
+          })
+        : null
+
+    const data = await getAnalyticsSummary(supabase, user.id, period, currencyCode, {
+      now,
+      budgetSummary,
+    })
+
     return Response.json({ data })
   } catch (error) {
     console.error('Analytics API error:', error)

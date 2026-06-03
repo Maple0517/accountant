@@ -499,3 +499,47 @@ test('getAnalyticsSummary marks watch when spending rises materially', async () 
   assert.equal(summary.verdict.headlineKey, 'analytics.verdict.watchSpendingUp')
   assert.equal(summary.attentionItems[0].kind, 'unusual_category')
 })
+
+test('getAnalyticsSummary converts monthly budget summary into budget impact groups', async () => {
+  const supabase = makeAnalyticsSupabase([])
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD', {
+    now: new Date('2026-06-15T12:00:00'),
+    budgetSummary: {
+      userId: 'user_1',
+      month: '2026-06',
+      currencyCode: 'USD',
+      budgetingEnabled: true,
+      totalBaseBudget: 500,
+      totalActualSpend: 450,
+      totalRemaining: 50,
+      totalPercentUsed: 0.9,
+      categories: [
+        {
+          categoryId: 'food',
+          categoryName: 'Food',
+          categoryNameZh: '餐饮美食',
+          baseBudget: 100,
+          actualSpend: 130,
+          remaining: -30,
+          percentUsed: 1.3,
+          status: 'over',
+        },
+        {
+          categoryId: 'shopping',
+          categoryName: 'Shopping',
+          baseBudget: 200,
+          actualSpend: 170,
+          remaining: 30,
+          percentUsed: 0.85,
+          status: 'near',
+        },
+      ],
+    },
+  })
+
+  assert.equal(summary.budgetImpact?.groups.over[0].categoryId, 'food')
+  assert.equal(summary.budgetImpact?.groups.atRisk[0].categoryId, 'shopping')
+  assert.equal(summary.attentionItems[0].kind, 'over_budget')
+  assert.equal(summary.verdict.status, 'danger')
+})
