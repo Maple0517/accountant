@@ -7,14 +7,13 @@ import {
   PointElement,
   LineElement,
   BarElement,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
   Filler,
   ScriptableContext,
 } from 'chart.js'
-import { Doughnut, Line, Bar } from 'react-chartjs-2'
+import { Line, Bar } from 'react-chartjs-2'
 import { formatCurrency } from '@/lib/currency'
 import type { AnalyticsData } from '@/modules/analytics/analytics.types'
 import { useI18n } from '@/i18n/client'
@@ -25,7 +24,6 @@ ChartJS.register(
   PointElement,
   LineElement,
   BarElement,
-  ArcElement,
   Title,
   Tooltip,
   Legend,
@@ -140,43 +138,33 @@ export default function AnalyticsCharts({
     plugins: { legend: { labels: { color: textColor, font: { size: 12 }, usePointStyle: true, pointStyleWidth: 10 } } },
   }
 
-  const donutData = {
-    labels: positiveCategories.map((c) => categoryName(c)),
-    datasets: [{ data: positiveCategories.map((c) => c.total), backgroundColor: positiveCategories.map((c) => c.color || '#176b4d'), borderWidth: 0, spacing: 2 }],
-  }
-
-  const donutOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    cutout: '72%',
-    plugins: { legend: { display: false } },
-  }
-
   return (
-    <div className="charts-grid">
-      <div className="card chart-card full-width">
-        <h3>{t('analytics.categoryRanking')}</h3>
+    <div className="charts-grid refined">
+      <div className="card chart-card full-width chart-card-featured">
+        <div className="chart-card-heading">
+          <h3>{t('analytics.categoryRanking')}</h3>
+          <p>{t('analytics.categoryRankingSubtitle')}</p>
+        </div>
         <div className="chart-container">
           <Bar data={categoryData} options={categoryOptions} aria-label={t('analytics.categoryRankingAria')} />
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>{t('analytics.dailyTrend')}</h3>
+        <div className="chart-card-heading">
+          <h3>{t('analytics.dailyTrend')}</h3>
+          <p>{t('analytics.dailyTrendSubtitle')}</p>
+        </div>
         <div className="chart-container">
           <Line data={lineData} options={lineOptions} aria-label={t('analytics.dailyTrendAria')} />
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>{t('analytics.categoryShare')}</h3>
-        <div className="chart-container pie-container">
-          <Doughnut data={donutData} options={donutOptions} aria-label={t('analytics.categoryShareAria')} />
+        <div className="chart-card-heading">
+          <h3>{t('analytics.incomeVsSpending')}</h3>
+          <p>{t('analytics.incomeVsSpendingSubtitle')}</p>
         </div>
-      </div>
-
-      <div className="card chart-card full-width">
-        <h3>{t('analytics.incomeVsSpending')}</h3>
         <div className="chart-container">
           <Bar data={barData} options={barOptions} aria-label={t('analytics.incomeVsSpendingAria')} />
         </div>
