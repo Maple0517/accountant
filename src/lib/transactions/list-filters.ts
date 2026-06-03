@@ -19,6 +19,16 @@ type TransactionQueryResult = {
   error: { message?: string } | null
 }
 
+type TransactionListCounts = {
+  viewCounts: Record<SavedView, number>
+  allAiPendingCount: number
+}
+
+type TransactionListCountsRpcResult = {
+  view_counts?: Record<string, unknown> | null
+  all_ai_pending_count?: unknown
+}
+
 export type TransactionFilterQuery = PromiseLike<TransactionQueryResult> & {
   eq(column: string, value: unknown): TransactionFilterQuery
   neq(column: string, value: unknown): TransactionFilterQuery
@@ -187,7 +197,47 @@ export async function countSavedView(
   return count || 0
 }
 
-export async function loadSavedViewCounts(
+function buildDefaultSavedViewCounts() {
+  return Object.fromEntries(SAVED_VIEWS.map((view) => [view, 0])) as Record<
+    SavedView,
+    number
+  >
+}
+
+function normalizeRpcListCounts(data: unknown): TransactionListCounts | null {
+  if (!data || typeof data !== 'object') {
+    return null
+  }
+
+  const raw = data as TransactionListCountsRpcResult
+  const rawViewCounts = raw.view_counts
+  if (!rawViewCounts || typeof rawViewCounts !== 'object') {
+    return null
+  }
+
+  const viewCounts = buildDefaultSavedViewCounts()
+  for (const view of SAVED_VIEWS) {
+    const value = rawViewCounts[view]
+    viewCounts[view] =
+      typeof value === 'number' && Number.isFinite(value) ? value : Number(value || 0)
+  }
+
+  const allAiPendingCount = Number(raw.all_ai_pending_count || 0)
+  return {
+    viewCounts,
+    allAiPendingCount: Number.isFinite(allAiPendingCount) ? allAiPendingCount : 0,
+  }
+}
+
+function isMissingRpcError(error: { code?: string; message?: string } | null | undefined) {
+  return (
+    error?.code === 'PGRST202' ||
+    Boolean(error?.message?.includes('get_transaction_list_counts')) ||
+    Boolean(error?.message?.includes('Could not find the function'))
+  )
+}
+
+async function loadSavedViewCountsFallback(
   supabase: Parameters<typeof countSavedView>[0],
   filterContext: Parameters<typeof applyBaseFilters>[1]
 ) {
@@ -198,6 +248,57 @@ export async function loadSavedViewCounts(
   )
 
   return Object.fromEntries(entries) as Record<SavedView, number>
+}
+
+export async function loadTransactionListCounts(
+  supabase: Parameters<typeof countSavedView>[0] & {
+    rpc?: (
+      fn: string,
+      params: Record<string, unknown>
+    ) => PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>
+  },
+  filterContext: Parameters<typeof applyBaseFilters>[1]
+): Promise<TransactionListCounts> {
+  if (typeof supabase.rpc === 'function') {
+    const { data, error } = await supabase.rpc('get_transaction_list_counts', {
+      p_user_id: filterContext.userId,
+      p_search: filterContext.search,
+      p_source_or_account: filterContext.sourceOrAccount,
+      p_category: filterContext.category,
+      p_currency: filterContext.currency,
+      p_date_from: filterContext.dateFrom,
+      p_date_to: filterContext.dateTo,
+      p_show_hidden: filterContext.showHidden,
+      p_show_deleted: filterContext.showDeleted,
+      p_show_split_parents: filterContext.showSplitParents,
+      p_split_group_id: filterContext.splitGroupId,
+      p_tx: filterContext.tx ?? '',
+    })
+
+    if (!error) {
+      const normalized = normalizeRpcListCounts(data)
+      if (normalized) {
+        return normalized
+      }
+      console.warn('Transaction list count RPC returned unexpected shape:', data)
+    } else if (!isMissingRpcError(error)) {
+      console.warn('Transaction list count RPC failed, falling back to head counts:', error)
+    }
+  }
+
+  const [viewCounts, allAiPendingCount] = await Promise.all([
+    loadSavedViewCountsFallback(supabase, filterContext),
+    countAllPendingAiClassifications(supabase, filterContext.userId),
+  ])
+
+  return { viewCounts, allAiPendingCount }
+}
+
+export async function loadSavedViewCounts(
+  supabase: Parameters<typeof countSavedView>[0],
+  filterContext: Parameters<typeof applyBaseFilters>[1]
+) {
+  return (await loadTransactionListCounts(supabase, filterContext)).viewCounts
 }
 
 export async function countAllPendingAiClassifications(

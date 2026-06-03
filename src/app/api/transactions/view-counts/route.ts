@@ -1,8 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import {
   applyBaseFilters,
-  loadSavedViewCounts,
-  countAllPendingAiClassifications,
+  loadTransactionListCounts,
 } from '@/lib/transactions/list-filters'
 
 export const dynamic = 'force-dynamic'
@@ -34,10 +33,10 @@ export async function GET(request: Request) {
       tx: '',
     }
 
-    const [viewCounts, allAiPendingCount] = await Promise.all([
-      loadSavedViewCounts(supabase as never, filterContext),
-      countAllPendingAiClassifications(supabase as never, user.id),
-    ])
+    const { viewCounts, allAiPendingCount } = await loadTransactionListCounts(
+      supabase as never,
+      filterContext
+    )
 
     return Response.json({ viewCounts, allAiPendingCount })
   } catch (error: unknown) {

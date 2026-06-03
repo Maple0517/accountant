@@ -2,9 +2,42 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  getAnalyticsPeriodWindow,
   getAnalyticsSummary,
   parseAnalyticsPeriod,
 } from '@/modules/analytics/analytics.service'
+
+
+function makeAnalyticsSupabase(rows: unknown[]) {
+  return {
+    from() {
+      const chain = {
+        select() {
+          return chain
+        },
+        eq() {
+          return chain
+        },
+        neq() {
+          return chain
+        },
+        is() {
+          return chain
+        },
+        gte() {
+          return chain
+        },
+        lt() {
+          return chain
+        },
+        order() {
+          return Promise.resolve({ data: rows, error: null })
+        },
+      }
+      return chain
+    },
+  }
+}
 
 test('parseAnalyticsPeriod falls back to month for unknown values', () => {
   assert.equal(parseAnalyticsPeriod('week'), 'week')
@@ -79,6 +112,9 @@ test('getAnalyticsSummary uses budget semantics for spending, income, and budget
         gte() {
           return chain
         },
+        lt() {
+          return chain
+        },
         order() {
           return Promise.resolve({ data: rows, error: null })
         },
@@ -150,6 +186,9 @@ test('getAnalyticsSummary ignores excluded budget categories even with stale spe
         gte() {
           return chain
         },
+        lt() {
+          return chain
+        },
         order() {
           return Promise.resolve({ data: rows, error: null })
         },
@@ -207,6 +246,9 @@ test('getAnalyticsSummary excludes pending transactions from report totals until
           return chain
         },
         gte() {
+          return chain
+        },
+        lt() {
           return chain
         },
         order() {
@@ -274,6 +316,9 @@ test('getAnalyticsSummary filters by selected currency and defaults null currenc
         gte() {
           return chain
         },
+        lt() {
+          return chain
+        },
         order() {
           return Promise.resolve({ data: rows, error: null })
         },
@@ -334,6 +379,9 @@ test('getAnalyticsSummary reports positive category total for spending share den
         gte() {
           return chain
         },
+        lt() {
+          return chain
+        },
         order() {
           return Promise.resolve({ data: rows, error: null })
         },
@@ -350,4 +398,148 @@ test('getAnalyticsSummary reports positive category total for spending share den
     { name: 'Food', name_zh: null, icon: '🍔', color: '#ff9800', total: 100 },
     { name: 'Shopping', name_zh: '购物消费', icon: '🛍️', color: '#e91e63', total: -90 },
   ])
+})
+
+
+test('getAnalyticsPeriodWindow builds month-to-date comparison windows', () => {
+  const window = getAnalyticsPeriodWindow('month', new Date('2026-06-15T12:00:00'))
+
+  assert.deepEqual(window, {
+    period: 'month',
+    startDate: '2026-06-01',
+    endDate: '2026-06-16',
+    comparisonStartDate: '2026-05-01',
+    comparisonEndDate: '2026-05-16',
+  })
+})
+
+test('getAnalyticsSummary includes period-over-period totals', async () => {
+  const rows = [
+    {
+      amount: 100,
+      iso_currency_code: 'USD',
+      effective_date: '2026-06-04',
+      date: '2026-06-04',
+      treatment: 'spending',
+      category_id: 'food',
+      merchant_name: 'Whole Foods',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: 70,
+      iso_currency_code: 'USD',
+      effective_date: '2026-05-04',
+      date: '2026-05-04',
+      treatment: 'spending',
+      category_id: 'food',
+      merchant_name: 'Whole Foods',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: -200,
+      iso_currency_code: 'USD',
+      effective_date: '2026-06-05',
+      date: '2026-06-05',
+      treatment: 'income',
+      category_id: 'income',
+      merchant_name: 'Payroll',
+      categories: { name: 'Income', icon: '💰', color: '#4caf50' },
+    },
+  ]
+  const supabase = makeAnalyticsSupabase(rows)
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD', {
+    now: new Date('2026-06-15T12:00:00'),
+  })
+
+  assert.equal(summary.totalSpending, 100)
+  assert.equal(summary.totalIncome, 200)
+  assert.deepEqual(summary.totals, {
+    spending: 100,
+    income: 200,
+    net: 100,
+    previousSpending: 70,
+    previousIncome: 0,
+    previousNet: -70,
+    spendingDelta: 30,
+    incomeDelta: 200,
+    netDelta: 170,
+  })
+  assert.equal(summary.changeDrivers.categories[0].delta, 30)
+})
+
+test('getAnalyticsSummary marks watch when spending rises materially', async () => {
+  const rows = [
+    {
+      amount: 160,
+      iso_currency_code: 'USD',
+      effective_date: '2026-06-03',
+      date: '2026-06-03',
+      treatment: 'spending',
+      category_id: 'food',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+    {
+      amount: 100,
+      iso_currency_code: 'USD',
+      effective_date: '2026-05-03',
+      date: '2026-05-03',
+      treatment: 'spending',
+      category_id: 'food',
+      categories: { name: 'Food', icon: '🍔', color: '#ff9800' },
+    },
+  ]
+  const supabase = makeAnalyticsSupabase(rows)
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD', {
+    now: new Date('2026-06-15T12:00:00'),
+  })
+
+  assert.equal(summary.verdict.status, 'watch')
+  assert.equal(summary.verdict.headlineKey, 'analytics.verdict.watchSpendingUp')
+  assert.equal(summary.attentionItems[0].kind, 'unusual_category')
+})
+
+test('getAnalyticsSummary converts monthly budget summary into budget impact groups', async () => {
+  const supabase = makeAnalyticsSupabase([])
+
+  const summary = await getAnalyticsSummary(supabase as never, 'user_1', 'month', 'USD', {
+    now: new Date('2026-06-15T12:00:00'),
+    budgetSummary: {
+      userId: 'user_1',
+      month: '2026-06',
+      currencyCode: 'USD',
+      budgetingEnabled: true,
+      totalBaseBudget: 500,
+      totalActualSpend: 450,
+      totalRemaining: 50,
+      totalPercentUsed: 0.9,
+      categories: [
+        {
+          categoryId: 'food',
+          categoryName: 'Food',
+          categoryNameZh: '餐饮美食',
+          baseBudget: 100,
+          actualSpend: 130,
+          remaining: -30,
+          percentUsed: 1.3,
+          status: 'over',
+        },
+        {
+          categoryId: 'shopping',
+          categoryName: 'Shopping',
+          baseBudget: 200,
+          actualSpend: 170,
+          remaining: 30,
+          percentUsed: 0.85,
+          status: 'near',
+        },
+      ],
+    },
+  })
+
+  assert.equal(summary.budgetImpact?.groups.over[0].categoryId, 'food')
+  assert.equal(summary.budgetImpact?.groups.atRisk[0].categoryId, 'shopping')
+  assert.equal(summary.attentionItems[0].kind, 'over_budget')
+  assert.equal(summary.verdict.status, 'danger')
 })
