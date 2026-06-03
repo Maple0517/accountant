@@ -51,6 +51,10 @@ export default function AnalyticsCharts({
   const { categoryName, locale, t } = useI18n()
   const positiveCategories = data.byCategory.filter((category) => category.total > 0)
 
+  if (data.byDay.length === 0 && positiveCategories.length === 0 && data.byMonth.length === 0) {
+    return null
+  }
+
   const categoryData = {
     labels: positiveCategories.map((c) => `${c.icon} ${categoryName(c)}`),
     datasets: [

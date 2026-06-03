@@ -471,7 +471,13 @@ export async function getAnalyticsSummary(
     ),
     byCategory: Array.from(currentCategoryMap.values())
       .sort((a, b) => b.total - a.total)
-      .map(({ id: _id, ...category }) => category),
+      .map((category) => ({
+        name: category.name,
+        name_zh: category.name_zh,
+        icon: category.icon,
+        color: category.color,
+        total: category.total,
+      })),
     byMonth: Array.from(monthMap.entries()).map(([month, d]) => ({
       month,
       ...d,
