@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. User explicitly requested no subagents.
 
-**Goal:** Reduce dashboard backend work, route first-load JS, and dashboard client payload without changing product behavior.
+**Goal:** Reduce dashboard backend work, route first-load JS, dashboard client payload, and shared i18n bundle weight without changing product behavior.
 
-**Architecture:** Keep current SWR/client-page structure, but remove unused dashboard analytics work, push click-only Plaid/split UI behind dynamic imports, and move dashboard monthly summary/review calculations to the API response so the page does not receive/reduce full month transactions.
+**Architecture:** Keep current SWR/client-page structure, but remove unused dashboard analytics work, push click-only Plaid/split UI behind dynamic imports, move dashboard monthly summary/review calculations to the API response so the page does not receive/reduce full month transactions, and register route-specific translation namespaces from the matching route entrypoints.
 
 **Tech Stack:** Next.js 16 App Router, React 19, Supabase route handlers, node:test source guards, Turbopack route bundle diagnostics.
 
@@ -50,3 +50,17 @@
 - [ ] Run `npm test`.
 - [ ] Run `npm run build` and compare `.next/diagnostics/route-bundle-stats.json`.
 - [ ] Commit only scoped changed files; preserve pre-existing `/Users/maple/Documents/accountant/AGENTS.md` modification.
+
+### Task 5: Split route translation namespaces
+
+**Files:**
+- Modify: `/Users/maple/Documents/accountant/src/i18n/client.tsx`
+- Create: `/Users/maple/Documents/accountant/src/i18n/namespaces/*.ts`
+- Modify: route entrypoints using `useI18n()`
+- Modify: `/Users/maple/Documents/accountant/test/i18n-static.test.ts`
+
+- [ ] Add a RED guard proving route-specific translations do not live in the shared i18n client bundle.
+- [ ] Keep only app/nav/common strings in the shared i18n client.
+- [ ] Move auth/dashboard/accounts/analytics/budgets/settings/transactions dictionaries to namespace modules.
+- [ ] Import each namespace at the matching route/component entrypoint so synchronous `t(...)` calls still resolve on first render.
+- [ ] Run `npm run typecheck`, `npm test`, `npm run build`, and `npm run lint`; compare route bundle stats.

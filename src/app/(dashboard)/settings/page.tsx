@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/settings'
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import useSWR from 'swr'
 import { PageHeader } from '@/components/layout/PageHeader'

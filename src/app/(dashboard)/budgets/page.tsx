@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/budgets'
 import Link from 'next/link'
 import { forwardRef, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import useSWR from 'swr'

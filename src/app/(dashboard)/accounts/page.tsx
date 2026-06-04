@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/accounts'
 import { useState } from 'react'
 import useSWR from 'swr'
 import type { Account } from '@/types'

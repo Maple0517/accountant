@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/dashboard'
 import useSWR from 'swr'
 import Link from 'next/link'
 import { PageHeader } from '@/components/layout/PageHeader'

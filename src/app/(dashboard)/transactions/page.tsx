@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/transactions'
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'

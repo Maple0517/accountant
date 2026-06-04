@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/analytics'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import useSWR from 'swr'

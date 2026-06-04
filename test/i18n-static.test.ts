@@ -1,10 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 const root = process.cwd()
 const i18nSource = readFileSync(join(root, 'src/i18n/client.tsx'), 'utf8')
+const i18nNamespaceDir = join(root, 'src/i18n/namespaces')
 
 function walk(dir: string, files: string[] = []) {
   for (const entry of readdirSync(dir)) {
@@ -20,12 +21,23 @@ function walk(dir: string, files: string[] = []) {
 }
 
 function extractDictionaryKeys(dictionaryName: 'en' | 'zh') {
-  const match = i18nSource.match(
-    new RegExp(`const ${dictionaryName}: TranslationDictionary = \\{([\\s\\S]*?)\\n\\}`)
-  )
-  assert.ok(match, `Missing ${dictionaryName} dictionary`)
+  const sources = [i18nSource]
+  if (existsSync(i18nNamespaceDir)) {
+    for (const entry of readdirSync(i18nNamespaceDir)) {
+      if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
+        sources.push(readFileSync(join(i18nNamespaceDir, entry), 'utf8'))
+      }
+    }
+  }
+
   return new Set(
-    Array.from(match[1].matchAll(/^\s*'([^']+)':/gm), (keyMatch) => keyMatch[1])
+    sources.flatMap((source) =>
+      Array.from(source.matchAll(
+        new RegExp(`(?:const|export const)\\s+${dictionaryName}\\w*\\s*[:=][\\s\\S]*?\\{([\\s\\S]*?)\\n\\}`, 'g')
+      )).flatMap((match) =>
+        Array.from(match[1].matchAll(/^\s*'([^']+)':/gm), (keyMatch) => keyMatch[1])
+      )
+    )
   )
 }
 
@@ -70,4 +82,28 @@ test('locale detection does not auto-switch from browser language or stale local
   assert.equal(i18nSource.includes('navigator.language'), false)
   assert.equal(i18nSource.includes('navigator.languages'), false)
   assert.equal(i18nSource.includes('readStoredLocale'), false)
+})
+
+test('route translation namespaces stay outside the shared i18n client bundle', () => {
+  const routePrefixes = [
+    'accounts',
+    'analytics',
+    'auth',
+    'budgets',
+    'dashboard',
+    'settings',
+    'transactions',
+  ]
+
+  for (const prefix of routePrefixes) {
+    assert.equal(
+      i18nSource.includes(`'${prefix}.`),
+      false,
+      `${prefix} translations should live in src/i18n/namespaces/${prefix}.ts instead of the shared client bundle`
+    )
+    const namespacePath = join(i18nNamespaceDir, `${prefix}.ts`)
+    assert.equal(existsSync(namespacePath), true, `${prefix} namespace file should exist`)
+    const namespaceSource = readFileSync(namespacePath, 'utf8')
+    assert.match(namespaceSource, /registerI18nNamespace\(/)
+  }
 })

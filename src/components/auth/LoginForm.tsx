@@ -1,5 +1,6 @@
 'use client'
 
+import '@/i18n/namespaces/auth'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { I18nProvider, useI18n } from '@/i18n/client'
