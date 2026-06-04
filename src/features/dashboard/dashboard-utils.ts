@@ -1,4 +1,4 @@
-import type { DashboardAccount, DashboardMonthTransaction, DashboardRecentTransaction } from './types'
+import type { DashboardAccount, DashboardMonthTransaction, DashboardRecentTransaction, DashboardSpendingDriver } from './types'
 import { isSameCurrency, normalizeCurrencyCode } from '@/lib/money/currency'
 import { getBudgetSemanticAmounts } from '@/lib/transactions/effective'
 import {
@@ -71,15 +71,6 @@ export function getReviewCounts(transactions: DashboardMonthTransaction[]) {
     },
     { aiPending: 0, uncategorized: 0, possibleRefunds: 0, unmatchedTransfers: 0 }
   )
-}
-
-export type DashboardSpendingDriver = {
-  id: string
-  label: string
-  amount: number
-  date: string
-  pending: boolean
-  currencyCode: string
 }
 
 export function getLargestSpendingDriver(

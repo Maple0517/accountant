@@ -1,7 +1,12 @@
 import { getCurrentUser } from '@/lib/auth/server'
 import { normalizeCurrencyCode } from '@/lib/money/currency'
 import { getMonthlySummary } from '@/modules/budget/budget.service'
-import { getAnalyticsSummary } from '@/modules/analytics/analytics.service'
+import {
+  getLargestSpendingDriver,
+  getMonthlySemanticAmounts,
+  getReviewCounts,
+} from '@/features/dashboard/dashboard-utils'
+import type { DashboardMonthTransaction } from '@/features/dashboard/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const includeFull = searchParams.get('include') === 'full'
+    const includeBudget = searchParams.get('include') === 'full' || searchParams.get('include') === 'budget'
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -80,18 +85,14 @@ export async function GET(request: Request) {
           .limit(6),
       ] as const
 
-    const fullRequests = includeFull
-      ? ([
-          getAnalyticsSummary(supabase, user.id, 'month', currencyCode),
-          getMonthlySummary(supabase, user.id, currentMonth),
-        ] as const)
+    const fullRequests = includeBudget
+      ? ([getMonthlySummary(supabase, user.id, currentMonth)] as const)
       : ([] as const)
 
     const [
       accountsResult,
       monthTxResult,
       recentTxResult,
-      analyticsResult,
       budgetResult,
     ] = await Promise.allSettled([...baseRequests, ...fullRequests])
 
@@ -138,16 +139,33 @@ export async function GET(request: Request) {
       console.warn('Dashboard recent query failed:', recentTxResult.value.error)
     }
 
-    const analytics =
-      analyticsResult?.status === 'fulfilled' ? analyticsResult.value : null
     const budget = budgetResult?.status === 'fulfilled' ? budgetResult.value : null
+
+    const dashboardMonthTx = monthTx as DashboardMonthTransaction[]
+    const monthlyTotals = dashboardMonthTx.reduce(
+      (totals, tx) => {
+        if (normalizeCurrencyCode(tx.iso_currency_code) !== currencyCode) {
+          return totals
+        }
+        const amounts = getMonthlySemanticAmounts(tx)
+        totals.spending += amounts.spending
+        totals.income += amounts.income
+        return totals
+      },
+      { spending: 0, income: 0 }
+    )
+    const summary = {
+      monthlySpending: monthlyTotals.spending,
+      monthlyIncome: monthlyTotals.income,
+      reviewCounts: getReviewCounts(dashboardMonthTx),
+      largestDriver: getLargestSpendingDriver(dashboardMonthTx, currencyCode),
+    }
 
     return Response.json({
       data: {
         currencyCode,
         currentMonth,
         accounts,
-        monthTx,
         recentTx: recentTx.map((tx) => ({
           ...(typeof tx === 'object' && tx !== null ? tx : {}),
           accounts:
@@ -181,7 +199,7 @@ export async function GET(request: Request) {
                 )
               : null,
         })),
-        analytics,
+        summary,
         budget,
         generatedAt: now.toISOString(),
       },

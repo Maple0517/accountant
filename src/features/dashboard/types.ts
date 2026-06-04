@@ -1,5 +1,4 @@
 import type { MonthlyBudgetSummary } from '@/modules/budget/budget.types'
-import type { AnalyticsData } from '@/modules/analytics/analytics.types'
 
 export type DashboardAccount = {
   type?: string | null
@@ -50,13 +49,35 @@ export type DashboardRecentTransaction = {
   categories?: { name?: string | null; name_zh?: string | null; icon?: string | null; color?: string | null } | { name?: string | null; name_zh?: string | null; icon?: string | null; color?: string | null }[] | null
 }
 
+export type DashboardSpendingDriver = {
+  id: string
+  label: string
+  amount: number
+  date: string
+  pending: boolean
+  currencyCode: string
+}
+
+export type DashboardReviewCounts = {
+  aiPending: number
+  uncategorized: number
+  possibleRefunds: number
+  unmatchedTransfers: number
+}
+
+export type DashboardSummary = {
+  monthlySpending: number
+  monthlyIncome: number
+  reviewCounts: DashboardReviewCounts
+  largestDriver: DashboardSpendingDriver | null
+}
+
 export type DashboardData = {
   currencyCode: string
   currentMonth?: string
   accounts: DashboardAccount[]
-  monthTx: DashboardMonthTransaction[]
   recentTx: DashboardRecentTransaction[]
-  analytics?: AnalyticsData | null
+  summary: DashboardSummary
   budget?: MonthlyBudgetSummary | null
   generatedAt?: string
 }

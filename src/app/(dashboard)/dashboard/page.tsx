@@ -13,12 +13,8 @@ import { useI18n } from '@/i18n/client'
 import {
   formatShortDate,
   getDashboardStatusSummary,
-  getLargestSpendingDriver,
-  getMonthlySemanticAmounts,
-  getReviewCounts,
   summarizeBalances,
 } from '@/features/dashboard/dashboard-utils'
-import { normalizeCurrencyCode } from '@/lib/money/currency'
 
 const fetcher = async <T,>(url: string): Promise<T> => {
   const res = await fetch(url)
@@ -48,24 +44,22 @@ export default function DashboardPage() {
   const currencyCode = data?.currencyCode || 'USD'
   const budget = data?.budget ?? null
   const balances = summarizeBalances(data?.accounts ?? [], currencyCode)
-  const monthlyTotals = (data?.monthTx ?? []).reduce(
-    (totals, tx) => {
-      if (normalizeCurrencyCode(tx.iso_currency_code) !== currencyCode) {
-        return totals
-      }
-      const amounts = getMonthlySemanticAmounts(tx)
-      totals.spending += amounts.spending
-      totals.income += amounts.income
-      return totals
-    },
-    { spending: 0, income: 0 }
-  )
-  const reviewCounts = getReviewCounts(data?.monthTx ?? [])
+  const summary = data?.summary
+  const monthlyTotals = {
+    spending: summary?.monthlySpending ?? 0,
+    income: summary?.monthlyIncome ?? 0,
+  }
+  const reviewCounts = summary?.reviewCounts ?? {
+    aiPending: 0,
+    uncategorized: 0,
+    possibleRefunds: 0,
+    unmatchedTransfers: 0,
+  }
   const reviewTotal = Object.values(reviewCounts).reduce((sum, count) => sum + count, 0)
   const budgetLeft = budget?.totalRemaining ?? null
   const budgetPercent = budget?.totalPercentUsed ?? null
   const budgetTone = getBudgetTone(budgetLeft, budgetPercent)
-  const largestDriver = getLargestSpendingDriver(data?.monthTx ?? [], currencyCode)
+  const largestDriver = summary?.largestDriver ?? null
   const statusSummary = getDashboardStatusSummary({
     budgetLeft,
     budgetPercent,

@@ -1,8 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from 'react-plaid-link'
+import dynamic from 'next/dynamic'
+import { useCallback, useState } from 'react'
 import { useI18n } from '@/i18n/client'
+
+type PlaidLinkSuccessMetadata = {
+  accounts?: Array<{ id?: string | null }>
+}
+
+const PlaidManageAccountsLauncher = dynamic(
+  () => import('./PlaidManageAccountsLauncher'),
+  { ssr: false }
+)
 
 export default function PlaidManageAccountsButton({
   plaidItemId,
@@ -15,7 +24,6 @@ export default function PlaidManageAccountsButton({
   const [token, setToken] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [updating, setUpdating] = useState(false)
-  const shouldOpenWhenReady = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const requestLinkToken = useCallback(async () => {
@@ -51,7 +59,7 @@ export default function PlaidManageAccountsButton({
   }, [requestLinkToken, t])
 
   const handleOnSuccess = useCallback(
-    async (_publicToken: string, metadata: PlaidLinkOnSuccessMetadata) => {
+    async (_publicToken: string, metadata: PlaidLinkSuccessMetadata) => {
       setUpdating(true)
       setError(null)
 
@@ -82,34 +90,16 @@ export default function PlaidManageAccountsButton({
     [onSuccess, plaidItemId, t]
   )
 
-  const { open, ready } = usePlaidLink({
-    token,
-    onSuccess: handleOnSuccess,
-    onExit: () => {
-      setToken(null)
-      shouldOpenWhenReady.current = false
-    },
-  })
-
-  useEffect(() => {
-    if (!shouldOpenWhenReady.current || !token || !ready) return
-
-    shouldOpenWhenReady.current = false
-    open()
-  }, [open, ready, token])
-
   const handleOpen = async () => {
     setError(null)
-    if (!token) {
-      shouldOpenWhenReady.current = true
-      await createLinkToken()
-      return
-    }
-    if (!ready) return
-    open()
+    await createLinkToken()
   }
 
-  const disabled = updating || loading || Boolean(token && !ready)
+  const handleExit = useCallback(() => {
+    setToken(null)
+  }, [])
+
+  const disabled = updating || loading
 
   return (
     <div className="plaid-link-container">
@@ -117,6 +107,13 @@ export default function PlaidManageAccountsButton({
       <button className="btn btn-secondary" type="button" onClick={handleOpen} disabled={disabled}>
         {loading || updating ? t('common.loading') : t('accounts.manageSharedAccounts')}
       </button>
+      {token && (
+        <PlaidManageAccountsLauncher
+          token={token}
+          onExit={handleExit}
+          onSuccess={handleOnSuccess}
+        />
+      )}
     </div>
   )
 }
