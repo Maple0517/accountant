@@ -470,6 +470,36 @@ test('total aggregation correct', () => {
   assert.equal(result.totalPercentUsed, 125 / 300)
 })
 
+test('total progress excludes no-budget category spend while keeping the category visible', () => {
+  const housing: BudgetCategoryInput = {
+    id: 'cat_housing',
+    name: 'Housing',
+    type: 'expense',
+    isExcludedFromBudget: false,
+  }
+
+  const result = calculateMonthlySummary(
+    makeInput({
+      categories: [groceries, housing],
+      transactions: [
+        { id: 'groceries', amount: 80, date: '2026-05-03', categoryId: 'cat_groceries', type: 'expense' },
+        { id: 'housing', amount: 1200, date: '2026-05-04', categoryId: 'cat_housing', type: 'expense' },
+      ],
+      budgetRules: [
+        { categoryId: 'cat_groceries', month: '2026-05', amount: 200 },
+      ],
+    })
+  )
+
+  const noBudgetCategory = result.categories.find((category) => category.categoryId === 'cat_housing')
+  assert.equal(noBudgetCategory?.actualSpend, 1200)
+  assert.equal(noBudgetCategory?.status, 'no_budget')
+  assert.equal(result.totalBaseBudget, 200)
+  assert.equal(result.totalActualSpend, 80)
+  assert.equal(result.totalRemaining, 120)
+  assert.equal(result.totalPercentUsed, 0.4)
+})
+
 
 test('month boundary includes first day and excludes next month start', () => {
   const result = calculateMonthlySummary(

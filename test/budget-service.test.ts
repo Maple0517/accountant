@@ -609,6 +609,17 @@ test('getMonthlySummary filters budget transactions to the profile default curre
       linked_transaction_id: null,
     },
   ]
+  const currencyBudgetRules = [
+    {
+      id: 'budget_food_currency',
+      user_id: 'user_1',
+      category_id: 'cat_food',
+      amount: 200,
+      period: 'monthly',
+      month: 5,
+      year: 2026,
+    },
+  ]
   const supabase = {
     from(table: string) {
       const chain = {
@@ -629,6 +640,9 @@ test('getMonthlySummary filters budget transactions to the profile default curre
                 return Promise.resolve({ data: { default_currency: 'USD' }, error: null })
               },
             }
+          }
+          if (table === 'budgets' && column === 'period') {
+            return Promise.resolve({ data: currencyBudgetRules, error: null })
           }
           return chain
         },
@@ -659,6 +673,8 @@ test('getMonthlySummary filters budget transactions to the profile default curre
   }
 
   const summary = await getMonthlySummary(supabase as never, 'user_1', '2026-05')
+  const food = summary.categories.find((category) => category.categoryId === 'cat_food')
   assert.equal(summary.currencyCode, 'USD')
+  assert.equal(food?.actualSpend, 100)
   assert.equal(summary.totalActualSpend, 100)
 })

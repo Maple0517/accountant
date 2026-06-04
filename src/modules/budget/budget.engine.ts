@@ -190,8 +190,14 @@ export function calculateMonthlySummary(input: BudgetEngineInput): CalculatedMon
     const percentUsed = baseBudget > 0 ? actualSpend / baseBudget : null
     const status = deriveBudgetStatus(baseBudget, actualSpend)
 
-    totalBaseBudget += baseBudget
-    totalActualSpend += actualSpend
+    // The top-level budget progress is "configured budget used", not total
+    // spending across every budgetable category. Keep no-budget categories
+    // visible in their own group, but do not let their spend make the overall
+    // configured-budget remaining/percent look overdrawn.
+    if (baseBudget > 0) {
+      totalBaseBudget += baseBudget
+      totalActualSpend += actualSpend
+    }
 
     return {
       categoryId: cat.id,
