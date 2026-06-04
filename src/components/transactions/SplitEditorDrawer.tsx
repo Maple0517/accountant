@@ -6,6 +6,7 @@ import {
   deriveTransactionTreatment,
   normalizeTransactionSemantics,
 } from '@/lib/transactions/treatment'
+import { getCategoryPatchForSplitTreatment } from '@/lib/transactions/split-ui'
 import type {
   Category,
   RefundSource,
@@ -697,6 +698,7 @@ export default function SplitEditorDrawer({
                               setLine(index, {
                                 treatment: preset.treatment,
                                 refund_source: preset.refund_source || '',
+                                ...getCategoryPatchForSplitTreatment(preset, categories),
                               })
                             }
                           >
