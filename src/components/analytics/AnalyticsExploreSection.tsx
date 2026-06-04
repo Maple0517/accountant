@@ -1,11 +1,15 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useState } from 'react'
 import { Card } from '@/components/ui/Card'
 import { formatCurrency } from '@/lib/currency'
 import type { AnalyticsData } from '@/modules/analytics/analytics.types'
 import { useI18n } from '@/i18n/client'
-import AnalyticsCharts from './AnalyticsCharts'
+
+const AnalyticsCharts = dynamic(() => import('./AnalyticsCharts'), {
+  loading: () => <div className="skeleton-card chart-loading-card" />,
+})
 
 export function AnalyticsExploreSection({ data }: { data: AnalyticsData }) {
   const { t } = useI18n()

@@ -577,8 +577,8 @@ type TransactionsApiResponse = {
   totalCount?: number
   viewCounts?: Record<SavedView, number>
   allAiPendingCount?: number
-  categories: Category[]
-  accounts: TransactionAccountRelation[]
+  categories?: Category[]
+  accounts?: TransactionAccountRelation[]
   limit: number
   offset: number
   error?: string
@@ -668,6 +668,7 @@ export default function TransactionsPage() {
   )
 
   const transactionsRequestIdRef = useRef(0)
+  const transactionsAbortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const querySavedView = getSavedViewFromParams(searchParams)
@@ -703,7 +704,7 @@ export default function TransactionsPage() {
   }, [searchParams])
 
   const buildTransactionQueryParams = useCallback(
-    (options: { offset?: number; savedViewOverride?: SavedView } = {}) => {
+    (options: { offset?: number; savedViewOverride?: SavedView; includeMetadata?: boolean } = {}) => {
       return buildTransactionsQueryParams({
         limit: TRANSACTIONS_PAGE_SIZE,
         offset: options.offset ?? 0,
@@ -716,6 +717,7 @@ export default function TransactionsPage() {
         dateTo: queryFilters.dateTo,
         tx: focusedTransactionId,
         includeViewCounts: (options.offset ?? 0) === 0,
+        includeMetadata: options.includeMetadata ?? true,
       })
     },
     [focusedTransactionId, queryFilters, savedView]
@@ -735,10 +737,15 @@ export default function TransactionsPage() {
         setLoadError(null)
       }
 
-      const params = buildTransactionQueryParams({ offset })
+      const params = buildTransactionQueryParams({ offset, includeMetadata: !append })
+      transactionsAbortControllerRef.current?.abort()
+      const controller = new AbortController()
+      transactionsAbortControllerRef.current = controller
 
       try {
-        const response = await fetch(`/api/transactions?${params.toString()}`)
+        const response = await fetch(`/api/transactions?${params.toString()}`, {
+          signal: controller.signal,
+        })
         const payload = (await response.json()) as TransactionsApiResponse
 
         if (transactionsRequestIdRef.current !== requestId) return
@@ -766,20 +773,24 @@ export default function TransactionsPage() {
         if (typeof payload.allAiPendingCount === 'number') {
           setAllAiPendingCount(payload.allAiPendingCount)
         }
-        setCategories(payload.categories || [])
-        setCategoriesLoading(false)
-        setAccountOptions(
-          (payload.accounts || [])
-            .map((account) => ({
-              id: account.id || '',
-              label: formatAccountSourceLabel(account, t('common.manual'), t('common.account')),
-              institutionName: account.plaid_items?.institution_name ?? null,
-              accountName: account.name ?? account.official_name ?? null,
-              mask: account.mask ?? null,
-              type: account.type ?? null,
-            }))
-            .filter((account) => account.id)
-        )
+        if (Array.isArray(payload.categories)) {
+          setCategories(payload.categories)
+          setCategoriesLoading(false)
+        }
+        if (Array.isArray(payload.accounts)) {
+          setAccountOptions(
+            payload.accounts
+              .map((account) => ({
+                id: account.id || '',
+                label: formatAccountSourceLabel(account, t('common.manual'), t('common.account')),
+                institutionName: account.plaid_items?.institution_name ?? null,
+                accountName: account.name ?? account.official_name ?? null,
+                mask: account.mask ?? null,
+                type: account.type ?? null,
+              }))
+              .filter((account) => account.id)
+          )
+        }
         if (!append) {
           setEditingTransactionId((current) =>
             current && nextTransactions.some((tx) => tx.id === current)
@@ -788,6 +799,7 @@ export default function TransactionsPage() {
           )
         }
       } catch (error) {
+        if (controller.signal.aborted) return
         if (transactionsRequestIdRef.current === requestId) {
           console.error('Error fetching transactions:', error)
           setLoadError(
@@ -796,6 +808,9 @@ export default function TransactionsPage() {
         }
       } finally {
         if (transactionsRequestIdRef.current === requestId) {
+          if (transactionsAbortControllerRef.current === controller) {
+            transactionsAbortControllerRef.current = null
+          }
           setLoading(false)
           setLoadingMore(false)
         }

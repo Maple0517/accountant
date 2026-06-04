@@ -75,6 +75,7 @@ export async function GET(request: Request) {
     const savedView: SavedView = isSavedView(savedViewParam) ? savedViewParam : 'all'
     const includeViewCounts = searchParams.get('includeViewCounts') === 'true'
     const includeTotalCount = searchParams.get('includeTotalCount') === 'true'
+    const includeMetadata = searchParams.get('includeMetadata') !== 'false'
 
     const filterContext = {
       userId: user.id,
@@ -107,15 +108,16 @@ export async function GET(request: Request) {
       .order('date', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    const [transactionsResult, categoriesResult, accountsResult] =
-      await Promise.all([
-        transactionsQuery,
-        supabase
+    const categoriesQuery = includeMetadata
+      ? supabase
           .from('categories')
           .select('id, user_id, name, name_zh, icon, color, type, is_excluded_from_budget, sort_order, created_at')
           .eq('user_id', user.id)
-          .order('sort_order', { ascending: true }),
-        supabase
+          .order('sort_order', { ascending: true })
+      : Promise.resolve({ data: [], error: null })
+
+    const accountsQuery = includeMetadata
+      ? supabase
           .from('accounts')
           .select(
             `
@@ -136,8 +138,11 @@ export async function GET(request: Request) {
           )
           .eq('user_id', user.id)
           .is('archived_at', null)
-          .order('created_at', { ascending: true }),
-      ])
+          .order('created_at', { ascending: true })
+      : Promise.resolve({ data: [], error: null })
+
+    const [transactionsResult, categoriesResult, accountsResult] =
+      await Promise.all([transactionsQuery, categoriesQuery, accountsQuery])
 
     if (transactionsResult.error) {
       console.error('Error fetching transactions:', transactionsResult.error)
@@ -192,10 +197,12 @@ export async function GET(request: Request) {
       totalCount,
       viewCounts,
       allAiPendingCount,
-      categories: (categoriesResult.data || []) as Category[],
-      accounts: ((accountsResult.data || []) as TransactionAccountRelation[])
-        .map((account) => normalizeAccountRelation(account))
-        .filter((account): account is TransactionAccountRelation => Boolean(account)),
+      ...(includeMetadata ? {
+        categories: (categoriesResult.data || []) as Category[],
+        accounts: ((accountsResult.data || []) as TransactionAccountRelation[])
+          .map((account) => normalizeAccountRelation(account))
+          .filter((account): account is TransactionAccountRelation => Boolean(account)),
+      } : {}),
       limit,
       offset,
     })

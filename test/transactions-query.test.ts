@@ -16,9 +16,11 @@ test('buildTransactionsQueryParams includes view counts in the bootstrap request
     dateTo: '2026-06-30',
     tx: 'tx_123',
     includeViewCounts: true,
+    includeMetadata: true,
   })
 
   assert.equal(params.get('includeViewCounts'), 'true')
+  assert.equal(params.get('includeMetadata'), 'true')
   assert.equal(params.get('savedView'), 'needs_review')
   assert.equal(params.get('search'), 'coffee')
   assert.equal(params.get('tx'), 'tx_123')
@@ -37,9 +39,11 @@ test('buildTransactionsQueryParams omits empty optional fields', () => {
     dateTo: '',
     tx: '',
     includeViewCounts: false,
+    includeMetadata: false,
   })
 
   assert.equal(params.get('includeViewCounts'), null)
+  assert.equal(params.get('includeMetadata'), 'false')
   assert.equal(params.get('search'), null)
   assert.equal(params.get('tx'), null)
 })

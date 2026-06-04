@@ -12,6 +12,7 @@ type BuildTransactionsQueryParamsInput = {
   dateTo: string
   tx: string
   includeViewCounts: boolean
+  includeMetadata: boolean
 }
 
 export function buildTransactionsQueryParams(
@@ -31,6 +32,7 @@ export function buildTransactionsQueryParams(
   if (input.dateTo) params.set('dateTo', input.dateTo)
   if (input.tx) params.set('tx', input.tx)
   if (input.includeViewCounts) params.set('includeViewCounts', 'true')
+  params.set('includeMetadata', input.includeMetadata ? 'true' : 'false')
 
   return params
 }
