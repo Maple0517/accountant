@@ -1,325 +1,239 @@
-# 系统架构 — Accountant
+# Architecture — Accountant
 
-> 本文记录系统架构、数据库 Schema 和 API 设计。
+本文描述当前仓库的长期架构和核心语义。运行部署看 [`OPERATIONS.md`](./OPERATIONS.md)，Agent 接手看 [`../AI_HANDOFF.md`](../AI_HANDOFF.md)。
 
----
-
-## 架构总览
+## 1. 系统总览
 
 ```mermaid
 graph TB
-    subgraph "客户端"
-        A["🌐 Next.js Web App<br/>(Dashboard + 管理)"]
-        B["📱 iOS Shortcut<br/>(截图记账)"]
-    end
+  Web["Next.js Web App"]
+  IOS["iOS Shortcut"]
+  Widget["Scriptable Widget"]
 
-    subgraph "Next.js API Routes"
-        C1["/api/plaid/*"]
-        C2["/api/notion/sync"]
-        C3["/api/receipt"]
-        C4["/api/settings/api-keys"]
-        C5["/api/transactions/*"]
-        C6["/api/budget/*"]
-        C7["/api/categories"]
-        C8["/api/cron/*"]
-    end
+  API["Next.js API Routes"]
+  Supabase["Supabase Postgres + Auth"]
+  Plaid["Plaid API"]
+  Gemini["Google Gemini"]
+  Notion["Notion API"]
+  Cron["Vercel Cron"]
 
-    subgraph "外部服务"
-        E["🏦 Plaid API<br/>(银行/信用卡数据)"]
-        F["📝 Notion API<br/>(数据同步展示)"]
-        G["🤖 Gemini<br/>(分类 + Vision OCR)"]
-    end
-
-    subgraph "Supabase"
-        H["PostgreSQL"]
-        I["Auth"]
-    end
-
-    A --> C1 & C2 & C4 & C5 & C6 & C7
-    B --> C3
-    C1 --> E & G & H & F
-    C2 --> F & H
-    C3 --> G & H
-    C4 & C5 --> H
-    C6 & C7 --> H
-    C8 --> E & H
-    A --> H
-    A --> I
+  Web --> API
+  IOS --> API
+  Widget --> API
+  Cron --> API
+  API --> Supabase
+  API --> Plaid
+  API --> Gemini
+  API --> Notion
+  Web --> Supabase
 ```
 
----
+Accountant 是一个 Next.js 单体全栈应用：`src/app` 提供页面和 route handlers，Supabase 负责身份与持久化，Plaid/Gemini/Notion 是外部集成。
 
-## 数据库 Schema
+## 2. 目录边界
 
-> 最快了解数据模型的方式：阅读 [`src/types/index.ts`](../src/types/index.ts)。
-
-### `profiles` — 用户配置（对应 `auth.users`）
-
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | 等于 `auth.users.id` |
-| `display_name` | text | 显示名 |
-| `default_currency` | text | 默认 'USD' |
-| `notion_sync_enabled` | boolean | 是否开启 Notion 同步 |
-| `notion_token` | text | Notion Integration Token（敏感字段；客户端不可直接读取，Settings 通过 server route 保存/显示 masked 状态） |
-| `notion_database_id` | text | 系统自动写入（首次同步时创建数据库后回写） |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-### `plaid_items` — 已连接的银行机构
-
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK → auth.users) | |
-| `access_token` | text | Plaid access_token（⚠️ 生产环境真实密钥） |
-| `item_id` | text | Plaid item ID |
-| `institution_name` | text | 银行名称（如 "US Bank"） |
-| `institution_id` | text | Plaid 机构 ID |
-| `cursor` | text | `/transactions/sync` 增量游标 |
-| `status` | text | 'active' / 'error' / 'login_required' |
-| `error_code` | text | Plaid 错误代码 |
-| `last_synced_at` | timestamptz | 最后成功同步时间 |
-| `last_sync_error` | text | 同步失败信息 |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-### `accounts` — 银行子账户缓存
-
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | 内部 ID |
-| `user_id` | uuid (FK) | |
-| `plaid_item_id` | uuid (FK → plaid_items) | 注意：代码里是 `plaid_item_id`，不是 `item_id` |
-| `plaid_account_id` | text | Plaid 的 account_id |
-| `name` | text | 账户名（iOS Capture 账户名为 `'iOS Capture'`） |
-| `official_name` | text | 官方全称 |
-| `mask` | text | 卡号后 4 位 |
-| `current_balance` | numeric | 当前余额 |
-| `available_balance` | numeric | 可用余额 |
-| `iso_currency_code` | text | 默认 'USD' |
-| `type` | text | 'checking' / 'savings' / 'credit' / 'cash' / 'investment' / 'other' |
-| `subtype` | text | 账户子类型 |
-| `is_manual` | boolean | 是否手动账户 |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-### `transactions` — 交易记录（核心）
-
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `account_id` | uuid (FK → accounts) | |
-| `category_id` | uuid (FK → categories) | |
-| `plaid_transaction_id` | text (unique) | Plaid 交易 ID，手动记录为 null |
-| `amount` | numeric | **⚠️ Plaid 约定：正数=支出，负数=收入** |
-| `iso_currency_code` | text | |
-| `date` | date | |
-| `authorized_date` | date | |
-| `merchant_name` | text | |
-| `description` | text | 商户名/描述 |
-| `payment_channel` | text | 'online' / 'in store' / 'other' |
-| `pending` | boolean | |
-| `source` | text | 'plaid' / 'manual' / 'receipt' |
-| `receipt_url` | text | 上传的小票图片链接 |
-| `notion_page_id` | text | 已同步到 Notion 的 page ID（用于增量判断） |
-| `tags` | text[] | |
-| `notes` | text | |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
-
-分类相关系统标签：
-
-| Tag | 说明 |
+| 路径 | 责任 |
 |---|---|
-| `classification:ai` | 分类由 Gemini AI 确认 |
-| `classification:plaid-fallback` | AI 未完成时使用 Plaid 分类兜底 |
-| `classification:ai-pending` | 需要进入 AI 分类队列刷新 |
+| `src/app/(dashboard)/` | 登录后的页面：dashboard、transactions、accounts、analytics、budgets、settings |
+| `src/app/api/` | 后端 route handlers：Plaid、交易、预算、Notion、receipt、widget、cron |
+| `src/components/` | 共享 UI 与业务组件 |
+| `src/features/dashboard/` | Dashboard 局部类型/组件 |
+| `src/i18n/` | 客户端文案与按路由 namespace 拆分的翻译 |
+| `src/lib/transactions/` | 交易语义、有效交易过滤、筛选、复核、split UI helper |
+| `src/lib/plaid/` | Plaid client、同步、分类队列、fallback 分类 |
+| `src/lib/notion/` | Notion client 与 Supabase -> Notion 同步 |
+| `src/lib/gemini/` | Gemini 分类与 receipt parser |
+| `src/lib/supabase/` | browser/server/admin Supabase clients |
+| `src/modules/budget/` | Budget 领域模块，使用 Clean Architecture 分层 |
+| `src/modules/analytics/` | Analytics/review 数据聚合与类型 |
+| `src/types/index.ts` | 手写核心数据模型类型，理解 schema 的最快入口 |
+| `supabase/migrations/` | 数据库 schema、索引、RLS、RPC、迁移历史 |
 
-### `categories` — 分类
+## 3. 主要页面
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `name` | text | 英文分类名 |
-| `name_zh` | text | 中文显示名 |
-| `icon` | text | Emoji 图标 |
-| `color` | text | UI 色值 |
-| `plaid_primary` | text | Plaid primary 分类映射 |
-| `plaid_detailed` | text | Plaid detailed 分类映射 |
-| `type` | text | income/expense/transfer |
-| `is_excluded_from_budget`| boolean | 是否排除在预算外（如内部转账等）|
-| `sort_order` | integer | UI 排序 |
-| `created_at` | timestamptz | |
+| 页面 | 责任 |
+|---|---|
+| `/dashboard` | 行动优先首页：概览、待处理、最大影响项 |
+| `/transactions` | 核心交易工作台：筛选、saved views、复核、分类、split、refund、transfer |
+| `/accounts` | Plaid item/account 管理与余额/归档状态 |
+| `/analytics` | Review/insights：解释变化、风险和行动入口 |
+| `/budgets` | 分类预算与月度预算状态 |
+| `/settings` | Notion token、iOS/Widget API key、用户配置 |
+| `/auth/login` | 登录/注册 |
 
-### `budgets` — 预算
+## 4. API 路由
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `category_id` | uuid (FK → categories) | |
-| `amount` | numeric | 预算金额 |
-| `period` | text | weekly/monthly/yearly |
-| `month` | integer | 月度预算月份 |
-| `year` | integer | 年份 |
-| `alert_threshold` | numeric | 预警阈值，默认 0.80 |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
+### 4.1 Dashboard / Analytics / Budget
 
-### `ai_classification_jobs` — Plaid AI 分类任务
+| Route | 责任 |
+|---|---|
+| `GET /api/dashboard` | Dashboard 聚合数据 |
+| `GET /api/analytics` | Analytics/review 数据 |
+| `GET /api/budget/monthly-summary` | 月度预算汇总 |
+| `GET/POST /api/budget/category-budget` | 分类预算读取/保存 |
+| `GET /api/categories` | 分类列表 |
 
-> 依赖 `supabase/migrations/003_ai_classification_queue.sql`。
+### 4.2 Transactions
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `status` | text | queued/running/completed/failed/canceled |
-| `total_count` | integer | 本次待处理总数 |
-| `pending_count` | integer | queued + processing 数量 |
-| `completed_count` | integer | 已完成数量 |
-| `failed_count` | integer | 失败数量 |
-| `error_message` | text | 任务级错误 |
-| `completed_at` | timestamptz | 完成时间 |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
+| Route | 责任 |
+|---|---|
+| `GET /api/transactions` | 交易列表、筛选、分页、可选 metadata |
+| `GET /api/transactions/view-counts` | saved-view count 汇总，使用 RPC 优化 |
+| `PATCH /api/transactions/[id]/category` | 修改分类/可批量应用同名交易 |
+| `PATCH /api/transactions/[id]/refund` | 退款/reimbursement 链接与复核 |
+| `PATCH /api/transactions/[id]/semantics` | treatment/transfer/excluded 等语义修改 |
+| `GET/PUT/DELETE /api/transactions/[id]/split` | split 读取、替换、恢复/删除 |
+| `POST /api/transactions/[id]/split/preview` | split 预览 |
 
-### `ai_classification_job_items` — Plaid AI 分类队列项
+### 4.3 Plaid
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `job_id` | uuid (FK → ai_classification_jobs) | |
-| `user_id` | uuid (FK) | |
-| `transaction_id` | uuid (FK → transactions) | |
-| `status` | text | queued/processing/completed/failed/skipped |
-| `attempts` | integer | 尝试次数 |
-| `error_message` | text | 单项错误 |
-| `completed_at` | timestamptz | 完成时间 |
-| `created_at` | timestamptz | |
-| `updated_at` | timestamptz | |
+| Route | 责任 |
+|---|---|
+| `POST /api/plaid/create-link-token` | 创建 Plaid Link token |
+| `POST /api/plaid/exchange-token` | public token -> access token，保存 item/accounts |
+| `POST /api/plaid/sync-transactions` | 手动增量同步 |
+| `POST /api/plaid/webhook` | Plaid webhook，触发同步或状态更新 |
+| `GET /api/plaid/accounts` | 当前用户账户列表 |
+| `GET/PATCH/DELETE /api/plaid/items/[id]` | Plaid item 管理、断开/删除历史 |
+| `GET /api/plaid/items/[id]/accounts` | 某 item 下账户 |
+| `GET/POST /api/plaid/ai-classification-jobs` | AI 分类任务 |
+| `POST /api/plaid/ai-classification-jobs/process` | 处理 AI 分类队列 |
 
-### `receipts` — iOS Shortcut 上传记录
+### 4.4 Integrations
 
-> ⚠️ 依赖 `supabase/migrations/002_ios_receipt_api_keys.sql`，远端 Supabase 需执行。
+| Route | 责任 |
+|---|---|
+| `POST /api/receipt` | iOS 图片/收据入账 |
+| `GET/POST/DELETE /api/settings/api-keys` | `ak_...` API key 管理 |
+| `GET/POST /api/settings/notion` | Notion token 状态/保存 |
+| `POST /api/notion/sync` | 手动 Notion force sync |
+| `GET /api/widget/recent-transactions` | Scriptable 最近交易 widget |
+| `GET /api/cron/plaid-sync` | Vercel Plaid 兜底同步 |
+| `GET /api/cron/notion-outbox` | Vercel Notion outbox 处理 |
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `parsed_data` | jsonb | Gemini 解析结果 |
-| `status` | text | 'pending' / 'parsed' / 'confirmed' / 'error' |
-| `image_url` | text | 上传截图的路径或 URL |
-| `error_message` | text | 解析错误信息 |
-| `transaction_id` | uuid (FK → transactions) | 自动生成交易后回写 |
-| `created_at` | timestamptz | |
+## 5. 核心数据模型
 
-### `api_keys` — iOS Shortcut API Key
+核心类型定义在 `src/types/index.ts`。数据库真实结构以 `supabase/migrations/` 为准。
 
-> ⚠️ 依赖 `supabase/migrations/002_ios_receipt_api_keys.sql`，远端 Supabase 需执行。
+| 表 | 说明 |
+|---|---|
+| `profiles` | 用户配置，含 Notion token/database id |
+| `plaid_items` | Plaid institution connection，含 access token、item id、cursor、状态 |
+| `accounts` | 银行子账户/手动账户/iOS Capture 账户，含 archive metadata |
+| `categories` | 用户分类，含 type、icon、color、budget exclusion |
+| `transactions` | 核心流水，含 Plaid/receipt/manual/split 来源、treatment、refund/transfer/split/delete/report 字段 |
+| `budgets` | 分类预算 |
+| `receipts` | receipt parser 状态、idempotency key、解析结果 |
+| `api_keys` | iOS/Widget API key hash、prefix、revocation |
+| `ai_classification_jobs` | Gemini 分类批处理任务 |
+| `ai_classification_job_items` | 分类任务明细 |
+| `transaction_split_groups` | split group 状态和金额快照 |
+| `transaction_split_events` | split 审计事件 |
+| `notion_sync_outbox` | Notion 异步同步队列 |
 
-| 列名 | 类型 | 说明 |
-|---|---|---|
-| `id` | uuid (PK) | |
-| `user_id` | uuid (FK) | |
-| `name` | text | 用户可读名称 |
-| `key_prefix` | text | UI 展示用前缀 |
-| `key_hash` | text | `ak_...` token 的 SHA-256 hash |
-| `last_used_at` | timestamptz | API Key 认证成功后更新，用于排查手机请求是否到达服务端 |
-| `revoked_at` | timestamptz | 撤销后不再可用 |
-| `created_at` | timestamptz | |
+## 6. 交易语义
 
----
+交易报表不能只按金额正负判断。
 
-## API 端点
+### 6.1 有效交易
 
-| 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/plaid/create-link-token` | POST | 生成 Plaid Link Token |
-| `/api/plaid/exchange-token` | POST | 交换 public_token → access_token，初始化账户 |
-| `/api/plaid/sync-transactions` | POST | 增量拉取 Plaid 交易（基于 cursor） |
-| `/api/plaid/webhook` | POST | 接收 Plaid 交易/Item webhook，自动触发增量同步或更新 Item 状态 |
-| `/api/plaid/accounts` | GET | 获取已连接的 Plaid 账户列表 |
-| `/api/plaid/ai-classification-jobs` | GET/POST | 查看最近 AI 分类任务 / 将待刷新 Plaid 交易一次性入队 |
-| `/api/plaid/ai-classification-jobs/process` | POST | 按队列批次处理 AI 分类 |
-| `/api/cron/plaid-sync` | GET | 定时兜底触发增量交易同步 (Cron) |
-| `/api/transactions/[id]/category` | PATCH | 手动修改分类，可选择同步同名交易 |
-| `/api/categories` | GET | 获取系统分类列表 |
-| `/api/budget/monthly-summary` | GET | 获取月度预算汇总与进度数据 |
-| `/api/budget/category-budget` | POST | 创建或更新指定分类的预算金额 |
-| `/api/notion/sync` | POST | 触发 Supabase → Notion 增量同步 |
-| `/api/receipt` | POST | iOS Shortcut 上传截图，Gemini 解析后写入交易 |
-| `/api/settings/api-keys` | GET/POST/DELETE | iOS Shortcut API Key 管理 |
+`src/lib/transactions/effective.ts` 定义有效交易：
 
-### Plaid 交易分类流程
+- `deleted_at IS NULL`
+- `is_hidden_from_reports !== true`
+- `split_role !== 'parent'`
 
-1. `/api/plaid/sync-transactions` 使用 Plaid `/transactions/sync` 增量拉取交易。
-2. 如果交易已有稳定分类，则保留现有分类。
-3. 如果 AI 分类未完成，则用 Plaid primary/detailed 映射到本地分类作为兜底，并写入 `classification:plaid-fallback` + `classification:ai-pending`。
-4. Transactions 页面可触发 AI Refresh：`/api/plaid/ai-classification-jobs` 将所有待刷新交易入队。
-5. `/api/plaid/ai-classification-jobs/process` 每次最多处理 20 笔，调用配置的 Gemini 模型，并受上游模型配额限制保护。
-6. AI 成功后写入分类、清洗商户名，并将标签切换为 `classification:ai`。
-7. 用户手动点击交易行分类 pill 修改分类时，系统清除自动分类标签；若存在同名交易，页面会询问是否通过 `apply_mode = 'similar'` 批量同步。
+Split parent 保留原始交易/对账意义，但报表通常看 split children。
 
-### Plaid Webhook 同步流程
+### 6.2 Budget 语义
 
-1. `PLAID_WEBHOOK_URL` 配置后，新 Plaid Link Token 会携带 webhook URL。
-2. 已连接的旧 Item 在下一次手动调用 `/api/plaid/sync-transactions` 时，会通过 Plaid `/item/webhook/update` 补注册同一个 webhook URL。
-3. `/api/plaid/webhook` 用 `PLAID_WEBHOOK_SECRET` 校验 `x-plaid-webhook-secret` header；未配置 secret 时 fail closed。
-4. 收到 `TRANSACTIONS:SYNC_UPDATES_AVAILABLE`、`DEFAULT_UPDATE` 或 `TRANSACTIONS_REMOVED` 后，按 Plaid `item_id` 查本地 `plaid_items`，再调用 `src/lib/plaid/transactions-sync.ts` 执行 cursor 增量同步。
-5. 收到 `ITEM:ERROR` 时会把本地 Plaid Item 标记为 `error` 或 `login_required`；收到 `ITEM:LOGIN_REPAIRED` 时恢复为 `active`。
-6. Plaid 交易更新不是刷卡实时流；webhook 表示 Plaid 已有可同步更新，不保证消费发生后立即到达。
+Budget 额外排除：
 
-### `/api/transactions/[id]/category` 详细
+- `pending = true`
+- category 标记 `is_excluded_from_budget = true`
+- treatment 为 `transfer` 或 `excluded`
 
-**请求格式**：`application/json`
+日期优先级：`effective_date` -> `budget_effective_date` -> `date`。
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `category_id` | string | 目标分类 ID |
-| `apply_mode` | string | `single` 或 `similar`，默认 `single` |
+### 6.3 Treatment
 
-`similar` 模式按当前用户、同一 `source`、标准化后的 `merchant_name || description` 匹配同名交易。
+当前 treatment 类型：
 
-### `/api/receipt` 详细
+- `spending`
+- `income`
+- `refund`
+- `transfer`
+- `excluded`
 
-**请求格式**：`multipart/form-data` 或 JSON（base64 图片）
+退款和 reimbursement 还会看 `refund_source`、`linked_transaction_id`、`refund_match_*`。转账会看 `transfer_group_id`、`transfer_match_status`、`transfer_match_*`。
 
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| `image` | file | JPEG 图片 |
-| `api_key` | string | `ak_...` 格式的 API Key |
-| `currency` | string | 可选，如 `USD` / `CNY`（默认自动识别） |
-| `notes` | string | 可选备注 |
-| `idempotency_key` | string | 可选但推荐；同一用户同一 key 只会处理一次，用于防止 Shortcut/网络重试重复入账 |
+## 7. 主要数据流
 
-**处理流程**：
-1. 用 SHA-256 hash 验证 `api_key` → 获取 `user_id`
-2. 调用配置的 Gemini Vision 模型解析图片
-3. 自动创建/复用 `accounts.name = 'iOS Capture'` 手动账户
-4. 写入 `transactions`（`source = 'receipt'`）
-5. 如 Settings 已启用 Notion Sync，则自动尝试同步到 Notion，并返回 `notion.status`；Notion 失败不会让已创建交易的接口整体失败
-6. 返回解析结果 JSON
+### 7.1 Plaid 交易同步
 
----
+```mermaid
+sequenceDiagram
+  participant User
+  participant API as Next API
+  participant Plaid
+  participant DB as Supabase
+  participant AI as AI Queue
 
-## Notion 数据库结构
+  User->>API: POST /api/plaid/sync-transactions
+  API->>DB: load plaid_items cursor/token
+  API->>Plaid: /transactions/sync
+  Plaid-->>API: added/modified/removed + next cursor
+  API->>DB: upsert accounts/transactions, soft-delete removed rows
+  API->>AI: enqueue fallback/ai-pending rows
+  API->>DB: persist cursor/status
+```
 
-同步到 Notion 的数据库列结构：
+Webhook 和 cron 进入同一套同步/状态更新路径，避免手动与自动逻辑分叉。
 
-| 属性 | 类型 | 内容 |
-|---|---|---|
-| Name | title | 商户名/描述 |
-| Amount | number | 金额 |
-| Currency | select | 币种 |
-| Date | date | 消费日期 |
-| Category | select | 消费分类 |
-| Account | select | 账户名 |
-| Type | select | income/expense/transfer |
-| Payment Channel | select | online/in store |
-| Notes | rich_text | 备注 |
-| Source | select | plaid/manual/receipt |
-| Tags | multi_select | 自定义标签 |
+### 7.2 AI 分类
+
+- Plaid 入库先做 fallback 分类并打 tag。
+- `classification:ai-pending` / `classification:plaid-fallback` 驱动 saved view 和 count。
+- AI 分类任务按 batch/rate limit 处理，成功后更新商户名、分类、tags。
+
+### 7.3 iOS Capture
+
+- iOS Shortcut POST 图片到 `/api/receipt`。
+- API 用 `ak_...` key hash 验证用户。
+- Gemini Vision 提取金额、商户、日期、币种、支付方式、交易类型。
+- 系统创建/复用 `accounts.name = 'iOS Capture'` 的手动账户。
+- 交易写入 `transactions`，receipt 状态写入 `receipts`。
+- 如果开启 Notion Sync，尝试推送；失败不应回滚交易创建。
+
+### 7.4 Notion Sync
+
+- 单向：Supabase -> Notion。
+- `transactions.notion_page_id` 为空则创建页面，否则更新页面。
+- Split/异步场景可进入 `notion_sync_outbox`。
+- 创建 Notion database 时必须使用原生 `fetch`，不要改回 SDK。
+
+## 8. Security model
+
+- Supabase Auth 管用户身份。
+- 浏览器端使用 anon key + RLS。
+- 服务端敏感操作使用 service role，但 route handler 必须先确认用户权限。
+- API key 只存 hash；raw `ak_...` 只显示一次。
+- Plaid access token、Supabase service role、Notion token 不得进日志、文档或客户端 payload。
+
+## 9. 性能热点
+
+当前已知热点/敏感点：
+
+- `src/app/(dashboard)/transactions/page.tsx` 状态与渲染复杂。
+- 交易列表 count 使用 `get_transaction_list_counts(...)` RPC 避免多次 exact count。
+- `transactions.tags` 有 GIN index，因为 saved views 使用 tag containment。
+- 点击才需要的 Plaid/split UI 应保持 lazy load。
+- Dashboard 不应加载完整 analytics 或整月交易后在客户端重复 reduce。
+
+## 10. 修改建议
+
+- 修改 Budget：先写/看 engine/service tests，再改 `src/modules/budget/`，不要在 API route 里补 SQL。
+- 修改 Transactions：先确认 saved view、effective transaction、split/refund/transfer 副作用。
+- 修改 Plaid：先确认 production token/cursor/archive/delete-history 语义。
+- 修改 Notion：保留 fetch workaround 和 outbox 语义。
+- 修改 Auth/Next：先读本地 Next docs，验证 route protection。

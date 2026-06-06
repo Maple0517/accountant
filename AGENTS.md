@@ -1,33 +1,58 @@
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 
-This version has breaking changes — APIs, conventions, and file structure may differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing code. Heed deprecation notices.
+This repo uses a newer Next.js version with breaking API/convention changes. Before changing Next.js behavior, read the relevant guide under `node_modules/next/dist/docs/` and follow deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Agent rules — Accountant
 
-### CodeGraph
+## How to work here
 
-CodeGraph is installed for this repository. When CodeGraph MCP tools are available, prefer using them for initial repo orientation, call graph lookup, impact analysis, and large-module context gathering before broad manual file search.
+- Use Simplified Chinese for user-facing updates unless asked otherwise.
+- Prefer small, focused changes. Do not refactor unrelated finance logic.
+- Read the current code before judging behavior; docs in this repo can lag code.
+- After code changes, run the narrowest useful checks, re-read changed files, then create a focused commit.
+- For docs-only changes, run markdown/link sanity checks and do not run expensive app builds unless docs embed generated code.
+
+## CodeGraph
+
+CodeGraph is installed for this repository. Use it for initial orientation, call graphs, impact checks, and large-module context in these areas:
+
+- transactions
+- budgets
+- Plaid sync
+- Notion sync
+- auth/authorization
+- database schema
+- money/currency helpers
 
 Before relying on CodeGraph results for current code, run:
 
+```bash
 /Users/maple/.local/bin/codegraph sync /Users/maple/Documents/accountant
+```
 
-Use CodeGraph especially for transaction, budget, Plaid, Notion sync, auth, database, and shared money/currency logic. Small obvious edits do not require CodeGraph.
+Small obvious edits do not require CodeGraph.
 
+## High-risk areas
 
-### High-risk areas
+Treat these as production-sensitive and add extra review/verification:
 
-For the following areas, prefer extra review before finalizing:
+- money calculations and report semantics
+- transaction treatment, split, refund, transfer, and deletion behavior
+- account balances and archive/delete-history behavior
+- currency filtering/conversion
+- Plaid tokens, sync cursors, webhooks, and cron sync
+- receipt parsing and API keys
+- Notion token/database sync
+- authentication, authorization, RLS, and service-role usage
+- Supabase migrations and RPCs
+- user data privacy and logs
 
-- money calculations
-- transactions
-- account balances
-- currency conversion
-- Plaid sync
-- receipt parsing
-- Notion sync
-- authentication
-- authorization
-- database schema changes
-- user data privacy
+## Documentation rules
+
+- `README.md` is the human entrypoint.
+- `AI_HANDOFF.md` is the agent handoff and should stay concise/current.
+- `docs/ARCHITECTURE.md` is durable system architecture.
+- `docs/OPERATIONS.md` is setup/deploy/runbook.
+- Delete stale implementation plans instead of letting them become fake truth.

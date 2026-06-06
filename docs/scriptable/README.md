@@ -1,77 +1,49 @@
-# Scriptable Recent Transactions Widget
+# Scriptable 最近交易 Widget
 
-This folder contains the iPhone Scriptable large-widget integration for Accountant.
+这是 Accountant 的 iPhone Scriptable 大号小组件集成。它不是原生 iOS App、WidgetKit extension 或 PWA；它是一个复制到 Scriptable 的脚本，调用 Accountant API 渲染最近交易。
 
-The widget renders a compact dark recent-transactions list using:
+脚本文件：
 
-```txt
+```text
+docs/scriptable/recent-transactions-widget.js
+```
+
+API：
+
+```text
 GET /api/widget/recent-transactions
 ```
 
-It is not a native iOS app, WidgetKit extension, or PWA. The iPhone widget is a copy-paste Scriptable script backed by the Accountant API.
+## 1. 准备 API Key
 
-## Files
+1. 打开 Accountant 并登录。
+2. 进入 `Settings`。
+3. 找到 API Key / iOS Shortcut Capture 区域。
+4. 生成一个 `ak_...` key。
+5. 立刻复制；完整 key 只显示一次。
 
-```txt
-docs/scriptable/recent-transactions-widget.js
-docs/scriptable/README.md
-```
+Widget 和 iOS Shortcut 复用同一套 hashed API key 机制。
 
-## Current Widget Design
+## 2. 安装脚本
 
-The current script is tuned for the iOS large Scriptable widget preview:
-
-- Full-width dark list panel.
-- Seven recent transaction rows by default.
-- Divider-based list rows instead of separate card rows.
-- Merchant and account/date subtitle on the left.
-- Category pill in the middle.
-- Right-aligned amount column.
-- Reserved pending-dot slot so amounts do not shift row to row.
-- Header shows API fetch time.
-- Footer shows backend Plaid sync time when available.
-
-Important layout constants live near the top of `recent-transactions-widget.js`:
-
-```js
-const MAX_TRANSACTIONS = 7
-const CONTENT_WIDTH = 336
-const ROW_HEIGHT = 39
-const LEFT_WIDTH = 146
-const PILL_WIDTH = 72
-const AMOUNT_WIDTH = 78
-const DOT_WIDTH = 9
-```
-
-If a future iPhone size clips content, reduce `CONTENT_WIDTH`, `ROW_HEIGHT`, or `MAX_TRANSACTIONS`. If the widget has unused right-side space, increase `CONTENT_WIDTH` first, then rebalance `LEFT_WIDTH`, `PILL_WIDTH`, and `AMOUNT_WIDTH`.
-
-## Setup
-
-1. Open Accountant in the browser and sign in.
-2. Go to `Settings`.
-3. Find the `iOS Shortcut Capture` section.
-4. Click `Generate key`.
-5. Copy the `ak_...` token immediately. The raw token is only shown once.
-6. Open Scriptable on iPhone.
-7. Create a new script.
-8. Paste the full contents of `recent-transactions-widget.js`.
-9. Replace only this line:
+1. 在 iPhone 安装并打开 Scriptable。
+2. 新建脚本。
+3. 复制 `recent-transactions-widget.js` 全部内容进去。
+4. 只替换这一行：
 
 ```js
 const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 ```
 
-with:
+改成：
 
 ```js
 const API_KEY = "ak_your_key_here"
 ```
 
-Do not include `Bearer` in `API_KEY`. The script adds the `Authorization: Bearer ...` header itself.
+不要写 `Bearer`；脚本会自己设置 `Authorization: Bearer ...`。
 
-## Script Configuration
-
-Default production config:
+默认生产配置：
 
 ```js
 const API_URL = "https://accountant-rose.vercel.app/api/widget/recent-transactions"
@@ -80,48 +52,23 @@ const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
 ```
 
-`API_URL` should point to the deployed Accountant widget endpoint.
+## 3. 添加桌面 Widget
 
-`API_KEY` should be the copied `ak_...` token only.
+1. 在 Scriptable 里先运行一次脚本，确认能预览。
+2. 长按 iPhone 桌面。
+3. 添加 Scriptable widget。
+4. 选择大号。
+5. 编辑 widget，选择这个脚本。
 
-`APP_URL` is opened when tapping the widget.
+iOS 控制刷新频率；它不是实时行情式刷新。
 
-`MAX_TRANSACTIONS` controls how many rows the API returns and the widget renders.
+## 4. 显示语义
 
-## Adding The iPhone Widget
+- Header：`Fetched ...`，表示 Scriptable 刚从 API 拉到数据。
+- Footer：`Synced ...`，表示后端最近一次 Plaid 成功同步时间。
+- 如果后端没有可用 `last_synced_at`，Footer 会退回 `Fetched ...`。
 
-1. Run the script once inside Scriptable with `presentLarge()` to preview it.
-2. Long-press the iPhone Home Screen.
-3. Add a Scriptable widget.
-4. Choose the large size.
-5. Edit the widget and select this script.
-
-iOS controls widget refresh timing. The widget does not update in real time.
-
-## Time Labels
-
-The widget intentionally separates fetch time from backend sync time:
-
-```txt
-Header: Fetched just now
-Footer: Synced 5h ago
-```
-
-`Fetched ...` means Scriptable just called the Accountant API and received a response.
-
-`Synced ...` means the backend last successfully synced Plaid transactions, based on the latest non-null `plaid_items.last_synced_at` for the user.
-
-If no backend sync timestamp is available, the footer falls back to:
-
-```txt
-Fetched just now
-```
-
-That fallback means the widget can load, but the API did not find a Plaid sync timestamp for the user.
-
-## API Response Shape
-
-The endpoint returns a compact payload:
+## 5. API Response
 
 ```ts
 type WidgetRecentTransactionsResponse = {
@@ -130,11 +77,7 @@ type WidgetRecentTransactionsResponse = {
   count: number
   transactions: WidgetTransaction[]
 }
-```
 
-Each transaction includes only widget-safe fields:
-
-```ts
 type WidgetTransaction = {
   id: string
   merchant: string
@@ -157,101 +100,51 @@ type WidgetTransaction = {
 }
 ```
 
-The API does not return user email, Plaid access tokens, Notion tokens, raw API keys, or full account numbers.
+API 不返回用户 email、Plaid token、Notion token、raw API key 或完整账号。
 
-## API Auth
+## 6. 调试
 
-The widget endpoint supports:
+浏览器登录态测试：
 
-- Supabase web session cookies, useful for browser testing while logged in.
-- Existing hashed `api_keys`, useful for Scriptable.
-
-Scriptable uses:
-
-```txt
-Authorization: Bearer ak_xxx
-```
-
-The raw key is never stored by the app. The backend hashes incoming keys and compares them to the `api_keys.key_hash` value.
-
-## API Checks
-
-Browser session test while logged in:
-
-```txt
+```text
 /api/widget/recent-transactions
 ```
 
-Production API-key test:
+API key 测试：
 
 ```bash
 curl -H "Authorization: Bearer ak_xxx" \
   "https://accountant-rose.vercel.app/api/widget/recent-transactions?limit=7"
 ```
 
-Expected unauthenticated result:
+未认证时应返回 unauthorized；`404` 通常表示当前部署不含 widget route。
 
-```json
-{"error":"Unauthorized"}
+## 7. 常见问题
+
+### Unable to load transactions
+
+通常是 API key 错、已撤销、多写了 `Bearer`，或生产部署缺少 widget route。
+
+### 仍显示旧文案
+
+手机运行的是旧脚本。重新复制当前 `recent-transactions-widget.js`。
+
+### 底部显示 Fetched 而不是 Synced
+
+后端没有找到当前用户非空的 Plaid `last_synced_at`。打开 Accountant 手动同步 Plaid 后再运行脚本。
+
+### 行被裁切
+
+调整脚本顶部常量：
+
+```js
+const MAX_TRANSACTIONS = 7
+const CONTENT_WIDTH = 336
+const ROW_HEIGHT = 39
+const LEFT_WIDTH = 146
+const PILL_WIDTH = 72
+const AMOUNT_WIDTH = 78
+const DOT_WIDTH = 9
 ```
 
-A `401` without an API key means the route exists and auth is working. A `404` means the deployment does not have the widget route yet.
-
-## Troubleshooting
-
-`Unable to load transactions`
-
-Usually means the API key is wrong, missing, revoked, pasted with `Bearer`, or the production deployment does not include the widget endpoint yet.
-
-`Updated just now` still appears
-
-The phone is running an old copy of the script. The current script uses `Fetched ...` and `Synced ...`.
-
-Bottom says `Fetched just now` instead of `Synced ...`
-
-The API did not find a non-null Plaid `last_synced_at` for the user. Open Accountant, run a Plaid transaction refresh, then run the Scriptable script again.
-
-Rows are clipped vertically
-
-Reduce `ROW_HEIGHT`, `MAX_TRANSACTIONS`, or font sizes. The large widget has limited height and iOS may render slightly differently across devices.
-
-Right side has unused space
-
-Increase `CONTENT_WIDTH`, then rebalance `LEFT_WIDTH`, `PILL_WIDTH`, and `AMOUNT_WIDTH`.
-
-Amounts do not align
-
-Keep `AMOUNT_WIDTH` and `DOT_WIDTH` fixed. The pending-dot slot must stay reserved even when a row is not pending.
-
-Generated API key disappeared
-
-Raw keys are shown once. Generate a new key in Settings and revoke the old one if needed.
-
-## Security Notes
-
-- Treat `ak_...` as a sensitive secret.
-- The widget route is read-only.
-- The current key table is shared with iOS receipt upload.
-- The route is structured so scoped keys such as `widget:read` can be added later.
-- Do not paste the key into screenshots, issues, commits, or shared docs.
-
-## Deployment Notes
-
-After changing the widget API or script:
-
-```bash
-npm run typecheck
-npm run lint -- docs/scriptable/recent-transactions-widget.js src/app/api/widget/recent-transactions/route.ts
-npm test
-git push origin main
-```
-
-For script-only visual tweaks, targeted lint on `recent-transactions-widget.js` is usually enough before commit.
-
-After pushing `main`, verify the live route:
-
-```bash
-curl -i "https://accountant-rose.vercel.app/api/widget/recent-transactions?limit=1"
-```
-
-Without auth, a deployed route should return `401`, not `404`.
+优先减少 `ROW_HEIGHT` 或 `MAX_TRANSACTIONS`；右侧空白太多时先增大 `CONTENT_WIDTH`。

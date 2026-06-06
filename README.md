@@ -1,72 +1,56 @@
-# Accountant — 个人智能记账
+# Accountant
 
-> 类 Copilot Money 的个人财务工作台：同步银行卡交易、用 AI 清洗商户名和分类、支持 iOS 截图记账，并可把结构化交易同步到 Notion。
+个人财务工作台：同步银行卡交易、清洗商户与分类、管理预算/复核事项，并支持 iOS 截图记账和 Notion 单向同步。
 
-**线上地址**: https://accountant-rose.vercel.app
+默认生产地址：<https://accountant-rose.vercel.app>
 
----
+## 核心链路
 
-## 现在项目到底是什么
+1. Supabase Auth 登录。
+2. Plaid Link 连接银行/信用卡账户。
+3. 后端通过 Plaid `/transactions/sync` + cursor 增量同步交易。
+4. Plaid webhook 与手动同步复用同一套入库逻辑。
+5. 交易进入 Transactions 后，可复核分类、退款、转账、拆分、预算口径。
+6. Gemini 用于 Plaid fallback 分类优化和 iOS 收据/支付截图识别。
+7. Budgets、Dashboard、Analytics 使用统一的交易语义 helper 计算报表。
+8. Notion Sync 将 Supabase 交易单向推送到用户自己的 Notion 数据库。
+9. Scriptable Widget 可在 iPhone 桌面显示最近交易。
 
-Accountant 是一个 Next.js 全栈个人财务应用，当前核心链路是：
+## 功能地图
 
-1. 用户通过 Supabase Auth 登录。
-2. 通过 Plaid Link 连接银行/信用卡账户。
-3. 后端用 Plaid `/transactions/sync` + cursor 增量同步交易。
-4. Plaid webhook 有更新时触发同一套同步逻辑。
-5. 交易入库后先用 Plaid 分类兜底，再可进入 Gemini AI 分类队列进行商户名清洗和分类优化。
-6. 用户可在 Transactions 页面手动修改分类，并可批量应用到同名交易。
-7. 用户可通过 iOS Shortcut 上传收据/消费截图，由 Gemini Vision 解析成手动交易。
-8. 用户可把交易单向同步到自己的 Notion 数据库。
-
----
-
-## 当前功能状态
-
-| 模块 | 状态 | 说明 |
-|---|---:|---|
-| Auth | ✅ 可用 | Supabase Email/Password 登录注册 |
-| Plaid Link | ✅ 可用 | 当前面向 Production 环境；部分大银行 OAuth 需 Plaid Dashboard 额外配置 |
-| Plaid Sync | ✅ 可用 | `/transactions/sync` cursor 增量同步；webhook 和手动同步复用同一套逻辑 |
-| Plaid Cron 兜底 | ✅ 已接入 | `vercel.json` 调用 `/api/cron/plaid-sync`，生产需配置 `CRON_SECRET` |
-| Transactions | ✅ 可用 | 搜索、筛选、按日期分组、账户/卡来源显示、分类 pill 修改 |
-| AI 分类队列 | ✅ 可用 | Gemini 批处理刷新 Plaid fallback 分类；仍需后续后台化体验优化 |
-| iOS 截图记账 | ✅ 可用 | `/api/receipt` + Shortcut API Key + Gemini Vision |
-| Notion Sync | ✅ 可用 | Supabase → Notion 单向同步；Notion Token 存用户 profile，不在 env |
-| Accounts | ✅ 可用 | 查看连接账户、余额、账户类型 |
-| Analytics | 🟡 部分可用 | 页面存在；图表/指标需要继续接真实数据和优化口径 |
-| Budgets | 🟡 重构中 | 已有预算 domain/engine/计划文档；页面和真实数据口径需要继续完善 |
-| Excluded Category / 不计入 | 🟡 待实现 | 已有 implementation plan；需要 migration + adapter + UI 验收 |
-
----
+| 区域 | 状态 | 入口/说明 |
+|---|---|---|
+| Auth | 可用 | Supabase Email/Password，OAuth callback 位于 `/auth/callback` |
+| Dashboard | 可用 | 行动优先 cockpit：核心指标、待复核、最大驱动因素 |
+| Transactions | 核心页面 | 保存视图、筛选、AI pending、退款/转账复核、split、隐藏/删除语义 |
+| Accounts | 可用 | Plaid item/account 管理，支持 delete-history archive 语义 |
+| Budgets | 可用，高风险 | `src/modules/budget/` 使用 Engine/Adapter/Repository/Service 分层 |
+| Analytics | 可用 | 偏 review/insights，不是单纯图表页 |
+| iOS Capture | 可用 | `/api/receipt` + `ak_...` API key + Gemini Vision |
+| Scriptable Widget | 可用 | `/api/widget/recent-transactions` |
+| Notion Sync | 可用 | Supabase -> Notion 单向同步；token 存用户 profile |
+| Plaid Cron | 可用 | Vercel 每日同步 `/api/cron/plaid-sync` |
+| Notion Outbox Cron | 可用 | Vercel 每日处理 `/api/cron/notion-outbox` |
 
 ## 文档入口
 
-建议阅读顺序：
-
-1. [`AI_HANDOFF.md`](./AI_HANDOFF.md) — 新 Agent / Codex 接手先读，记录真实状态、禁改点和近期任务。
-2. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — 系统架构、数据库表、API、关键数据流。
-3. [`docs/implementation-plans/transaction-page-refactor/`](./docs/implementation-plans/transaction-page-refactor/) — 交易页相关渐进式重构计划。
-4. [`docs/ios-shortcut-guide.md`](./docs/ios-shortcut-guide.md) — iOS 快捷指令配置指南。
-
-> 约定：README 只做项目入口和状态总览；`AI_HANDOFF.md` 记录“当前真实状态 + 坑”；`docs/ARCHITECTURE.md` 记录长期架构，不写临时 TODO。
-
----
+- [`AI_HANDOFF.md`](./AI_HANDOFF.md)：新 Agent/Codex 接手先读，包含当前坑位和禁改点。
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)：系统结构、数据流、模块边界、关键语义。
+- [`docs/OPERATIONS.md`](./docs/OPERATIONS.md)：本地运行、环境变量、部署、故障排查。
+- [`docs/ios-shortcut-guide.md`](./docs/ios-shortcut-guide.md)：iOS 快捷指令截图记账配置。
+- [`docs/scriptable/README.md`](./docs/scriptable/README.md)：iPhone Scriptable 最近交易小组件。
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| Framework | Next.js App Router + Turbopack |
-| Language | TypeScript |
-| Styling | Tailwind CSS + Radix UI |
-| Database / Auth | Supabase PostgreSQL + Auth |
-| Bank Sync | Plaid API, Production |
-| AI Classification / OCR | Google Gemini |
-| Notion Sync | Notion REST API v1，原生 fetch |
+| App | Next.js App Router, React, TypeScript |
+| UI | Tailwind CSS, Radix UI/shadcn 风格组件 |
+| DB/Auth | Supabase PostgreSQL + Supabase Auth |
+| Bank sync | Plaid API |
+| AI | Google Gemini |
+| External sync | Notion REST API |
 | Deploy | Vercel + Supabase Cloud |
-
----
 
 ## 本地开发
 
@@ -76,11 +60,21 @@ cp .env.example .env.local
 npm run dev
 ```
 
-打开：http://localhost:3000
+打开：<http://localhost:3000>
 
-环境变量说明见 [`.env.example`](./.env.example)。
+常用检查：
 
-### 关键环境变量
+```bash
+npm run typecheck
+npm run lint
+npm run pretest
+npm test
+npm run build
+```
+
+## 环境变量
+
+完整模板见 [`.env.example`](./.env.example)。核心变量：
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
@@ -90,21 +84,20 @@ SUPABASE_SERVICE_ROLE_KEY=
 PLAID_CLIENT_ID=
 PLAID_SECRET=
 PLAID_ENV=production
-PLAID_WEBHOOK_SECRET=
 PLAID_WEBHOOK_URL=https://your-domain.com/api/plaid/webhook?secret=...
+PLAID_WEBHOOK_SECRET=
 CRON_SECRET=
 
 GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
-Notion Token 不放在 `.env.local`，由用户在 `/settings` 页面填写，服务端从 `profiles.notion_token` 读取。
+Notion token 由用户在 `/settings` 页面配置，后端从 `profiles.notion_token` 读取；不要把个人 Notion token 硬编码进代码。
 
----
+## 最高优先级注意事项
 
-## 近期优先级
-
-1. 完成 Transactions 页面重构：银行/卡来源、分类视图、`不计入` 分类。
-2. 完成 Budget 真实数据口径：pending、income/transfer、excluded category、rollover 的边界。
-3. 把 AI 分类队列从前端触发逐步迁移到后台/定时任务，减少用户等待。
-4. 补齐 Analytics 真实数据和月度报表口径。
-5. 保持 Plaid `/transactions/refresh` 为手动强刷/付费 add-on 能力，不作为默认自动刷新方案。
+- 不要清空 `plaid_items`：生产 `access_token` 和 cursor 在这里，删掉会要求用户重新授权。
+- Notion 创建数据库使用原生 `fetch` 绕过 SDK 问题，不要改回 `notion.databases.create()`。
+- 报表只使用有效交易：未删除、未隐藏、非 split parent，并遵守 pending/excluded/refund/transfer/split 语义。
+- 账户 delete-history 是 archive + soft-delete 交易，不是硬删账户。
+- 修改 Next.js routing/middleware/proxy 相关逻辑前，先读本地 Next 文档。
