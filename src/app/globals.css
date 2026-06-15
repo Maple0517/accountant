@@ -935,6 +935,102 @@ a {
 }
 
 /* Budgets */
+.budget-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+.budget-summary-tile {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.budget-summary-tile .metric-value {
+  font-size: clamp(1.25rem, 2vw, 1.8rem);
+  line-height: 1.05;
+}
+.budget-summary-copy {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.budget-summary-tile-warm {
+  border-color: rgba(245, 165, 36, 0.24);
+  background: rgba(245, 165, 36, 0.08);
+}
+.budget-ledger-card { overflow: hidden; }
+.budget-ledger-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.budget-ledger-header h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.05rem;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+}
+.budget-ledger-columns {
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) minmax(10rem, 0.44fr) minmax(10rem, 0.72fr) minmax(9rem, 0.42fr);
+  gap: 1rem;
+  padding: 0 0 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.budget-ledger-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding-top: 0.9rem;
+}
+.budget-ledger-group { display: flex; flex-direction: column; gap: 0.55rem; }
+.budget-ledger-group-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+.budget-ledger-list { gap: 0.35rem; }
+.budget-ledger-row {
+  grid-template-columns: minmax(13rem, 1fr) minmax(10rem, 0.44fr) minmax(10rem, 0.72fr) minmax(9rem, 0.42fr);
+  gap: 1rem;
+  padding: 0.72rem 0.8rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+.budget-ledger-row:hover { background: var(--bg-hover); transform: translateY(-1px); }
+.budget-ledger-row-needs-budget {
+  background: rgba(245, 165, 36, 0.08);
+  box-shadow: inset 3px 0 0 rgba(245, 165, 36, 0.75);
+}
+.budget-ledger-row-needs-budget:hover { background: rgba(245, 165, 36, 0.12); }
+.budget-ledger-row-unconfigured:not(.budget-ledger-row-needs-budget) .budget-category-button,
+.budget-ledger-row-unconfigured:not(.budget-ledger-row-needs-budget) .budget-category-spend {
+  color: var(--text-secondary);
+}
+.budget-ledger-row .progress { max-width: 18rem; margin-left: auto; }
+.budget-ledger-row .budget-category-progress-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.budget-ledger-row .budget-category-progress-cell > div { width: min(100%, 18rem); }
+.budget-ledger-row-needs-budget .budget-edit-button {
+  border-color: rgba(245, 165, 36, 0.42);
+  background: rgba(245, 165, 36, 0.16);
+}
 .budget-health-card { display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr); gap: 1.25rem; align-items: center; }
 .budget-health-card-prominent {
   position: relative;
@@ -1778,6 +1874,9 @@ a {
   .stats-grid, .summary-grid, .dashboard-snapshot-grid, .account-health-grid, .insight-grid { grid-template-columns: 1fr; }
   .home-hero-secondary { grid-template-columns: 1fr; }
   .home-hero-actions .btn { flex: 1 1 9rem; }
+  .budget-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .budget-ledger-columns { display: none; }
+  .budget-ledger-row { grid-template-columns: minmax(12rem, 1fr) minmax(9rem, auto); }
   .budget-health-metrics { grid-template-columns: 1fr; }
   .budget-detail-metrics { grid-template-columns: 1fr; }
   .settings-section-header { flex-direction: column; align-items: flex-start; }
@@ -1787,6 +1886,11 @@ a {
   .group-header { align-items: flex-start; flex-direction: column; gap: 0.25rem; }
   .group-summary { white-space: normal; }
   .api-key-reveal, .inline-similar-suggestion { align-items: stretch; flex-direction: column; }
+  .budget-summary-strip { grid-template-columns: 1fr; }
+  .budget-ledger-header { flex-direction: column; }
+  .budget-ledger-row { grid-template-columns: 1fr; align-items: stretch; }
+  .budget-ledger-row .budget-category-progress-cell { align-items: flex-start; text-align: left; }
+  .budget-ledger-row .progress { margin-left: 0; }
   .budget-category-row { grid-template-columns: 1fr; align-items: stretch; }
   .budget-category-edit-cell { justify-content: flex-start; }
   .charts-grid { grid-template-columns: 1fr; }

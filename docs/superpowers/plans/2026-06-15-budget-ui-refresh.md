@@ -15,6 +15,7 @@
 - Modify `src/app/(dashboard)/budgets/page.tsx`: compute summary metrics, render one ledger card, adjust `BudgetCategoryRow` presentation copy and classes.
 - Modify `src/i18n/namespaces/budgets.ts`: add English and Chinese labels for the summary strip and unbudgeted row states.
 - Modify `src/app/globals.css`: add ledger, summary, reduced-line row styling and responsive behavior.
+- Create `test/budget-ui-copy.test.ts`: static regression test that prevents returning to `spent of $0.00` no-budget copy.
 - Modify `docs/superpowers/specs/2026-06-15-budget-ui-refresh-design.md`: committed design context only.
 - Modify `docs/superpowers/plans/2026-06-15-budget-ui-refresh.md`: committed execution plan only.
 
@@ -392,7 +393,43 @@ Run: `npm run lint`
 
 Expected: exit 0.
 
-### Task 4: Final verification and commit
+### Task 4: Add UI copy regression test
+
+**Files:**
+- Create: `test/budget-ui-copy.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+```ts
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const root = process.cwd()
+
+test('budget rows render unbudgeted categories without spent-of-zero copy', () => {
+  const source = readFileSync(join(root, 'src/app/(dashboard)/budgets/page.tsx'), 'utf8')
+
+  assert.match(source, /budgets\.unbudgetedAmount/)
+  assert.match(source, /budgets\.noBudgetSet/)
+  assert.doesNotMatch(source, /budgets\.spentOf/)
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails before the page change**
+
+Run: `npm test -- test/budget-ui-copy.test.ts`
+
+Expected before implementation: FAIL because `budgets.unbudgetedAmount` and `budgets.noBudgetSet` are absent and `budgets.spentOf` is still present.
+
+- [ ] **Step 3: Run test to verify it passes after the page change**
+
+Run: `npm test -- test/budget-ui-copy.test.ts`
+
+Expected after implementation: PASS.
+
+### Task 5: Final verification and commit
 
 **Files:**
 - Review all changed files.
@@ -402,7 +439,7 @@ Expected: exit 0.
 Run:
 
 ```bash
-git diff -- src/app/(dashboard)/budgets/page.tsx src/app/globals.css src/i18n/namespaces/budgets.ts docs/superpowers/specs/2026-06-15-budget-ui-refresh-design.md docs/superpowers/plans/2026-06-15-budget-ui-refresh.md
+git diff -- src/app/(dashboard)/budgets/page.tsx src/app/globals.css src/i18n/namespaces/budgets.ts test/budget-ui-copy.test.ts docs/superpowers/specs/2026-06-15-budget-ui-refresh-design.md docs/superpowers/plans/2026-06-15-budget-ui-refresh.md
 ```
 
 Expected: diff is limited to planned UI/spec/plan changes.
@@ -414,6 +451,7 @@ Run:
 ```bash
 npm run typecheck
 npm run lint
+npm test -- test/budget-ui-copy.test.ts
 ```
 
 Expected: both exit 0.
@@ -423,7 +461,7 @@ Expected: both exit 0.
 Run:
 
 ```bash
-git add src/app/(dashboard)/budgets/page.tsx src/app/globals.css src/i18n/namespaces/budgets.ts docs/superpowers/specs/2026-06-15-budget-ui-refresh-design.md docs/superpowers/plans/2026-06-15-budget-ui-refresh.md
+git add src/app/(dashboard)/budgets/page.tsx src/app/globals.css src/i18n/namespaces/budgets.ts test/budget-ui-copy.test.ts docs/superpowers/specs/2026-06-15-budget-ui-refresh-design.md docs/superpowers/plans/2026-06-15-budget-ui-refresh.md
 git commit -m "Improve budget page ledger UI"
 ```
 

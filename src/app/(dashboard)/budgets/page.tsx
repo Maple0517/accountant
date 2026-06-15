@@ -210,6 +210,14 @@ export default function BudgetsPage() {
 
   const monthlyLabel = formatMonthLabel(month, locale === 'zh' ? 'zh-CN' : 'en-US')
   const hasBudget = summary?.totalBaseBudget && summary.totalBaseBudget > 0
+  const configuredCount = visibleCategories.filter((category) => category.baseBudget > 0).length
+  const unbudgetedCategoriesWithSpend = visibleCategories.filter(
+    (category) => category.baseBudget <= 0 && category.actualSpend > 0
+  )
+  const unbudgetedSpend = unbudgetedCategoriesWithSpend.reduce(
+    (total, category) => total + category.actualSpend,
+    0
+  )
 
   return (
     <div className="budgets-page">
@@ -235,52 +243,47 @@ export default function BudgetsPage() {
 
       {!loading && !error && summary && (
         <>
-          <Card className="budget-health-card budget-health-card-prominent" padding="lg">
-            <div className="budget-health-status">
-              <Badge tone={health.tone}>{t(health.labelKey)}</Badge>
-              <strong>
+          <div className="budget-summary-strip" aria-label={t('budgets.monthlyProgress')}>
+            <Card className="budget-summary-tile" padding="md">
+              <span className="metric-label">{t('budgets.totalBudget')}</span>
+              <span className="metric-value">
+                {formatCurrency(summary.totalBaseBudget, summary.currencyCode)}
+              </span>
+              <span className="budget-summary-copy">
+                {t('budgets.configuredCount', { count: configuredCount })}
+              </span>
+            </Card>
+            <Card className="budget-summary-tile" padding="md">
+              <span className="metric-label">{t('budgets.spent')}</span>
+              <span className="metric-value">
+                {formatCurrency(summary.totalActualSpend, summary.currencyCode)}
+              </span>
+              <span className="budget-summary-copy">
                 {summary.totalPercentUsed === null
                   ? t('budgets.noPlanYet')
                   : t('budgets.used', { percent: Math.round(summary.totalPercentUsed * 100) })}
-              </strong>
-              <p className="text-secondary">{t(health.copyKey)}</p>
-            </div>
-            <div className="budget-health-meter">
-              <div className="budget-health-metrics">
-                <div>
-                  <span className="metric-label">{t('budgets.totalBudget')}</span>
-                  <span className="metric-value">
-                    {formatCurrency(summary.totalBaseBudget, summary.currencyCode)}
-                  </span>
-                </div>
-                <div>
-                  <span className="metric-label">{t('budgets.spent')}</span>
-                  <span className="metric-value">
-                    {formatCurrency(summary.totalActualSpend, summary.currencyCode)}
-                  </span>
-                </div>
-                <div>
-                  <span className="metric-label">{t('budgets.remaining')}</span>
-                  <span
-                    className="metric-value"
-                    style={{
-                      color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)',
-                    }}
-                  >
-                    {formatCurrency(summary.totalRemaining, summary.currencyCode)}
-                  </span>
-                </div>
-              </div>
-              <ProgressBar
-                value={summary.totalPercentUsed}
-                tone={health.tone}
-                label={t('budgets.monthlyProgress')}
-              />
-              {summary.totalRemaining < 0 && (
-                <p className="budget-note">{t('budgets.negativeRemaining')}</p>
-              )}
-            </div>
-          </Card>
+              </span>
+            </Card>
+            <Card className="budget-summary-tile" padding="md">
+              <span className="metric-label">{t('budgets.remaining')}</span>
+              <span
+                className="metric-value"
+                style={{ color: summary.totalRemaining < 0 ? 'var(--expense)' : 'var(--income)' }}
+              >
+                {formatCurrency(summary.totalRemaining, summary.currencyCode)}
+              </span>
+              <span className="budget-summary-copy">{t(health.copyKey)}</span>
+            </Card>
+            <Card className="budget-summary-tile budget-summary-tile-warm" padding="md">
+              <span className="metric-label">{t('budgets.unbudgetedSpend')}</span>
+              <span className="metric-value">
+                {formatCurrency(unbudgetedSpend, summary.currencyCode)}
+              </span>
+              <span className="budget-summary-copy">
+                {t('budgets.categoriesNeedReview', { count: unbudgetedCategoriesWithSpend.length })}
+              </span>
+            </Card>
+          </div>
 
           {visibleCategories.length === 0 ? (
             <EmptyState
@@ -288,77 +291,74 @@ export default function BudgetsPage() {
             >
               {t('budgets.noCategoriesCopy', { month: monthlyLabel })}
             </EmptyState>
-          ) : sectionOrder.map((group) => {
-            const items = groupedCategories[group]
-            const groupLabel = getGroupLabel(group, t)
-
-            return (
-              <Card key={group} padding="md">
-                <div className="card-header budget-section-header">
-                  <div>
-                    <h3>
-                      {groupLabel}
-                      <span className="badge badge-muted" style={{ marginLeft: '0.5rem' }}>
-                        {items.length}
-                      </span>
-                    </h3>
-                    <p className="card-subtitle">
-                      {group === 'over'
-                        ? t('budgets.overCopy')
-                        : group === 'watch'
-                          ? t('budgets.watchCopy')
-                          : group === 'onTrack'
-                            ? t('budgets.safeCopy')
-                            : t('budgets.setGuidance')}
-                    </p>
-                  </div>
+          ) : (
+            <Card className="budget-ledger-card" padding="lg">
+              <div className="budget-ledger-header">
+                <div>
+                  <h3>{t('budgets.categoryBudgets')}</h3>
+                  <p className="card-subtitle">{t('budgets.categoryBudgetsSubtitle')}</p>
                 </div>
+                <Badge tone={health.tone}>{t(health.labelKey)}</Badge>
+              </div>
+              <div className="budget-ledger-columns" aria-hidden="true">
+                <span>{t('budgets.category')}</span>
+                <span>{t('budgets.budget')}</span>
+                <span>{t('budgets.progress')}</span>
+                <span>{t('budgets.status')}</span>
+              </div>
+              <div className="budget-ledger-groups">
+                {sectionOrder.map((group) => {
+                  const items = groupedCategories[group]
+                  const groupLabel = getGroupLabel(group, t)
 
-                {items.length === 0 ? (
-                  <EmptyState title={groupLabel}>
-                    {group === 'noBudget'
-                      ? t('budgets.noCategoriesCopy', { month: monthlyLabel })
-                      : t('budgets.safeCopy')}
-                  </EmptyState>
-                ) : (
-                  <div className="budget-risk-list">
-                    {items
-                      .slice()
-                      .sort((a, b) => (b.percentUsed ?? -1) - (a.percentUsed ?? -1))
-                      .map((category) => {
-                        const displayCategoryName = categoryName({
-                          name: category.categoryName,
-                          name_zh: category.categoryNameZh,
-                        })
-                        const tone = getStatusTone(category.status)
+                  if (items.length === 0) return null
 
-                        return (
-                          <BudgetCategoryRow
-                            key={category.categoryId}
-                            cat={category}
-                            isEditing={editingId === category.categoryId}
-                            editValue={editValue}
-                            saving={saving}
-                            tone={tone}
-                            hasBudget={Boolean(hasBudget)}
-                            displayCategoryName={displayCategoryName}
-                            currencyCode={summary.currencyCode}
-                            onStartEdit={() => startEdit(category)}
-                            onEditChange={(v) => setEditValue(v)}
-                            onEditKeyDown={(e) => handleEditKeyDown(e, category.categoryId)}
-                            onCommit={() => commitEdit(category.categoryId)}
-                            onCancelEdit={cancelEdit}
-                            onOpenDetails={() => openCategoryDetail(category.categoryId)}
-                            onAmountAria={t('budgets.amountAria')}
-                            t={t}
-                          />
-                        )
-                      })}
-                  </div>
-                )}
-              </Card>
-            )
-          })}
+                  return (
+                    <section key={group} className="budget-ledger-group" aria-label={groupLabel}>
+                      <div className="budget-ledger-group-label">
+                        <span>{groupLabel}</span>
+                        <span className="badge badge-muted">{items.length}</span>
+                      </div>
+                      <div className="budget-risk-list budget-ledger-list">
+                        {items
+                          .slice()
+                          .sort((a, b) => (b.percentUsed ?? -1) - (a.percentUsed ?? -1))
+                          .map((category) => {
+                            const displayCategoryName = categoryName({
+                              name: category.categoryName,
+                              name_zh: category.categoryNameZh,
+                            })
+                            const tone = getStatusTone(category.status)
+
+                            return (
+                              <BudgetCategoryRow
+                                key={category.categoryId}
+                                cat={category}
+                                isEditing={editingId === category.categoryId}
+                                editValue={editValue}
+                                saving={saving}
+                                tone={tone}
+                                hasBudget={Boolean(hasBudget)}
+                                displayCategoryName={displayCategoryName}
+                                currencyCode={summary.currencyCode}
+                                onStartEdit={() => startEdit(category)}
+                                onEditChange={(v) => setEditValue(v)}
+                                onEditKeyDown={(e) => handleEditKeyDown(e, category.categoryId)}
+                                onCommit={() => commitEdit(category.categoryId)}
+                                onCancelEdit={cancelEdit}
+                                onOpenDetails={() => openCategoryDetail(category.categoryId)}
+                                onAmountAria={t('budgets.amountAria')}
+                                t={t}
+                              />
+                            )
+                          })}
+                      </div>
+                    </section>
+                  )
+                })}
+              </div>
+            </Card>
+          )}
           <Drawer
             open={Boolean(selectedCategory)}
             title={selectedCategory ? categoryName({
@@ -436,10 +436,17 @@ function BudgetCategoryRow({
     }
   }, [isEditing])
 
-  const showRemaining = hasBudget && cat.baseBudget > 0
+  const isConfigured = cat.baseBudget > 0
+  const hasUnbudgetedSpend = !isConfigured && cat.actualSpend > 0
+  const showRemaining = hasBudget && isConfigured
+  const rowClassName = [
+    'budget-risk-row budget-category-row budget-ledger-row',
+    isConfigured ? 'budget-ledger-row-configured' : 'budget-ledger-row-unconfigured',
+    hasUnbudgetedSpend ? 'budget-ledger-row-needs-budget' : '',
+  ].filter(Boolean).join(' ')
 
   return (
-    <div className="budget-risk-row budget-category-row">
+    <div className={rowClassName}>
       <div className="budget-category-main">
         <button
           type="button"
@@ -449,10 +456,14 @@ function BudgetCategoryRow({
           {displayCategoryName}
         </button>
         <span className="budget-category-spend">
-          {t('budgets.spentOf', {
-            spent: formatCurrency(cat.actualSpend, currencyCode),
-            budget: formatCurrency(cat.baseBudget, currencyCode),
-          })}
+          {isConfigured
+            ? t('budgets.spentBudgetShort', {
+                spent: formatCurrency(cat.actualSpend, currencyCode),
+                budget: formatCurrency(cat.baseBudget, currencyCode),
+              })
+            : hasUnbudgetedSpend
+              ? t('budgets.unbudgetedAmount', { amount: formatCurrency(cat.actualSpend, currencyCode) })
+              : t('budgets.noBudgetSet')}
         </span>
         {cat.baseBudget > 0 && cat.remaining < 0 && (
           <span className="budget-note">
@@ -507,7 +518,9 @@ function BudgetCategoryRow({
         <Badge tone={tone}>
           {showRemaining
             ? t('dashboard.left', { amount: formatCurrency(cat.remaining, currencyCode) })
-            : t('budgets.notConfigured')}
+            : hasUnbudgetedSpend
+              ? t('budgets.noMonthlyLimit')
+              : t('budgets.readyWhenNeeded')}
         </Badge>
         <div style={{ marginTop: '0.45rem' }}>
           <ProgressBar
