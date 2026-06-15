@@ -5,8 +5,6 @@ const API_URL = "https://accountant-rose.vercel.app/api/widget/recent-transactio
 const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
-const REQUEST_TIMEOUT_SECONDS = 8
-const CACHE_FILE_NAME = "accountant-recent-transactions-widget-cache.json"
 const CONTENT_WIDTH = 336
 const LIST_WIDTH = CONTENT_WIDTH
 const ROW_HEIGHT = 39
@@ -52,30 +50,17 @@ Script.complete()
 async function loadTransactions() {
   const url = `${API_URL}?limit=${encodeURIComponent(MAX_TRANSACTIONS)}`
   const request = new Request(url)
-  request.timeoutInterval = REQUEST_TIMEOUT_SECONDS
   request.headers = {
     Authorization: `Bearer ${API_KEY}`,
     Accept: "application/json",
   }
 
-  try {
-    const response = await request.loadJSON()
-    if (response && response.error) {
-      throw new Error(response.error)
-    }
-
-    writeCachedPayload(response)
-    return response
-  } catch (error) {
-    const cached = readCachedPayload()
-    if (cached) {
-      cached.cached = true
-      cached.cacheError = String(error.message || error)
-      return cached
-    }
-
-    throw error
+  const response = await request.loadJSON()
+  if (response && response.error) {
+    throw new Error(response.error)
   }
+
+  return response
 }
 
 function renderWidget(widget, payload) {
@@ -91,8 +76,7 @@ function renderWidget(widget, payload) {
 
   header.addSpacer()
 
-  const updatedPrefix = payload.cached ? "Cached" : "Fetched"
-  const updated = header.addText(`${updatedPrefix} ${formatUpdated(payload.updatedAt)}`)
+  const updated = header.addText(`Fetched ${formatUpdated(payload.updatedAt)}`)
   updated.font = Font.systemFont(10)
   updated.textColor = COLORS.muted
   updated.lineLimit = 1
@@ -124,9 +108,7 @@ function renderWidget(widget, payload) {
 
   widget.addSpacer()
 
-  const footerLabel = payload.cached
-    ? `Last fetch failed: ${truncate(payload.cacheError || "timeout", 24)}`
-    : payload.lastSyncedAt
+  const footerLabel = payload.lastSyncedAt
     ? `Synced ${formatRelativeTime(payload.lastSyncedAt)}`
     : `Fetched ${formatRelativeTime(payload.updatedAt)}`
   const footer = widget.addText(footerLabel)
@@ -274,30 +256,4 @@ function truncate(value, max) {
   const text = String(value || "")
   if (text.length <= max) return text
   return `${text.slice(0, Math.max(0, max - 1))}…`
-}
-
-function cachePath() {
-  const fm = FileManager.local()
-  return fm.joinPath(fm.documentsDirectory(), CACHE_FILE_NAME)
-}
-
-function readCachedPayload() {
-  try {
-    const fm = FileManager.local()
-    const path = cachePath()
-    if (!fm.fileExists(path)) return null
-    return JSON.parse(fm.readString(path))
-  } catch {
-    return null
-  }
-}
-
-function writeCachedPayload(payload) {
-  try {
-    if (!payload || payload.error) return
-    const fm = FileManager.local()
-    fm.writeString(cachePath(), JSON.stringify(payload))
-  } catch {
-    // Cache is best-effort. Rendering fresh data matters more.
-  }
 }
