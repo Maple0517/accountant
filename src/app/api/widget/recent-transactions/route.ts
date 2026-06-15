@@ -1,7 +1,9 @@
+import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   authenticateWithApiKey,
+  type ApiKeyAuthResult,
   extractBearerToken,
   markApiKeyUsed,
 } from '@/lib/api-key-auth'
@@ -15,6 +17,13 @@ const MAX_LIMIT = 10
 type WidgetAuth = {
   userId: string
   apiKeyId?: string
+}
+
+type WidgetServerClient = Awaited<ReturnType<typeof createClient>>
+
+type WidgetAuthDependencies = {
+  authenticateApiKey?: (apiKey: string) => Promise<ApiKeyAuthResult | undefined>
+  createServerClient?: () => Promise<WidgetServerClient>
 }
 
 type WidgetAccountRelation = {
@@ -100,7 +109,9 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    await markApiKeyUsed(auth.apiKeyId)
+    if (auth.apiKeyId) {
+      after(() => markApiKeyUsed(auth.apiKeyId))
+    }
 
     const { searchParams } = new URL(request.url)
     const limit = parseLimit(searchParams.get('limit'))
@@ -163,10 +174,23 @@ export async function GET(request: Request) {
   }
 }
 
-async function authenticateWidgetRequest(
-  request: Request
+export async function authenticateWidgetRequest(
+  request: Request,
+  dependencies: WidgetAuthDependencies = {}
 ): Promise<WidgetAuth | undefined> {
-  const supabase = await createClient()
+  const apiKey = extractWidgetApiKey(request)
+
+  if (apiKey) {
+    const authenticateApiKey =
+      dependencies.authenticateApiKey ?? authenticateWithApiKey
+    const apiKeyAuth = await authenticateApiKey(apiKey)
+    if (!apiKeyAuth) return undefined
+
+    return { userId: apiKeyAuth.userId, apiKeyId: apiKeyAuth.apiKeyId }
+  }
+
+  const createServerClient = dependencies.createServerClient ?? createClient
+  const supabase = await createServerClient()
   const {
     data: { user },
   } = await supabase.auth.getUser()
@@ -175,18 +199,16 @@ async function authenticateWidgetRequest(
     return { userId: user.id }
   }
 
+  return undefined
+}
+
+function extractWidgetApiKey(request: Request) {
   const { searchParams } = new URL(request.url)
-  const apiKey =
+  return (
     extractBearerToken(request) ||
     searchParams.get('api_key')?.trim() ||
     searchParams.get('token')?.trim()
-
-  if (!apiKey) return undefined
-
-  const apiKeyAuth = await authenticateWithApiKey(apiKey)
-  if (!apiKeyAuth) return undefined
-
-  return { userId: apiKeyAuth.userId, apiKeyId: apiKeyAuth.apiKeyId }
+  )
 }
 
 function parseLimit(value: string | null) {
