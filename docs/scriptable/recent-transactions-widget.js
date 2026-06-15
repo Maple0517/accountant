@@ -5,7 +5,7 @@ const API_URL = "https://accountant-rose.vercel.app/api/widget/recent-transactio
 const API_KEY = "PASTE_YOUR_API_KEY_HERE"
 const APP_URL = "https://accountant-rose.vercel.app/transactions"
 const MAX_TRANSACTIONS = 7
-const REQUEST_TIMEOUT_SECONDS = 20
+const REQUEST_TIMEOUT_SECONDS = 8
 const CACHE_FILE_NAME = "accountant-recent-transactions-widget-cache.json"
 const CONTENT_WIDTH = 336
 const LIST_WIDTH = CONTENT_WIDTH
@@ -50,10 +50,11 @@ if (config.runsInWidget) {
 Script.complete()
 
 async function loadTransactions() {
-  const url = `${API_URL}?limit=${encodeURIComponent(MAX_TRANSACTIONS)}&api_key=${encodeURIComponent(API_KEY.trim())}`
+  const url = `${API_URL}?limit=${encodeURIComponent(MAX_TRANSACTIONS)}`
   const request = new Request(url)
   request.timeoutInterval = REQUEST_TIMEOUT_SECONDS
   request.headers = {
+    Authorization: `Bearer ${API_KEY}`,
     Accept: "application/json",
   }
 
